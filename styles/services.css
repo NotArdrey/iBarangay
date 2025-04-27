@@ -1,0 +1,350 @@
+:root {
+  --primary-color: #2c3e50;
+  --secondary-color: #2980b9;
+  --accent-color: #27ae60;
+  --light-gray: #ecf0f1;
+  --white: #ffffff;
+  --dark-bg: #2c3e50;
+  --transition: all 0.3s ease;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* Flexbox Setup for Sticky Footer */
+html, body {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  line-height: 1.6;
+  color: var(--primary-color);
+  background: var(--light-gray);
+  display: flex;
+  flex-direction: column;
+}
+
+main {
+  flex: 1;
+}
+
+/* Navigation Bar */
+.navbar {
+  background: var(--white);
+  padding: 1rem 5%;
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: var(--transition);
+}
+
+.navbar.scrolled {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.2);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  text-decoration: none;
+  color: var(--primary-color);
+}
+
+.logo img {
+  height: 45px;
+  width: auto;
+}
+
+.nav-links {
+  display: flex;
+  gap: 2rem;
+}
+
+.nav-links a {
+  text-decoration: none;
+  color: var(--primary-color);
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  transition: var(--transition);
+  position: relative;
+}
+
+.nav-links a::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  background: var(--primary-color);
+  left: 0;
+  bottom: -5px;
+  transition: width 0.3s;
+}
+
+.nav-links a:hover::after,
+.nav-links a.active::after {
+  width: 100%;
+}
+
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+/* Footer */
+.footer {
+  background: var(--dark-bg);
+  color: var(--white);
+  text-align: center;
+  padding: 1rem 0;
+  font-size: 0.9rem;
+  width: 100%;
+}
+
+/* Wizard Section & Form UI */
+.wizard-section {
+  padding: 4rem 5%;
+  background: var(--light-gray);
+  margin-top: 80px; /* To avoid overlap with fixed navbar */
+}
+
+.wizard-container {
+  background: var(--white);
+  border-radius: 10px;
+  /* Always apply what was originally a hover effect */
+  box-shadow: 0 6px 18px rgba(0,0,0,0.15);
+  transform: scale(1.01);
+
+  padding: 2rem;
+  max-width: 900px;
+  margin: 5rem auto;
+  transition: var(--transition);
+}
+
+.wizard-steps {
+  list-style: none;
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 2rem;
+  position: relative;
+  counter-reset: step;
+  padding: 0;
+}
+
+.wizard-steps li {
+  width: 33%;
+  text-align: center;
+  font-weight: 500;
+  color: var(--primary-color);
+  position: relative;
+  transition: var(--transition);
+}
+
+.wizard-steps li::before {
+  counter-increment: step;
+  content: counter(step);
+  width: 35px;
+  height: 35px;
+  line-height: 35px;
+  display: block;
+  background: #ddd;
+  border-radius: 50%;
+  margin: 0 auto 10px auto;
+  color: var(--white);
+  transition: var(--transition);
+}
+
+.wizard-steps li.active::before,
+.wizard-steps li.completed::before {
+  background: var(--accent-color);
+}
+
+.wizard-steps li::after {
+  content: '';
+  position: absolute;
+  width: 100%;
+  height: 2px;
+  background: #ddd;
+  top: 18px;
+  left: -50%;
+  z-index: -1;
+  transition: var(--transition);
+}
+
+.wizard-steps li:first-child::after {
+  content: none;
+}
+
+.wizard-steps li.completed ~ li::after {
+  background: var(--accent-color);
+}
+
+.wizard-steps li.active ~ li::after {
+  background: #ddd;
+}
+
+.wizard-form {
+  margin-top: 2rem;
+}
+
+.form-step {
+  display: none;
+  opacity: 0;
+  transition: opacity 0.4s ease;
+}
+
+.form-step.active {
+  display: block;
+  opacity: 1;
+}
+
+.form-row {
+  margin-bottom: 1.5rem;
+}
+
+.form-row label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--primary-color);
+}
+
+.form-row input[type="text"],
+.form-row input[type="email"],
+.form-row input[type="date"],
+.form-row select {
+  width: 100%;
+  padding: 0.8rem;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: var(--transition);
+}
+
+.form-row input:focus,
+.form-row select:focus {
+  border-color: var(--secondary-color);
+  outline: none;
+  box-shadow: 0 0 5px rgba(41, 128, 185, 0.3);
+}
+
+/* Improved UI for the Upload Image Section */
+.upload-id {
+  margin-top: 4rem;
+  margin-bottom: 1.5rem;
+  display: flex;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+}
+
+.upload-id label {
+  font-weight: 600;
+  color: var(--primary-color);
+  text-align: center;
+}
+
+.upload-id input[type="file"] {
+  border: 2px dashed var(--secondary-color);
+  border-radius: 8px;
+  padding: 1rem;
+  padding-left: 6rem;
+  margin: auto;
+  cursor: pointer;
+  background-color: var(--white);
+  transition: var(--transition);
+  text-align: center
+}
+
+.upload-id input[type="file"]:hover {
+  border-color: var(--accent-color);
+}
+
+.btn {
+  padding: 0.7rem 1.2rem;
+  border: none;
+  border-radius: 5px;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.cta-button {
+  background: var(--secondary-color);
+  color: var(--white);
+}
+
+.cta-button:hover {
+  background: var(--accent-color);
+}
+
+.prevBtn {
+  background: var(--primary-color);
+  color: var(--white);
+}
+
+.prevBtn:hover {
+  background: var(--accent-color);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .navbar {
+    padding: 1rem 2%;
+    flex-wrap: wrap;
+  }
+
+  .nav-links {
+    flex-direction: column;
+    width: 100%;
+    display: none;
+    margin-top: 1rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+
+  .nav-links a {
+    padding: 0.8rem 1rem;
+    border-top: 1px solid #ddd;
+  }
+
+  .nav-links.active {
+    display: flex;
+  }
+
+  .mobile-menu-btn {
+    display: block;
+  }
+
+  .wizard-container {
+    margin: 5rem 1rem;
+    padding: 1.5rem;
+  }
+
+  .wizard-steps li {
+    width: 33%;
+    font-size: 0.9rem;
+  }
+
+  .form-row input[type="text"],
+  .form-row input[type="email"],
+  .form-row input[type="date"],
+  .form-row select {
+    padding: 0.6rem;
+  }
+}
