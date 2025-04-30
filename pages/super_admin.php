@@ -432,7 +432,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                 </div>
                 <div class="flex space-x-4">
                     <button onclick="openModal('add')" class="bg-purple-600 hover:bg-purple-700 text-white px-4 py-2.5 rounded-lg">
-                        Add Official
+                        Add Barangay Captain
                     </button>
                     <a href="../functions/logout.php" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2.5 rounded-lg">
                         Logout
@@ -567,7 +567,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                         <div id="roleField">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
                             <select name="role_id" required class="w-full px-3 py-2 border rounded-lg">
-                                <?php foreach ([3,4,5,6,7] as $rid): 
+                                <?php foreach ([3] as $rid): 
                                     $role = $pdo->query("SELECT role_name FROM Role WHERE role_id = $rid")->fetch();
                                     ?>
                                     <option value="<?= $rid ?>"><?= htmlspecialchars($role['role_name']) ?></option>
@@ -640,7 +640,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                 const isOfficial = [3,4,5,6,7].includes(parseInt(roleId));
                 
                 if(action === 'add') {
-                    title.textContent = 'Add New Official';
+                    title.textContent = 'Add New Barangay Captain';
                     document.getElementById('formAction').value = 'add';
                     document.getElementById('formUserId').value = '';
                     document.getElementById('termDates').classList.remove('hidden');
