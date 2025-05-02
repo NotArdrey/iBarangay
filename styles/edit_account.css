@@ -1,0 +1,492 @@
+/* Revised editaccount.css */
+
+/*---------------------------------------------------------------------------
+  :root - Updated to include --dark-bg variable (from services.css)
+---------------------------------------------------------------------------*/
+:root {
+  --primary-color: #2c3e50;
+  --secondary-color: #2980b9;
+  --accent-color: #27ae60;
+  --light-gray: #ecf0f1;
+  --white: #ffffff;
+  --dark-bg: #2c3e50;
+  --transition: all 0.3s ease;
+}
+
+/*---------------------------------------------------------------------------
+  Global Base Styles
+---------------------------------------------------------------------------*/
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  font-family: var(--font-family);
+}
+
+body {
+  font-family: 'Poppins', sans-serif;
+  line-height: 1.6;
+  color: var(--primary-color);
+  background: var(--light-gray);
+}
+
+
+.navbar {
+  background: var(--white);
+  padding: 1rem 5%;
+  box-shadow: 0 2px 15px rgba(0, 0, 0, 0.1);
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: var(--transition);
+}
+
+.navbar.scrolled {
+  background: rgba(255, 255, 255, 0.95);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.2);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  text-decoration: none;
+  color: var(--primary-color);
+}
+
+.logo img {
+  height: 45px;
+  width: auto;
+}
+
+.nav-links {
+  display: flex;
+  gap: 2rem;
+}
+.nav-links a {
+  text-decoration: none;
+  color: var(--primary-color);
+  font-weight: 500;
+  padding: 0.5rem 1rem;
+  border-radius: 5px;
+  transition: var(--transition);
+  position: relative; /* Added for pseudo-element positioning */
+}
+
+
+.nav-links a::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  background: var(--primary-color);
+  left: 0;
+  bottom: -5px;
+  transition: width 0.3s;
+}
+
+.nav-links a:hover::after,
+.nav-links a.active::after {
+  width: 100%;
+}
+
+
+.mobile-menu-btn {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer
+}
+/*---------------------------------------------------------------------------
+  Footer (Matching services.css footer)
+---------------------------------------------------------------------------*/
+/* Footer */
+.footer {
+  background: var(--dark-bg);
+  color: var(--white);
+  text-align: center;
+  padding: 1rem 0;
+  font-size: 0.9rem;
+}
+
+/*---------------------------------------------------------------------------
+  Main Section for Edit Account
+---------------------------------------------------------------------------*/
+.edit-account-section {
+  padding: 6rem 5% 4rem;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 2rem;
+}
+
+.section-header h2 {
+  font-size: 2rem;
+  color: var(--primary-color);
+  margin-bottom: 0.5rem;
+}
+
+.section-header p {
+  color: var(--dark-gray);
+}
+
+/*---------------------------------------------------------------------------
+  Form Container and Elements
+---------------------------------------------------------------------------*/
+.account-form-container {
+  background: var(--white);
+  padding: 2.5rem;
+  border-radius: 15px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
+}
+
+.account-form {
+  width: 100%;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 1.5rem;
+}
+
+.form-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+  padding: 0.8rem;
+  border: 1px solid var(--light-gray);
+  border-radius: 6px;
+  transition: var(--transition);
+  font-size: 1rem;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 5px rgba(26,106,155,0.3);
+}
+
+/*---------------------------------------------------------------------------
+  Form Actions
+---------------------------------------------------------------------------*/
+.form-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 1rem;
+}
+
+.btn {
+  padding: 0.8rem 1.5rem;
+  font-size: 1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+/* Secondary and CTA Buttons */
+.secondary-btn {
+  background: var(--light-gray);
+  color: var(--dark-gray);
+}
+
+.secondary-btn:hover {
+  background: #dde1e3;
+}
+
+.cta-button {
+  background: var(--secondary-color);
+  color: var(--black);
+}
+
+.cta-button:hover {
+  background: var(--secondary-color);
+}
+
+/*---------------------------------------------------------------------------
+  Responsive Styles
+---------------------------------------------------------------------------*/
+@media (max-width: 768px) {
+  .edit-account-section {
+    padding: 5rem 3% 2rem;
+  }
+
+  .account-form-container {
+    padding: 1.5rem;
+  }
+
+  .form-actions {
+    flex-direction: column;
+  }
+
+  .btn {
+    width: 100%;
+    text-align: center;
+  }
+
+  /* Updated mobile navigation to match services.css */
+  .navbar {
+    padding: 1rem 2%;
+    flex-wrap: wrap;
+  }
+
+  .nav-links {
+    flex-direction: column;
+    width: 100%;
+    display: none;
+    margin-top: 1rem;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+  }
+
+  .nav-links a {
+    padding: 0.8rem 1rem;
+    border-top: 1px solid #ddd;
+  }
+
+  .nav-links.active {
+    display: flex;
+  }
+
+  .mobile-menu-btn {
+    display: block;
+  }
+}
+
+/*---------------------------------------------------------------------------
+  Main Edit Account Section - Enhanced Design
+---------------------------------------------------------------------------*/
+.edit-account-section {
+  padding: 6rem 5% 4rem;
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.section-header {
+  text-align: center;
+  margin-bottom: 3rem;
+  padding: 2rem;
+  background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
+  border-radius: 1rem;
+  color: rgb(0, 0, 0);
+  box-shadow: 0 4px 20px rgba(26,106,155,0.15);
+}
+
+.section-header h2 {
+  font-size: 2.25rem;
+  margin-bottom: 0.75rem;
+  font-weight: 600;
+}
+
+.section-header p {
+  font-size: 1.05rem;
+  opacity: 0.9;
+}
+
+/*---------------------------------------------------------------------------
+  Form Container - Modern Card Design
+---------------------------------------------------------------------------*/
+.account-form-container {
+  background: var(--white);
+  padding: 2.5rem;
+  border-radius: 1.25rem;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+  margin-top: 2rem;
+}
+
+.form-section {
+  margin-bottom: 2.5rem;
+  padding: 1.5rem;
+  background: #f8f9fa;
+  border-radius: 0.75rem;
+  border: 1px solid rgba(0,0,0,0.05);
+}
+
+.form-section h3 {
+  font-size: 1.4rem;
+  color: var(--primary-color);
+  margin-bottom: 1.5rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 2px solid var(--primary-color);
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.form-section h3 i {
+  font-size: 1.2em;
+}
+
+/*---------------------------------------------------------------------------
+  Enhanced Form Elements
+---------------------------------------------------------------------------*/
+.form-group {
+  margin-bottom: 1.5rem;
+  position: relative;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: var(--dark-gray);
+}
+
+.form-group label.required::after {
+  content: "*";
+  color: #e74c3c;
+  margin-left: 0.25rem;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.9rem 1.25rem;
+  border: 2px solid #e0e0e0;
+  border-radius: 0.75rem;
+  font-size: 1rem;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  background: var(--white);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 3px rgba(26,106,155,0.1);
+}
+
+.form-group input[readonly] {
+  background: #f8f9fa;
+  border-color: #e9ecef;
+}
+
+/*---------------------------------------------------------------------------
+  Password Section - Special Styling
+---------------------------------------------------------------------------*/
+.password-section {
+  background: #fff9f5;
+  border-color: #ffe8d9;
+}
+
+.password-section h3 {
+  color: #e67e22;
+  border-color: #e67e22;
+}
+
+/*---------------------------------------------------------------------------
+  Enhanced Buttons
+---------------------------------------------------------------------------*/
+.form-actions {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  margin-top: 2rem;
+}
+
+.btn {
+  padding: 0.9rem 1.75rem;
+  border-radius: 0.75rem;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  /* Changed button color */
+  background: #ff5733;
+  color: #ffffff;
+}
+
+.secondary-btn {
+  background: #f8f9fa;
+  color: var(--dark-gray);
+  border: 2px solid #e0e0e0;
+}
+
+.secondary-btn:hover {
+  background: #e9ecef;
+  transform: translateY(-1px);
+}
+
+.cta-button {
+  background: linear-gradient(135deg, var(--primary-blue), var(--secondary-blue));
+  color: rgb(0, 0, 0);
+  border: none;
+  position: relative;
+  overflow: hidden;
+}
+
+.cta-button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 5px 15px rgba(26,106,155,0.3);
+  color: rgb(255, 255, 255);
+}
+
+/*---------------------------------------------------------------------------
+  Responsive Design Enhancements
+---------------------------------------------------------------------------*/
+@media (max-width: 768px) {
+  .account-form-container {
+    padding: 1.75rem;
+  }
+  
+  .form-section {
+    padding: 1.25rem;
+  }
+  
+  .form-actions {
+    flex-direction: column;
+  }
+  
+  .btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .section-header {
+    padding: 1.5rem;
+  }
+  
+  .section-header h2 {
+    font-size: 1.75rem;
+  }
+}
+
+/*---------------------------------------------------------------------------
+  Icon Enhancements
+---------------------------------------------------------------------------*/
+.input-icon {
+  position: absolute;
+  right: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--primary-color);
+  opacity: 0.8;
+}
+
+/*---------------------------------------------------------------------------
+  Visual Enhancements for Read-Only Section
+---------------------------------------------------------------------------*/
+.readonly-section {
+  background: #f8fafc;
+  border: 2px dashed #e2e8f0;
+}
+
+.readonly-section h3 {
+  color: #64748b;
+  border-color: #cbd5e1;
+}
