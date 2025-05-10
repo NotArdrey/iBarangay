@@ -5,6 +5,9 @@ header("Cross-Origin-Opener-Policy: same-origin-allow-popups");
 //../pages/user_dashboard.php
 $events_result = [];
 
+// Flag to check if user has already requested First Time Job Seeker document
+$hasRequestedFirstTimeJobSeeker = false;
+
 if (isset($_SESSION['user_id'])) {
     $user_id = $_SESSION['user_id'];
     
@@ -31,6 +34,17 @@ if (isset($_SESSION['user_id'])) {
       $stmt = $pdo->prepare($events_sql);
       $stmt->execute([$barangay_id]);   // only bind barangay_id
       $events_result = $stmt->fetchAll();
+      
+      // Check if user has already requested First Time Job Seeker document
+      $firstTimeJobSeekerCheck = $pdo->prepare("
+          SELECT COUNT(*) as count 
+          FROM DocumentRequest dr
+          JOIN DocumentType dt ON dr.document_type_id = dt.document_type_id
+          WHERE dr.user_id = ? 
+          AND dt.document_name = 'First Time Job Seeker'
+      ");
+      $firstTimeJobSeekerCheck->execute([$user_id]);
+      $hasRequestedFirstTimeJobSeeker = $firstTimeJobSeekerCheck->fetch(PDO::FETCH_ASSOC)['count'] > 0;
     }
 }
 ?>
@@ -127,6 +141,7 @@ if (isset($_SESSION['user_id'])) {
       </div>
     </div>
 
+    <?php if (!$hasRequestedFirstTimeJobSeeker): ?>
     <div class="service-item"
          onclick="window.location.href='../pages/services.php?documentType=firstTimeJobSeeker';"
          style="cursor:pointer;">
@@ -139,6 +154,7 @@ if (isset($_SESSION['user_id'])) {
         </a>
       </div>
     </div>
+    <?php endif; ?>
 
     <div class="service-item"
          onclick="window.location.href='../pages/services.php?documentType=proofOfResidency';"
@@ -519,4 +535,4 @@ if (isset($_SESSION['user_id'])) {
     echo $_SESSION['alert'];
     unset($_SESSION['alert']);
   }
-?> 
+?>

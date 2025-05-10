@@ -9,7 +9,7 @@ require_once "../pages/header.php";
 require "../config/dbconn.php";
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
-    header("Location: ../pages/index.php");
+    header("Location: ../pages/login.php");
     exit;
 }
 

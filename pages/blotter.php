@@ -1,6 +1,4 @@
 <?php
-
-
 // blotter.php – Blotter Case Management (full rewrite)
 session_start();
 require "../config/dbconn.php";
@@ -8,7 +6,7 @@ require "../vendor/autoload.php";
 use Dompdf\Dompdf;  
 // Authentication & role check
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
-    header("Location: ../pages/index.php");
+    header("Location: ../pages/login.php");
     exit;
 }
 function transcribeFile(string $filePath): string
@@ -18,10 +16,30 @@ function transcribeFile(string $filePath): string
         throw new Exception("Missing OPENAI_API_KEY");
     }
 
+    // Check file size
+    $fileSize = filesize($filePath);
+    if ($fileSize > 25 * 1024 * 1024) { // 25MB limit
+        throw new Exception("File too large. Maximum size is 25MB.");
+    }
+
+    // Check file mime type
+    $finfo = new finfo(FILEINFO_MIME_TYPE);
+    $mimeType = $finfo->file($filePath);
+    $allowedTypes = [
+        'audio/mpeg', 'audio/mp4', 'audio/mp3', 'audio/wav', 'audio/x-wav', 
+        'audio/webm', 'audio/ogg', 'video/mp4', 'video/webm', 'video/ogg'
+    ];
+    
+    if (!in_array($mimeType, $allowedTypes)) {
+        throw new Exception("Unsupported file type: $mimeType. Please upload an audio or video file.");
+    }
+
     $cfile = new CURLFile($filePath);
     $post = [
         'file'  => $cfile,
         'model' => 'whisper-1',
+        'response_format' => 'json', // Ensure JSON response
+        'temperature' => 0.2, // Lower temperature for more accurate transcriptions
     ];
 
     $ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
@@ -29,23 +47,35 @@ function transcribeFile(string $filePath): string
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_POST           => true,
         CURLOPT_HTTPHEADER     => [
-            "Authorization: Bearer {$apiKey}"
+            "Authorization: Bearer {$apiKey}",
+            "Content-Type: multipart/form-data"
         ],
         CURLOPT_POSTFIELDS     => $post,
+        CURLOPT_TIMEOUT        => 300, // 5-minute timeout for large files
+        CURLOPT_CONNECTTIMEOUT => 30, // 30-second connection timeout
     ]);
 
     $resp = curl_exec($ch);
+    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+    
     if (curl_errno($ch)) {
-        throw new Exception('Curl error: ' . curl_error($ch));
+        throw new Exception('Connection error: ' . curl_error($ch));
     }
+    
     curl_close($ch);
 
-    $data = json_decode($resp, true);
-    if (isset($data['error'])) {
-        throw new Exception('Transcription error: ' . $data['error']['message']);
+    if ($httpCode !== 200) {
+        $error = json_decode($resp, true);
+        $message = isset($error['error']['message']) ? $error['error']['message'] : "API returned HTTP $httpCode";
+        throw new Exception("Transcription failed: $message");
     }
 
-    return trim($data['text'] ?? '');
+    $data = json_decode($resp, true);
+    if (empty($data['text'])) {
+        throw new Exception('No transcription text returned from API.');
+    }
+
+    return trim($data['text']);
 }
 
 $current_admin_id = $_SESSION['user_id'];
@@ -115,106 +145,145 @@ function validateBlotterData(array $data, &$errors) {
 // === POST: Add New Case ===
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
   $categories = $_POST['categories'] ?? [];
-if (empty($categories) || !is_array($categories)) {
-    $_SESSION['error_message'] = 'At least one category must be selected.';
-    header('Location: blotter.php');
-    exit;
+  if (empty($categories) || !is_array($categories)) {
+      $_SESSION['error_message'] = 'At least one category must be selected.';
+      header('Location: blotter.php');
+      exit;
+  }
+
+  $location = trim($_POST['location'] ?? '');
+  
+  // If the complaint field is already filled (via AJAX transcription), use that
+  $description = trim($_POST['complaint'] ?? '');
+  
+  // Only attempt transcription if no description and a file was uploaded
+  if (empty($description) && !empty($_FILES['transcript_file']['tmp_name'])) {
+      try {
+          // Show loading message
+          $_SESSION['info_message'] = 'Processing audio transcription...';
+          session_write_close(); // Allow the message to be displayed
+          
+          // move/immediately feed the temp file into Whisper
+          $tmpPath = $_FILES['transcript_file']['tmp_name'];
+          $description = transcribeFile($tmpPath);
+          
+          // Clear the info message
+          session_start();
+          unset($_SESSION['info_message']);
+      } catch (Exception $e) {
+          $_SESSION['error_message'] = 'Transcription failed: ' . $e->getMessage();
+          header('Location: blotter.php');
+          exit;
+      }
+  }
+  
+  $participants = $_POST['participants'] ?? [];
+
+  if ($location === '' || $description === '' || !is_array($participants) || count($participants) === 0) {
+      $_SESSION['error_message'] = 'All fields are required and at least one participant must be added.';
+      header('Location: blotter.php');
+      exit;
+  }
+
+  try {
+      $pdo->beginTransaction();
+
+      // Insert case
+      $pdo->prepare("
+          INSERT INTO BlotterCase
+          (date_reported, location, description, status, barangay_id)
+          VALUES (NOW(), ?, ?, 'Pending', ?)
+      ")->execute([$location, $description, $bid]);
+      $caseId = $pdo->lastInsertId();
+
+      // Categories
+      if (!empty($_POST['categories'])) {
+          $catStmt = $pdo->prepare("
+              INSERT INTO BlotterCaseCategory (blotter_case_id, category_id)
+              VALUES (?, ?)
+          ");
+          foreach ($_POST['categories'] as $catId) {
+              $catStmt->execute([$caseId, (int)$catId]);
+          }
+      }
+      if (!empty($_POST['interventions']) && is_array($_POST['interventions'])) {
+        $intStmt = $pdo->prepare("
+            INSERT INTO BlotterCaseIntervention
+              (blotter_case_id, intervention_id, date_intervened)
+            VALUES (?, ?, NOW())
+        ");
+        foreach ($_POST['interventions'] as $intId) {
+            $intStmt->execute([$caseId, (int)$intId]);
+        }
+      }
+      // Participants
+      $regStmt = $pdo->prepare("
+      INSERT INTO BlotterParticipant
+      (blotter_case_id, user_id, role, is_registered)
+      VALUES (?, ?, ?, 'Yes')
+  ");
+  $unregStmt = $pdo->prepare("
+      INSERT INTO BlotterParticipant
+      (blotter_case_id, first_name, last_name, contact_number, address, age, gender, role, is_registered)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'No')
+  ");
+  
+  foreach ($participants as $p) {
+      if (!empty($p['user_id'])) {
+          $regStmt->execute([$caseId, (int)$p['user_id'], $p['role']]);
+      } else {
+          $unregStmt->execute([
+              $caseId,
+              $p['first_name'],
+              $p['last_name'],
+              $p['contact_number'] ?? null,
+              $p['address'] ?? null,  // New field
+              $p['age'] ?? null,      // New field
+              $p['gender'] ?? null,   // New field
+              $p['role']
+          ]);
+      }
+  }
+
+      $pdo->commit();
+      logAuditTrail($pdo, $current_admin_id, 'INSERT', 'BlotterCase', $caseId, "New case filed ($location)");
+      $_SESSION['success_message'] = 'New blotter case recorded.';
+  } catch (Exception $e) {
+      $pdo->rollBack();
+      $_SESSION['error_message'] = 'Error adding case: ' . $e->getMessage();
+  }
+
+  header('Location: blotter.php');
+  exit;
 }
 
-
-    $location     = trim($_POST['location'] ?? '');
-      if (!empty($_FILES['transcript_file']['tmp_name'])) {
-        try {
-            // move/immediately feed the temp file into Whisper
-            $tmpPath    = $_FILES['transcript_file']['tmp_name'];
-            $description = transcribeFile($tmpPath);
-        } catch (Exception $e) {
-            $_SESSION['error_message'] = 'Transcription failed: ' . $e->getMessage();
-            header('Location: blotter.php');
-            exit;
-        }
-    } else {
-        // 2) otherwise fall back to their typed-in text
-        $description = trim($_POST['complaint'] ?? '');
-    }
-    $participants = $_POST['participants'] ?? [];
-
-    if ($location === '' || $description === '' || !is_array($participants) || count($participants) === 0) {
-        $_SESSION['error_message'] = 'All fields are required and at least one participant must be added.';
-        header('Location: blotter.php');
-        exit;
-    }
-
-    try {
-        $pdo->beginTransaction();
-
-        // Insert case
-        $pdo->prepare("
-            INSERT INTO BlotterCase
-            (date_reported, location, description, status, barangay_id)
-            VALUES (NOW(), ?, ?, 'Pending', ?)
-        ")->execute([$location, $description, $bid]);
-        $caseId = $pdo->lastInsertId();
-
-        // Categories
-        if (!empty($_POST['categories'])) {
-            $catStmt = $pdo->prepare("
-                INSERT INTO BlotterCaseCategory (blotter_case_id, category_id)
-                VALUES (?, ?)
-            ");
-            foreach ($_POST['categories'] as $catId) {
-                $catStmt->execute([$caseId, (int)$catId]);
-            }
-        }
-        if (!empty($_POST['interventions']) && is_array($_POST['interventions'])) {
-          $intStmt = $pdo->prepare("
-              INSERT INTO BlotterCaseIntervention
-                (blotter_case_id, intervention_id, date_intervened)
-              VALUES (?, ?, NOW())
-          ");
-          foreach ($_POST['interventions'] as $intId) {
-              $intStmt->execute([$caseId, (int)$intId]);
-          }
-        }
-        // Participants
-        $regStmt = $pdo->prepare("
-        INSERT INTO BlotterParticipant
-        (blotter_case_id, user_id, role, is_registered)
-        VALUES (?, ?, ?, 'Yes')
-    ");
-    $unregStmt = $pdo->prepare("
-        INSERT INTO BlotterParticipant
-        (blotter_case_id, first_name, last_name, contact_number, address, age, gender, role, is_registered)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'No')
-    ");
-    
-    foreach ($participants as $p) {
-        if (!empty($p['user_id'])) {
-            $regStmt->execute([$caseId, (int)$p['user_id'], $p['role']]);
-        } else {
-            $unregStmt->execute([
-                $caseId,
-                $p['first_name'],
-                $p['last_name'],
-                $p['contact_number'] ?? null,
-                $p['address'] ?? null,  // New field
-                $p['age'] ?? null,      // New field
-                $p['gender'] ?? null,   // New field
-                $p['role']
-            ]);
-        }
-    }
-
-        $pdo->commit();
-        logAuditTrail($pdo, $current_admin_id, 'INSERT', 'BlotterCase', $caseId, "New case filed ($location)");
-        $_SESSION['success_message'] = 'New blotter case recorded.';
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        $_SESSION['error_message'] = 'Error adding case: ' . $e->getMessage();
-    }
-
-    header('Location: blotter.php');
-    exit;
+// Handle AJAX transcription requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'transcribe_only') {
+  // Set content type to JSON
+  header('Content-Type: application/json');
+  
+  if (empty($_FILES['transcript_file']['tmp_name'])) {
+      echo json_encode(['success' => false, 'message' => 'No file uploaded']);
+      exit;
+  }
+  
+  try {
+      // Get the file and transcribe it
+      $tmpPath = $_FILES['transcript_file']['tmp_name'];
+      $transcriptionText = transcribeFile($tmpPath);
+      
+      // Return success with transcription text
+      echo json_encode([
+          'success' => true, 
+          'text' => $transcriptionText
+      ]);
+  } catch (Exception $e) {
+      echo json_encode([
+          'success' => false, 
+          'message' => $e->getMessage()
+      ]);
+  }
+  exit;
 }
 
 // === AJAX actions ===
@@ -572,6 +641,47 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Blotter Case Management</title>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
+  <style>
+    /* Transcription loader styles */
+    .transcript-loader {
+        display: none;
+        position: relative;
+        padding: 15px;
+        text-align: center;
+        background-color: #f9fafb;
+        border-radius: 8px;
+        margin-top: 10px;
+    }
+
+    .spinner {
+        display: inline-block;
+        width: 40px;
+        height: 40px;
+        border: 4px solid rgba(0, 0, 0, 0.1);
+        border-radius: 50%;
+        border-top-color: #3b82f6;
+        animation: spin 1s ease-in-out infinite;
+    }
+
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+
+    .transcript-status {
+        margin-top: 10px;
+        font-size: 14px;
+    }
+
+    .transcript-result {
+        display: none;
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #ecfdf5;
+        border-radius: 8px;
+        color: #065f46;
+    }
+  </style>
 </head>
 <body>
 <section id="blotter" class="p-6">
@@ -719,16 +829,37 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
                       class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500"></textarea>
           </div>
 
-          <div class="mt-4">
+          <!-- Improved Audio/Video Upload Section -->
+          <div class="md:col-span-2">
             <label class="block text-sm font-medium text-gray-700">
-              Upload Audio/Video (optional)
+              Upload Audio/Video for Transcription (optional)
             </label>
-            <input 
-              type="file" 
-              name="transcript_file" 
-              accept="audio/*,video/*"
-              class="mt-1 block w-full text-sm text-gray-900"
-            />
+            <div class="flex items-center mt-1">
+              <input 
+                type="file" 
+                id="transcript_file" 
+                name="transcript_file" 
+                accept="audio/*,video/*"
+                class="block w-full text-sm text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+              />
+              <button 
+                type="button" 
+                id="transcribe_btn"
+                class="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
+              >
+                Transcribe
+              </button>
+            </div>
+            
+            <div id="transcript_loader" class="transcript-loader">
+              <div class="spinner"></div>
+              <div class="transcript-status">Transcribing your audio/video... This may take a few moments.</div>
+            </div>
+            
+            <div id="transcript_result" class="transcript-result">
+              <div class="font-medium">Transcription Complete!</div>
+              <div id="transcript_text" class="mt-1 text-sm"></div>
+            </div>
           </div>
                 <!-- Interventions -->
       <div class="md:col-span-2">
@@ -810,7 +941,7 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
       >
         + Add New Case
       </button>
-      <a
+      
         href="?action=generate_report&year=<?=date('Y')?>&month=<?=date('n')?>"
         class="w-full sm:w-auto inline-block text-center text-white bg-indigo-600 hover:bg-indigo-700 
                focus:ring-4 focus:ring-indigo-300 font-medium rounded-lg text-sm px-5 py-2.5"
@@ -926,13 +1057,16 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
   <?php elseif (isset($_SESSION['error_message'])): ?>
     <div class="p-4 mb-4 text-red-800 bg-red-100 rounded"><?= htmlspecialchars($_SESSION['error_message']) ?></div>
     <?php unset($_SESSION['error_message']); ?>
+  <?php elseif (isset($_SESSION['info_message'])): ?>
+    <div class="p-4 mb-4 text-blue-800 bg-blue-100 rounded flex items-center">
+      <div class="spinner mr-3" style="display: inline-block; width: 20px; height: 20px; border: 3px solid rgba(0, 0, 0, 0.1); border-radius: 50%; border-top-color: #3b82f6; animation: spin 1s ease-in-out infinite;"></div>
+      <?= htmlspecialchars($_SESSION['info_message']) ?>
+    </div>
+    <?php unset($_SESSION['info_message']); ?>
   <?php endif; ?>
 
   <script>
   document.addEventListener('DOMContentLoaded', () => {
-
-
-
     
     const registeredTemplate = `
       <div class="participant flex gap-2 bg-blue-50 p-2 rounded mb-2">
@@ -1298,6 +1432,80 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
         Swal.fire('Error', d.message || 'Failed', 'error');
       }
     });
+    
+    // Audio/Video Transcription via AJAX
+    $("#transcribe_btn").click(function() {
+      const fileInput = document.getElementById('transcript_file');
+      
+      if (!fileInput.files || fileInput.files.length === 0) {
+        Swal.fire('Error', 'Please select an audio or video file to transcribe.', 'error');
+        return;
+      }
+      
+      const file = fileInput.files[0];
+      const allowedTypes = ['audio/mpeg', 'audio/mp4', 'audio/mp3', 'audio/wav', 'audio/x-wav', 
+                         'audio/webm', 'audio/ogg', 'video/mp4', 'video/webm', 'video/ogg'];
+      
+      if (!allowedTypes.includes(file.type)) {
+        Swal.fire('Error', 'Please upload a supported audio or video file format.', 'error');
+        return;
+      }
+      
+      if (file.size > 25 * 1024 * 1024) { // 25MB limit
+        Swal.fire('Error', 'File too large. Maximum size is 25MB.', 'error');
+        return;
+      }
+      
+      // Show loading animation
+      $("#transcript_loader").show();
+      $("#transcript_result").hide();
+      
+      const formData = new FormData();
+      formData.append('transcript_file', file);
+      formData.append('action', 'transcribe_only');
+      
+      $.ajax({
+        url: 'blotter.php',
+        type: 'POST',
+        data: formData,
+        processData: false,
+        contentType: false,
+        success: function(response) {
+          try {
+            const data = JSON.parse(response);
+            if (data.success) {
+              // Show result and populate textarea
+              $("#transcript_result").show();
+              $("#transcript_text").text(data.text);
+              $("textarea[name='complaint']").val(data.text);
+              
+              // Highlight the populated textarea
+              $("textarea[name='complaint']").addClass('bg-green-50').animate({
+                backgroundColor: '#ffffff'
+              }, 2000);
+              
+              Swal.fire({
+                icon: 'success',
+                title: 'Transcription Complete',
+                text: 'The audio has been transcribed and added to the description field.'
+              });
+            } else {
+              Swal.fire('Error', data.message || 'Transcription failed.', 'error');
+            }
+          } catch (e) {
+            Swal.fire('Error', 'Invalid response from server.', 'error');
+          }
+        },
+        error: function() {
+          Swal.fire('Error', 'Failed to connect to the server.', 'error');
+        },
+        complete: function() {
+          // Hide loading animation
+          $("#transcript_loader").hide();
+        }
+      });
+    });
+
   });
 
 

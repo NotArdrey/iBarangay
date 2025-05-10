@@ -13,7 +13,7 @@ session_regenerate_id(true);
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Barangay Hub Login</title>
-  <link rel="stylesheet" href="../styles/index.css">
+  <link rel="stylesheet" href="../styles/login.css">
   <!-- Include SweetAlert2 CSS and JS from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
@@ -26,7 +26,7 @@ session_regenerate_id(true);
     </div>
 
     <!-- Login Form -->
-    <form action="../functions/index.php" method="POST" id="login-form">
+    <form action="../functions/login.php" method="POST" id="login-form">
       <div class="input-group">
         <label for="email">Email</label>
         <input type="text" id="email" name="email" required>
@@ -93,7 +93,7 @@ session_regenerate_id(true);
     // Google Sign-In handler
     function handleCredentialResponse(response) {
       console.log("Encoded JWT ID token: " + response.credential);
-      fetch('../functions/index.php', {
+      fetch('../functions/login.php', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ token: response.credential })

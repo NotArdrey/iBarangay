@@ -27,7 +27,7 @@ function getDashboardUrl($role_id)
 
 // Only allow logged-in users; if not, redirect to login page.
 if (!isset($_SESSION['user_id'], $_SESSION['role_id'])) {
-  header("Location: ../pages/index.php");
+  header("Location: ../pages/login.php");
   exit;
 }
 

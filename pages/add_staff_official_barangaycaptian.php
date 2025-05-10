@@ -70,7 +70,7 @@ function maxCouncilorsReached(PDO $pdo, int $barangayId, string $start, string $
 /* ────────────── Auth guard ─────────────────────── */
 $user_id = $_SESSION['user_id'] ?? null;
 if (!$user_id) {
-    header('Location: ../pages/index.php');
+    header('Location: ../pages/login.php');
     exit;
 }
 $stmt = $pdo->prepare('SELECT role_id, barangay_id FROM Users WHERE user_id = ?');
@@ -81,7 +81,7 @@ if (!$userInfo || (int)$userInfo['role_id'] !== ROLE_CAPTAIN) { // Only Barangay
         http_response_code(403);
         echo json_encode(['success' => false, 'message' => 'Forbidden']);
     } else {
-        header('Location: ../pages/index.php');
+        header('Location: ../pages/login.php');
     }
     exit;
 }

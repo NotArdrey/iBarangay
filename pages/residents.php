@@ -2,6 +2,8 @@
 session_start();
 require __DIR__ . "/../vendor/autoload.php";
 require __DIR__ . "/../config/dbconn.php";
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;
 
 // Cast session values to integers for strict comparison
 $current_admin_id = isset($_SESSION['user_id'])       ? (int) $_SESSION['user_id']       : null;
@@ -12,7 +14,7 @@ define('ROLE_RESIDENT', 8);
 $filter = $_GET['filter'] ?? 'active';
 // Access control: only Super Admin (2) and Barangay-specific Admins (3–7) can view
 if ($current_admin_id === null || !in_array($role, [2,3,4,5,6,7], true)) {
-    header("Location: ../pages/index.php");
+    header("Location: ../pages/login.php");
     exit;
 }
 

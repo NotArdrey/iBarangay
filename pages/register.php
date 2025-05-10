@@ -52,7 +52,7 @@
       <button type="submit" class="register-btn"><span>Register</span></button>
     </form>
     <div class="footer-links">
-        <a href="../pages/index.php" class="help-link">Back to Login</a>
+        <a href="../pages/login.php" class="help-link">Back to Login</a>
     </div>
     <div class="footer">
       <div class="footer-info">

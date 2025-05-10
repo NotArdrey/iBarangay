@@ -9,7 +9,7 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 if (empty($_SESSION['user_id'])) {
-    header('Location: ../pages/index.php');
+    header('Location: ../pages/login.php');
     exit;
 }
 
@@ -27,7 +27,7 @@ $user = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$user) {
     // Invalid session: user no longer exists
     session_destroy();
-    header('Location: ../pages/index.php');
+    header('Location: ../pages/login.php');
     exit;
 }
 
