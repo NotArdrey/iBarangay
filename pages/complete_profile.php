@@ -114,11 +114,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   $allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
   $maxSize     = 2 * 1024 * 1024; // 2MB
 
-  // Initialize with whatever’s already in the DB
+  // Initialize with whatever's already in the DB
   $idImageBlob     = $user['id_image_path']    ?? null;
   $selfieImageBlob = $user['selfie_image_path'] ?? null;
 
-  // Gov’t ID → id_image_path
+  // Gov't ID → id_image_path
   if (
     !empty($_FILES['govt_id']) &&
     $_FILES['govt_id']['error'] !== UPLOAD_ERR_NO_FILE
@@ -363,6 +363,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
           </div>
           <small>Accepted formats: JPG, PNG, GIF. Max size: 2MB</small>
+          
+          <!-- OCR Data Display -->
+          <div id="ocr-data-container" class="ocr-data" style="display: none;">
+            <h4>Data Extracted From ID</h4>
+            <div id="ocr-status" class="ocr-status">
+              <div class="ocr-loading" style="display: none;">
+                <i class="fas fa-spinner fa-spin"></i> Processing ID. This may take a moment...
+              </div>
+              <div id="ocr-error" class="ocr-error" style="display: none;"></div>
+            </div>
+            <div id="ocr-results" class="ocr-fields" style="display: none;"></div>
+          </div>
         </div>
 
         <!-- Take personal photo -->
@@ -561,6 +573,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           if (fileInfo) {
             fileInfo.innerHTML = `<span>${file.name} (${(file.size/1024/1024).toFixed(2)} MB)</span>`;
           }
+          
+          // If this is the govt ID, process it with OCR
+          if (input.id === 'govt_id') {
+            processIdWithOCR(file);
+          }
         };
         reader.readAsDataURL(file);
       } else {
@@ -569,11 +586,355 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (dropZone) dropZone.classList.remove('has-file');
       }
     }
+    
+    // Function to process ID with OCR
+    function processIdWithOCR(file) {
+      const ocrContainer = document.getElementById('ocr-data-container');
+      const ocrLoading = document.querySelector('.ocr-loading');
+      const ocrResults = document.getElementById('ocr-results');
+      const ocrError = document.getElementById('ocr-error');
+      
+      // Show OCR container and loading indicator
+      ocrContainer.style.display = 'block';
+      ocrLoading.style.display = 'block';
+      ocrResults.style.display = 'none';
+      ocrError.style.display = 'none';
+      
+      // Create form data for upload
+      const formData = new FormData();
+      formData.append('govt_id', file);
+      
+      // Send to server for processing
+      fetch('../scripts/process_id.php', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        ocrLoading.style.display = 'none';
+        
+        if (data.error) {
+          ocrError.textContent = data.error;
+          ocrError.style.display = 'block';
+          return;
+        }
+        
+        // Clear any previous results
+        ocrResults.innerHTML = '';
+        
+        // Create elements to display the extracted data
+        const createField = (label, value, fieldId) => {
+          if (!value) return null;
+          
+          const row = document.createElement('div');
+          row.className = 'ocr-field';
+          
+          const labelElem = document.createElement('div');
+          labelElem.className = 'ocr-label';
+          labelElem.textContent = label + ':';
+          
+          const valueElem = document.createElement('div');
+          valueElem.className = 'ocr-value';
+          valueElem.textContent = value;
+          
+          const applyBtn = document.createElement('button');
+          applyBtn.type = 'button';
+          applyBtn.className = 'ocr-apply-btn';
+          applyBtn.textContent = 'Use';
+          applyBtn.dataset.value = value;
+          applyBtn.dataset.field = fieldId;
+          
+          row.appendChild(labelElem);
+          row.appendChild(valueElem);
+          row.appendChild(applyBtn);
+          
+          return row;
+        };
+        
+        // Full name (displayed but not used directly)
+        if (data.data.full_name) {
+          const fullNameField = createField('Full Name', data.data.full_name);
+          if (fullNameField) ocrResults.appendChild(fullNameField);
+        }
+        
+        // Individual name components with form field mapping
+        if (data.data.first_name) {
+          const firstNameField = createField('First Name', data.data.first_name, 'first_name');
+          if (firstNameField) ocrResults.appendChild(firstNameField);
+        }
+        
+        if (data.data.middle_name) {
+          const middleNameField = createField('Middle Name', data.data.middle_name, 'middle_name');
+          if (middleNameField) ocrResults.appendChild(middleNameField);
+        }
+        
+        if (data.data.last_name) {
+          const lastNameField = createField('Last Name', data.data.last_name, 'last_name');
+          if (lastNameField) ocrResults.appendChild(lastNameField);
+        }
+        
+        // Address with parsing
+        if (data.data.address) {
+          const addressField = document.createElement('div');
+          addressField.className = 'ocr-field';
+          
+          const labelElem = document.createElement('div');
+          labelElem.className = 'ocr-label';
+          labelElem.textContent = 'Address:';
+          
+          const valueElem = document.createElement('div');
+          valueElem.className = 'ocr-value';
+          valueElem.textContent = data.data.address;
+          
+          const parseAddressBtn = document.createElement('button');
+          parseAddressBtn.type = 'button';
+          parseAddressBtn.className = 'ocr-parse-address-btn';
+          parseAddressBtn.textContent = 'Parse Address';
+          parseAddressBtn.dataset.address = data.data.address;
+          
+          addressField.appendChild(labelElem);
+          addressField.appendChild(valueElem);
+          addressField.appendChild(parseAddressBtn);
+          
+          ocrResults.appendChild(addressField);
+        }
+        
+        // Birth date if available
+        if (data.data.birth_date) {
+          const birthDateField = createField('Birth Date', data.data.birth_date, 'birth_date');
+          if (birthDateField) ocrResults.appendChild(birthDateField);
+        }
+        
+        // Show the results container
+        ocrResults.style.display = 'block';
+        
+        // Add event listeners for buttons
+        document.querySelectorAll('.ocr-apply-btn').forEach(button => {
+          button.addEventListener('click', function() {
+            const fieldId = this.dataset.field;
+            const value = this.dataset.value;
+            
+            if (fieldId && value) {
+              document.getElementById(fieldId).value = value;
+              showSuccessToast(`${fieldId.replace('_', ' ')} updated`);
+            }
+          });
+        });
+        
+        // Add event listener for address parsing
+        document.querySelectorAll('.ocr-parse-address-btn').forEach(button => {
+          button.addEventListener('click', function() {
+            const address = this.dataset.address;
+            parseAddressToFields(address);
+          });
+        });
+      })
+      .catch(error => {
+        ocrLoading.style.display = 'none';
+        ocrError.textContent = 'An error occurred while processing the ID. Please try again.';
+        ocrError.style.display = 'block';
+        console.error('OCR processing error:', error);
+      });
+    }
+    
+    // Helper function to parse address into component fields
+    function parseAddressToFields(addressText) {
+      if (!addressText) return;
+      
+      try {
+        // Split address by common delimiters
+        const parts = addressText.split(/[,\n]/);
+        
+        // Clean up parts (remove empty strings, trim whitespace)
+        const cleanParts = parts.filter(part => part.trim()).map(part => part.trim());
+        
+        if (cleanParts.length < 2) {
+          showErrorToast('Address format could not be recognized');
+          return;
+        }
+        
+        // Attempt to extract components using heuristics
+        // This is a simple implementation and may need to be adjusted based on typical address formats
+        
+        let streetPart = '';
+        let barangayPart = '';
+        let blockLotPart = '';
+        let subdivisionPart = '';
+        let phasePart = '';
+        
+        // Look for specific patterns
+        cleanParts.forEach(part => {
+          const lowerPart = part.toLowerCase();
+          
+          // Check for block/lot pattern
+          if (lowerPart.includes('block') || lowerPart.includes('lot') || 
+              lowerPart.includes('blk') || lowerPart.match(/^(b|l)[0-9]/i)) {
+            blockLotPart = part;
+          }
+          // Check for phase pattern
+          else if (lowerPart.includes('phase') || lowerPart.includes('ph') || 
+                  lowerPart.match(/^ph[.\s]*[0-9]/i)) {
+            phasePart = part;
+          }
+          // Check for subdivision/village pattern
+          else if (lowerPart.includes('subd') || lowerPart.includes('subdivision') || 
+                  lowerPart.includes('village') || lowerPart.includes('homes') || 
+                  lowerPart.includes('heights')) {
+            subdivisionPart = part;
+          }
+          // Check for street pattern
+          else if (lowerPart.includes('st') || lowerPart.includes('street') || 
+                  lowerPart.includes('road') || lowerPart.includes('ave') || 
+                  lowerPart.includes('avenue') || lowerPart.includes('highway')) {
+            streetPart = part;
+          }
+          // Check for barangay pattern
+          else if (lowerPart.includes('brgy') || lowerPart.includes('barangay')) {
+            barangayPart = part;
+          }
+        });
+        
+        // If we couldn't identify specific parts, make best guesses based on position
+        if (!streetPart && cleanParts.length >= 1) {
+          streetPart = cleanParts[0];
+        }
+        
+        if (!subdivisionPart && cleanParts.length >= 2) {
+          subdivisionPart = cleanParts[1];
+        }
+        
+        // Populate form fields with extracted data
+        if (blockLotPart) document.getElementById('block_lot').value = blockLotPart;
+        
+        // For phase, extract just the number if possible
+        if (phasePart) {
+          const phaseMatch = phasePart.match(/\d+/);
+          if (phaseMatch) {
+            document.getElementById('phase').value = phaseMatch[0];
+          } else {
+            document.getElementById('phase').value = phasePart;
+          }
+        } else {
+          // Default to Phase 1 if not found
+          document.getElementById('phase').value = '1';
+        }
+        
+        if (streetPart) document.getElementById('street').value = streetPart;
+        if (subdivisionPart) document.getElementById('subdivision').value = subdivisionPart;
+        
+        showSuccessToast('Address fields have been populated');
+        
+      } catch (error) {
+        console.error('Error parsing address:', error);
+        showErrorToast('Could not parse address');
+      }
+    }
+    
+    // Helper functions for notifications
+    function showSuccessToast(message) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: message,
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000
+      });
+    }
+    
+    function showErrorToast(message) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: message,
+        toast: true,
+        position: 'top-end',
+        showConfirmButton: false,
+        timer: 3000
+      });
+    }
 
-    // Initialize both drop zones
+    // Initialize drop zones
     setupDropZone('govt_id_zone', 'govt_id', 'govt_id_preview');
   </script>
 
+  <style>
+    /* OCR results styling */
+    .ocr-data {
+      margin-top: 15px;
+      padding: 15px;
+      border-radius: 6px;
+      border-left: 4px solid #4e73df;
+      background-color: #f8f9fa;
+    }
+    
+    .ocr-data h4 {
+      margin-top: 0;
+      color: #4e73df;
+      font-size: 16px;
+      margin-bottom: 10px;
+    }
+    
+    .ocr-loading {
+      color: #666;
+      font-style: italic;
+      margin: 10px 0;
+    }
+    
+    .ocr-error {
+      color: #e74c3c;
+      background-color: #f9eae8;
+      padding: 10px;
+      border-radius: 4px;
+      margin-top: 10px;
+    }
+    
+    .ocr-field {
+      display: flex;
+      align-items: center;
+      margin-bottom: 10px;
+      padding: 8px 12px;
+      background-color: white;
+      border-radius: 4px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    }
+    
+    .ocr-label {
+      font-weight: bold;
+      min-width: 120px;
+      color: #333;
+    }
+    
+    .ocr-value {
+      flex-grow: 1;
+      color: #555;
+      padding: 0 10px;
+      word-break: break-word;
+    }
+    
+    .ocr-apply-btn, .ocr-parse-address-btn {
+      background-color: #4e73df;
+      color: white;
+      border: none;
+      border-radius: 4px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 12px;
+    }
+    
+    .ocr-apply-btn:hover, .ocr-parse-address-btn:hover {
+      background-color: #375abd;
+    }
+    
+    .ocr-parse-address-btn {
+      background-color: #27ae60;
+    }
+    
+    .ocr-parse-address-btn:hover {
+      background-color: #219653;
+    }
+  </style>
 
 </body>
 
