@@ -13,7 +13,7 @@ require __DIR__ . '/../config/dbconn.php';
 $user_id = $_SESSION['user_id']     ?? null;
 $bid     = $_SESSION['barangay_id'] ?? null;
 if (!$user_id || !$bid) {
-    header('Location: ../pages/index.php');
+    header('Location: ../pages/login.php');
     exit;
 }
 

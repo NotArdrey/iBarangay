@@ -6,7 +6,7 @@ session_start();
 
 // Redirect unauthorized access
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] != 1) {
-    header("Location: ../pages/index.php");
+    header("Location: ../pages/login.php");
     exit();
 }
 

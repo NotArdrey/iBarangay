@@ -4,7 +4,7 @@ require "../config/dbconn.php"; // This file creates a PDO instance as $pdo
 
 // Only allow logged-in users; if not, redirect to login page
 if (!isset($_SESSION['user_id'])) {
-    header("Location: ../pages/index.php");
+    header("Location: ../pages/login.php");
     exit;
 }
 
