@@ -138,7 +138,7 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
 
             // Create the verification link
-            $verificationLink = "https://localhost/barangayhub/functions/register.php?token=" . $verificationToken;
+            $verificationLink = "https://localhost/iBarangay/functions/register.php?token=" . $verificationToken;
 
             // Send verification email using PHPMailer
             $mail = new PHPMailer(true);
