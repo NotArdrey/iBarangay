@@ -74,7 +74,7 @@ if (isset($_GET['token'])) {
                 title: '" . ($icon === 'success' ? 'Verified' : 'Error') . "',
                 text: '$message'
             }).then(() => {
-                window.location.href = '../pages/index.php';
+                window.location.href = '../pages/login.php';
             });
         </script>
     </body>
@@ -138,7 +138,7 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
             }
 
             // Create the verification link
-            $verificationLink = "https://localhost/barangayhub/functions/register.php?token=" . $verificationToken;
+            $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;
 
             // Send verification email using PHPMailer
             $mail = new PHPMailer(true);
@@ -151,7 +151,7 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
 
-                $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
+                $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
                 $mail->addAddress($email);
 
                 $mail->isHTML(true);
@@ -161,7 +161,7 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
 
                 $message = "Registration successful! Please check your email to verify your account.";
                 $icon = "success";
-                $redirectUrl = "../pages/index.php";
+                $redirectUrl = "../pages/login.php";
             } catch (Exception $e) {
                 $errors[] = "Message could not be sent. Mailer Error: " . $mail->ErrorInfo;
             }

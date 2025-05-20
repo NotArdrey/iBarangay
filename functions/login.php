@@ -43,14 +43,11 @@ function getDashboardUrl(int $role_id): string
 }
 
 /**
- * Force profile completion for residents with no first name
+ * Get dashboard URL directly based on role
  */
 function postLoginRedirect(int $role_id, ?string $first_name): string
 {
-    // trim and check for null/empty
-    if ($role_id === 8 && (!isset($first_name) || trim($first_name) === '')) {
-        return '../pages/complete_profile.php';
-    }
+    // No profile completion check - directly get dashboard URL
     return getDashboardUrl($role_id);
 }
 
@@ -121,7 +118,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         exit;
     } catch (Exception $e) {
         $_SESSION['login_error'] = $e->getMessage();
-        header("Location: ../pages/index.php");
+        header("Location: ../pages/login.php");
         exit;
     }
 }
@@ -172,7 +169,7 @@ if (stripos($contentType, "application/json") !== false) {
             $_SESSION['user_id']    = $newId;
             $_SESSION['email']      = $tokenInfo['email'];
             $_SESSION['role_id']    = 8;
-            $_SESSION['first_name'] = ''; // force completion
+            $_SESSION['first_name'] = ''; // Empty first_name - no longer forcing completion
 
             logAuditTrail(
                 $pdo,
