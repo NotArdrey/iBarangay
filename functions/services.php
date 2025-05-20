@@ -1,11 +1,416 @@
 <?php
-// functions/services.php  – full rewrite with PayMongo integration
+// functions/services.php – full rewrite with PayMongo integration and SMS capability
 session_start();
 require __DIR__ . '/../config/dbconn.php';
 require __DIR__ . '/../vendor/autoload.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+
+// SMS Sender Helper Class
+class SMSSender {
+    private $apiKey;
+    private $senderID;
+    private $baseUrl;
+    private $provider;
+    
+    /**
+     * Initialize the SMS sender with provider configuration
+     * 
+     * @param array|string $config Configuration array or JSON string
+     */
+    public function __construct($config) {
+        if (is_string($config)) {
+            $config = json_decode($config, true);
+        }
+        
+        $this->provider = $config['provider'] ?? 'semaphore';
+        
+        switch ($this->provider) {
+            case 'semaphore':
+                $this->apiKey = $config['api_key'] ?? '';
+                $this->senderID = $config['sender_id'] ?? '';
+                $this->baseUrl = 'https://api.semaphore.co/api/v4/messages';
+                break;
+            case 'twilio':
+                $this->apiKey = $config['api_key'] ?? '';
+                $this->senderID = $config['sender_id'] ?? '';
+                $this->baseUrl = 'https://api.twilio.com/2010-04-01/Accounts/' . $config['account_sid'] . '/Messages.json';
+                break;
+            default:
+                throw new Exception('Unsupported SMS provider: ' . $this->provider);
+        }
+    }
+    
+    /**
+     * Send SMS message
+     * 
+     * @param string $to Recipient phone number
+     * @param string $message SMS content
+     * @return array Result with success status and details
+     */
+    public function send($to, $message) {
+        if (empty($this->apiKey)) {
+            return [
+                'success' => false,
+                'message' => 'SMS configuration is incomplete'
+            ];
+        }
+        
+        // Format phone number (ensure it has country code)
+        $to = $this->formatPhoneNumber($to);
+        
+        switch ($this->provider) {
+            case 'semaphore':
+                return $this->sendSemaphore($to, $message);
+            case 'twilio':
+                return $this->sendTwilio($to, $message);
+            default:
+                return [
+                    'success' => false,
+                    'message' => 'Unsupported SMS provider'
+                ];
+        }
+    }
+    
+    /**
+     * Format phone number to ensure it has country code (+63 for Philippines)
+     */
+    private function formatPhoneNumber($phoneNumber) {
+        // Remove any non-numeric characters
+        $phoneNumber = preg_replace('/[^0-9]/', '', $phoneNumber);
+        
+        // If number starts with 0, replace with country code
+        if (substr($phoneNumber, 0, 1) === '0') {
+            $phoneNumber = '63' . substr($phoneNumber, 1);
+        }
+        
+        // If no country code, add Philippines by default (+63)
+        if (strlen($phoneNumber) === 10) {
+            $phoneNumber = '63' . $phoneNumber;
+        }
+        
+        return $phoneNumber;
+    }
+    
+    /**
+     * Send SMS via Semaphore API
+     */
+    private function sendSemaphore($to, $message) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $this->baseUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        
+        $data = [
+            'apikey' => $this->apiKey,
+            'number' => $to,
+            'message' => $message
+        ];
+        
+        if (!empty($this->senderID)) {
+            $data['sendername'] = $this->senderID;
+        }
+        
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        
+        if ($error) {
+            return [
+                'success' => false,
+                'message' => 'cURL Error: ' . $error
+            ];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return [
+                'success' => true,
+                'message_id' => $result['message_id'] ?? '',
+                'provider' => 'semaphore'
+            ];
+        } else {
+            return [
+                'success' => false,
+                'message' => 'Semaphore API Error: ' . ($result['message'] ?? 'Unknown error'),
+                'http_code' => $httpCode
+            ];
+        }
+    }
+    
+    /**
+     * Send SMS via Twilio API
+     */
+    private function sendTwilio($to, $message) {
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $this->baseUrl);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+        curl_setopt($ch, CURLOPT_POST, 1);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 30);
+        curl_setopt($ch, CURLOPT_USERPWD, $this->apiKey); // Auth with API key as username
+        
+        $data = [
+            'To' => '+' . $to,
+            'Body' => $message,
+            'From' => $this->senderID
+        ];
+        
+        curl_setopt($ch, CURLOPT_POSTFIELDS, http_build_query($data));
+        
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $error = curl_error($ch);
+        curl_close($ch);
+        
+        if ($error) {
+            return [
+                'success' => false,
+                'message' => 'cURL Error: ' . $error
+            ];
+        }
+        
+        $result = json_decode($response, true);
+        
+        if ($httpCode >= 200 && $httpCode < 300) {
+            return [
+                'success' => true,
+                'message_id' => $result['sid'] ?? '',
+                'provider' => 'twilio'
+            ];
+        } else {
+            return [
+                'success' => false,
+                'message' => 'Twilio API Error: ' . ($result['message'] ?? 'Unknown error'),
+                'http_code' => $httpCode
+            ];
+        }
+    }
+}
+
+/**
+ * Send notification to user via SMS - This function will never fail silently
+ * Logs directly to the AuditTrail table without using environment variables
+ */
+function sendSMS($phoneNumber, $message, $barangayId, $pdo) {
+    try {
+        // Skip empty phone numbers
+        if (empty($phoneNumber)) {
+            error_log('SMS not sent: Empty phone number provided');
+            return [
+                'success' => false,
+                'message' => 'Phone number is required'
+            ];
+        }
+        
+        // Get SMS configuration for barangay from BarangayPaymentMethod table
+        $stmt = $pdo->prepare("
+            SELECT account_details 
+            FROM BarangayPaymentMethod 
+            WHERE barangay_id = ? AND method = 'SMS' AND is_active = 'yes'
+        ");
+        $stmt->execute([$barangayId]);
+        $smsConfig = $stmt->fetchColumn();
+        
+        // If no configuration, use mock provider
+        if (!$smsConfig) {
+            // Use mock provider for testing
+            $smsConfig = json_encode([
+                'provider' => 'mock',
+                'sender_id' => 'BRGY_' . $barangayId
+            ]);
+            
+            // Log warning about missing configuration
+            error_log('No SMS configuration found for barangay ' . $barangayId . '. Using mock provider.');
+        }
+        
+        // Always send SMS using available configuration
+        $sender = new SMSSender($smsConfig);
+        $result = $sender->send($phoneNumber, $message);
+        
+        // Add to audit trail
+        $userId = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+        
+        $stmt = $pdo->prepare("
+            INSERT INTO AuditTrail (
+                admin_user_id, action, table_name, record_id, description
+            ) VALUES (?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $userId,
+            'SMS',
+            'Users', // Using Users table as reference point
+            $userId,
+            ($result['success'] ? 'SMS sent to ' : 'Failed sending SMS to ') . 
+            $phoneNumber . ' via ' . ($result['provider'] ?? 'unknown provider') .
+            ': ' . substr($message, 0, 50) . (strlen($message) > 50 ? '...' : '') .
+            ' - Barangay: ' . $barangayId
+        ]);
+        
+        return $result;
+        
+    } catch (Exception $e) {
+        // Log the error
+        error_log('SMS Error: ' . $e->getMessage());
+        
+        // Try to log the error in the audit trail
+        try {
+            // Add to audit trail
+            $userId = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+            
+            $stmt = $pdo->prepare("
+                INSERT INTO AuditTrail (
+                    admin_user_id, action, table_name, record_id, description
+                ) VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $userId,
+                'ERROR',
+                'Users',
+                $userId,
+                'SMS Error: Failed to send to ' . $phoneNumber . ' - ' . $e->getMessage() . ' - Barangay: ' . $barangayId
+            ]);
+        } catch (Exception $logEx) {
+            // If we can't even log the error, just write to error log
+            error_log('Failed to log SMS error in audit trail: ' . $logEx->getMessage());
+        }
+        
+        return [
+            'success' => false,
+            'message' => 'SMS Error: ' . $e->getMessage()
+        ];
+    }
+}
+
+/**
+ * Send email notification using PHPMailer
+ * Logs directly to the AuditTrail table without using environment variables
+ */
+function sendEmail($to, $subject, $body, $barangayId, $pdo) {
+    try {
+        // Skip empty email addresses
+        if (empty($to)) {
+            error_log('Email not sent: Empty recipient email address');
+            return [
+                'success' => false,
+                'message' => 'Recipient email is required'
+            ];
+        }
+        
+        // Initialize PHPMailer
+        $mail = new PHPMailer(true);
+        
+        // Configure server settings - hardcoded for simplicity
+        $mail->isSMTP();
+        $mail->Host       = 'smtp.gmail.com';
+        $mail->SMTPAuth   = true;
+        $mail->Username   = 'barangayhub2@gmail.com';
+        $mail->Password   = 'eisy hpjz rdnt bwrp';
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port       = 587;
+        
+        // Additional SMTP settings for reliability
+        $mail->Timeout = 60; // seconds
+        $mail->SMTPKeepAlive = true; // Maintains connection for multiple emails
+        
+        // Get barangay name for the from address
+        $stmt = $pdo->prepare("SELECT barangay_name FROM Barangay WHERE barangay_id = ?");
+        $stmt->execute([$barangayId]);
+        $barangayName = $stmt->fetchColumn() ?: 'Barangay Hub';
+        
+        // Set sender and recipient
+        $mail->setFrom('noreply@barangayhub.com', $barangayName);
+        $mail->addAddress($to);
+        
+        // Set content format
+        $mail->isHTML(true);
+        $mail->CharSet = 'UTF-8';
+        
+        // Set email content
+        $mail->Subject = $subject;
+        $mail->Body = $body;
+        
+        // Create plain text version
+        $mail->AltBody = strip_tags(str_replace(['<br>', '<br/>', '<br />'], "\n", $body));
+        
+        // Try to send the email
+        $emailSent = false;
+        try {
+            $emailSent = $mail->send();
+        } catch (Exception $mailEx) {
+            // Catch sending errors but continue to log the attempt
+            error_log('PHPMailer Send Error: ' . $mailEx->getMessage());
+            $emailSent = false;
+        }
+        
+        // Add to audit trail
+        $userId = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+        
+        $stmt = $pdo->prepare("
+            INSERT INTO AuditTrail (
+                admin_user_id, action, table_name, record_id, description
+            ) VALUES (?, ?, ?, ?, ?)
+        ");
+        $stmt->execute([
+            $userId,
+            'EMAIL',
+            'Users', // Using Users table as reference point
+            $userId,
+            ($emailSent ? 'Email sent to ' : 'Failed sending email to ') . $to . 
+            ' - Subject: ' . $subject . 
+            ' - Barangay: ' . $barangayId
+        ]);
+        
+        // Return appropriate result
+        if ($emailSent) {
+            return [
+                'success' => true,
+                'message' => 'Email sent successfully'
+            ];
+        } else {
+            return [
+                'success' => false,
+                'message' => 'Failed to send email'
+            ];
+        }
+        
+    } catch (Exception $e) {
+        // Log the error
+        error_log('PHPMailer Error: ' . $e->getMessage());
+        
+        // Try to log the failed attempt in audit trail
+        try {
+            // Add to audit trail
+            $userId = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+            
+            $stmt = $pdo->prepare("
+                INSERT INTO AuditTrail (
+                    admin_user_id, action, table_name, record_id, description
+                ) VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $userId,
+                'ERROR',
+                'Users',
+                $userId,
+                'Email Error: Failed to send to ' . $to . ' - ' . $e->getMessage()
+            ]);
+        } catch (Exception $logEx) {
+            // If we can't even log the error, just write to error log
+            error_log('Failed to log email error in audit trail: ' . $logEx->getMessage());
+        }
+        
+        return [
+            'success' => false,
+            'message' => 'Email Error: ' . $e->getMessage()
+        ];
+    }
+}
 
 // PayMongo integration helper function
 function createPaymongoPaymentLink($amount, $description, $paymongoConfig, $userId, $docTypeId, $successUrl = '', $cancelUrl = '') {
@@ -230,14 +635,61 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['payment_success'], $_GE
         // Check if PaymentSessions table exists
         $tableExists = $pdo->query("SHOW TABLES LIKE 'PaymentSessions'")->rowCount() > 0;
         if ($tableExists) {
-            // Update payment status
-            $status = $success ? 'completed' : 'cancelled';
+            // Get payment details
             $stmt = $pdo->prepare("
-                UPDATE PaymentSessions 
-                SET status = ? 
-                WHERE session_id = ?
+                SELECT ps.*, u.phone_number, u.email, u.name, u.barangay_id, dt.document_name
+                FROM PaymentSessions ps
+                JOIN Users u ON ps.user_id = u.user_id
+                JOIN DocumentType dt ON ps.document_id = dt.document_type_id
+                WHERE ps.session_id = ?
             ");
-            $stmt->execute([$status, $sessionId]);
+            $stmt->execute([$sessionId]);
+            $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($payment) {
+                // Update payment status
+                $status = $success ? 'completed' : 'cancelled';
+                $stmt = $pdo->prepare("
+                    UPDATE PaymentSessions 
+                    SET status = ? 
+                    WHERE session_id = ?
+                ");
+                $stmt->execute([$status, $sessionId]);
+                
+                // Send notifications if payment was successful
+                if ($success && isset($payment['phone_number']) && !empty($payment['phone_number'])) {
+                    // Send SMS notification
+                    $smsMessage = "Your payment of PHP " . number_format($payment['amount'], 2) . 
+                                  " for " . $payment['document_name'] . " has been received. Reference: " . 
+                                  $payment['reference'];
+                    
+                    sendSMS($payment['phone_number'], $smsMessage, $payment['barangay_id'], $pdo);
+                }
+                
+                if ($success && isset($payment['email']) && !empty($payment['email'])) {
+                    // Send email notification
+                    $emailSubject = "Payment Confirmation: " . $payment['document_name'];
+                    $emailBody = "
+                        <html>
+                        <head>
+                            <title>Payment Confirmation</title>
+                        </head>
+                        <body>
+                            <h2>Payment Confirmation</h2>
+                            <p>Dear " . htmlspecialchars($payment['name']) . ",</p>
+                            <p>We have received your payment of PHP " . number_format($payment['amount'], 2) . 
+                            " for " . $payment['document_name'] . ".</p>
+                            <p><strong>Payment Reference:</strong> " . $payment['reference'] . "</p>
+                            <p>Your document request is now being processed. We will notify you once it's ready.</p>
+                            <br>
+                            <p>Thank you for using our service.</p>
+                        </body>
+                        </html>
+                    ";
+                    
+                    sendEmail($payment['email'], $emailSubject, $emailBody, $payment['barangay_id'], $pdo);
+                }
+            }
         }
         
         if ($success) {
@@ -267,7 +719,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST' || isset($_GET['action'])) {
 
 if (empty($_SESSION['user_id'])) {
     $_SESSION['error'] = 'Please log in first.';
-    header('Location: ../pages/index.php');
+    header('Location: ../pages/login.php');
     exit;
 }
 
@@ -276,6 +728,13 @@ $userEmail = $_SESSION['user_email'] ?? '';
 $userName  = $_SESSION['user_name']  ?? 'User';
 
 try {
+    // Get user details including phone number
+    $stmt = $pdo->prepare("SELECT phone_number, barangay_id FROM Users WHERE user_id = ?");
+    $stmt->execute([$userId]);
+    $userDetails = $stmt->fetch(PDO::FETCH_ASSOC);
+    $userPhone = $userDetails['phone_number'] ?? '';
+    $userBarangayId = $userDetails['barangay_id'] ?? null;
+    
     $pdo->beginTransaction();
 
     /* ──────── ID upload ──────── */
@@ -380,6 +839,11 @@ try {
         throw new Exception('Document type not found.');
     }
 
+    // Get document name for notifications
+    $stmt = $pdo->prepare("SELECT document_name FROM DocumentType WHERE document_type_id = ?");
+    $stmt->execute([$docTypeId]);
+    $documentName = $stmt->fetchColumn() ?: 'Document';
+
     $chk = $pdo->prepare("SELECT COUNT(*) FROM Barangay WHERE barangay_id = ?");
     $chk->execute([$barangayId]);
     if (!$chk->fetchColumn()) {
@@ -435,12 +899,54 @@ try {
         'Submitted document request' . $paymentInfo
     ]);
 
+    /* ─────── notifications ─────── */
+    // Send SMS notification if phone number is available
+    if (!empty($userPhone)) {
+        $smsMessage = "Thank you for submitting a request for $documentName. Your request ID is #$requestId. We will process it shortly.";
+        sendSMS($userPhone, $smsMessage, $barangayId, $pdo);
+    }
+    
+    // Send email notification if email is available
+    if (!empty($userEmail)) {
+        $emailSubject = "Document Request Confirmation: #$requestId";
+        $emailBody = "
+            <html>
+            <head>
+                <title>Document Request Confirmation</title>
+            </head>
+            <body>
+                <h2>Document Request Confirmation</h2>
+                <p>Dear " . htmlspecialchars($userName) . ",</p>
+                <p>Thank you for submitting a request for <strong>" . htmlspecialchars($documentName) . "</strong>.</p>
+                <p><strong>Request ID:</strong> #$requestId</p>
+                <p><strong>Delivery Method:</strong> $delivery</p>";
+        
+        if ($paymentAmount > 0) {
+            $emailBody .= "<p><strong>Payment Amount:</strong> PHP " . number_format($paymentAmount, 2) . "</p>";
+            $emailBody .= "<p><strong>Payment Method:</strong> $paymentMethod</p>";
+            
+            if ($paymentMethod === 'PayMongo') {
+                $emailBody .= "<p><strong>Payment Reference:</strong> " . substr($proofPath, 9) . "</p>";
+            }
+        }
+        
+        $emailBody .= "
+                <p>We will process your request shortly and notify you once it's ready.</p>
+                <br>
+                <p>Thank you for using our service.</p>
+            </body>
+            </html>
+        ";
+        
+        sendEmail($userEmail, $emailSubject, $emailBody, $barangayId, $pdo);
+    }
+
     $pdo->commit();
 
     $_SESSION['success'] = [
         'title'      => 'Success!',
         'message'    => 'Your document request was submitted.',
-        'processing' => 'We will process it shortly and email you updates on your request.'
+        'processing' => 'We will process it shortly and email/SMS you updates on your request.'
     ];
     header('Location: ../pages/services.php');
     exit;
