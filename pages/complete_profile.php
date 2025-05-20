@@ -376,7 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           </div>
         </div>
 
-        
+      
         <!-- Take personal photo -->
         <div class="form-group">
           <label>Personal Photo *</label>
