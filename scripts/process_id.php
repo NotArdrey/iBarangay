@@ -98,15 +98,17 @@ try {
         $extractedData[$fieldName] = $fieldValue;
     }
     
-    // Common field mappings for ID cards
+    // Updated field mappings for ID cards
     $result = [
-        'full_name' => $extractedData['name'] ?? '',
-        'first_name' => $extractedData['first_name'] ?? '',
-        'middle_name' => $extractedData['middle_name'] ?? '',
-        'last_name' => $extractedData['last_name'] ?? '',
-        'birth_date' => $extractedData['birth_date'] ?? $extractedData['date_of_birth'] ?? '',
         'address' => $extractedData['address'] ?? '',
-        'id_number' => $extractedData['id_number'] ?? $extractedData['card_number'] ?? '',
+        'date_of_birth' => $extractedData['dateofbirth'] ?? '',
+        'expiration_date' => $extractedData['expirationdate'] ?? '',
+        'full_name' => $extractedData['fullname'] ?? '',
+        'given_name' => $extractedData['givenname'] ?? '',
+        'id_number' => $extractedData['idnumber'] ?? '',
+        'last_name' => $extractedData['lastname'] ?? '',
+        'middle_name' => $extractedData['middlename'] ?? '',
+        'type_of_id' => $extractedData['typeofid'] ?? '',
     ];
     
     // Clean up temporary file
