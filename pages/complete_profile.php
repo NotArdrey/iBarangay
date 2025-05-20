@@ -361,15 +361,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
               <?php endif; ?>
               <img id="govt_id_preview" src="<?= !empty($user['id_image_path']) ? '/uploads/id/' . basename($user['id_image_path']) : '' ?>">
             </div>
-          </div>
-          <small>Accepted formats: JPG, PNG, GIF. Max size: 2MB</small>
+          </div>          <small>Accepted formats: JPG, PNG, GIF. Max size: 2MB</small>
           
-          <!-- OCR Data Display -->
+          <!-- Document AI Data Display -->
           <div id="ocr-data-container" class="ocr-data" style="display: none;">
             <h4>Data Extracted From ID</h4>
             <div id="ocr-status" class="ocr-status">
               <div class="ocr-loading" style="display: none;">
-                <i class="fas fa-spinner fa-spin"></i> Processing ID. This may take a moment...
+                <i class="fas fa-spinner fa-spin"></i> Processing ID with Google Document AI. This may take a moment...
               </div>
               <div id="ocr-error" class="ocr-error" style="display: none;"></div>
             </div>
@@ -587,7 +586,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       }
     }
     
-    // Function to process ID with OCR
+    // Function to process ID with Document AI
     function processIdWithOCR(file) {
       const ocrContainer = document.getElementById('ocr-data-container');
       const ocrLoading = document.querySelector('.ocr-loading');
@@ -604,7 +603,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
       const formData = new FormData();
       formData.append('govt_id', file);
       
-      // Send to server for processing
+      // Send to server for processing with Document AI
       fetch('../scripts/process_id.php', {
         method: 'POST',
         body: formData
@@ -614,6 +613,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ocrLoading.style.display = 'none';
         
         if (data.error) {
+          // If there's an error, show it
           ocrError.textContent = data.error;
           ocrError.style.display = 'block';
           return;
@@ -671,6 +671,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (data.data.last_name) {
           const lastNameField = createField('Last Name', data.data.last_name, 'last_name');
           if (lastNameField) ocrResults.appendChild(lastNameField);
+        }
+        
+        // ID Number if available
+        if (data.data.id_number) {
+          const idNumberField = createField('ID Number', data.data.id_number);
+          if (idNumberField) ocrResults.appendChild(idNumberField);
         }
         
         // Address with parsing
@@ -733,11 +739,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ocrLoading.style.display = 'none';
         ocrError.textContent = 'An error occurred while processing the ID. Please try again.';
         ocrError.style.display = 'block';
-        console.error('OCR processing error:', error);
+        console.error('Document AI processing error:', error);
       });
     }
-    
-    // Helper function to parse address into component fields
+      // Helper function to parse address into component fields
     function parseAddressToFields(addressText) {
       if (!addressText) return;
       
@@ -858,9 +863,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Initialize drop zones
     setupDropZone('govt_id_zone', 'govt_id', 'govt_id_preview');
   </script>
-
   <style>
-    /* OCR results styling */
+    /* Document AI results styling */
     .ocr-data {
       margin-top: 15px;
       padding: 15px;
