@@ -57,13 +57,27 @@ if (!$enableOcr) {
 
 // Process the image with Google Document AI
 try {
-    // Google Cloud configuration
-    putenv('GOOGLE_APPLICATION_CREDENTIALS=' . __DIR__ . '/../config/google_credentials.json');
+    // Load environment variables if .env file exists
+    if (file_exists(__DIR__ . '/../.env')) {
+        $envFile = file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        foreach ($envFile as $line) {
+            if (strpos($line, '#') === 0) continue;
+            list($name, $value) = explode('=', $line, 2);
+            $name = trim($name);
+            $value = trim($value);
+            putenv("$name=$value");
+            $_ENV[$name] = $value;
+        }
+    }
     
-    // Your Document AI processor details
-    $projectId = 'western-dock-460409-f4'; // Replace with your actual Google Cloud project ID
-    $location = 'us'; // Replace with your processor location (e.g., us, eu)
-    $processorId = '2202a8e5fae104f'; // Replace with your Document AI processor ID
+    // Google Cloud configuration - use environment variables or fallback to defaults
+    $credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS') ?: __DIR__ . '/../config/google_credentials.json';
+    putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
+    
+    // Your Document AI processor details from environment variables or fallback to defaults
+    $projectId = getenv('DOCUMENT_AI_PROJECT_ID') ?: 'western-dock-460409-f4';
+    $location = getenv('DOCUMENT_AI_LOCATION') ?: 'us';
+    $processorId = getenv('DOCUMENT_AI_PROCESSOR_ID') ?: '2202a8e5fae104f';
     
     // Initialize Document AI client
     $client = new DocumentProcessorServiceClient();

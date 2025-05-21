@@ -1,6 +1,10 @@
 
 .env
 
+# Sensitive credentials - never commit these
+/config/google_credentials.json
+/downloads/google_credentials.json
+/credentials/*.json
 
 /vendor/
 
