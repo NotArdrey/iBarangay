@@ -2,35 +2,6 @@
 session_start();
 require "../config/dbconn.php"; // Assumes this file creates a PDO instance as $pdo
 
-/**
- * Returns the appropriate dashboard URL based on the user's role.
- */
-function getDashboardUrl($role_id)
-{
-  switch ($role_id) {
-    case 1:
-      return "../pages/programmer_admin.php";
-    case 2:
-      return "../pages/super_admin_dashboard.php";
-      // Roles 3–7 are barangay admins
-    case 3:
-    case 4:
-    case 5:
-    case 6:
-    case 7:
-      return "../pages/barangay_admin_dashboard.php";
-      // Role 8 (and any other) is a regular user/resident
-    default:
-      return "../pages/user_dashboard.php";
-  }
-}
-
-// Only allow logged-in users; if not, redirect to login page.
-if (!isset($_SESSION['user_id'], $_SESSION['role_id'])) {
-  header("Location: ../pages/login.php");
-  exit;
-}
-
 $user_id = $_SESSION['user_id'];
 
 // Fetch current user's data from the Users table.

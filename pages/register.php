@@ -3,9 +3,25 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Barangay Hub Register</title>
-  <link rel="stylesheet" href="../styles/register.css">
+  <title>Barangay Hub Register</title>  <link rel="stylesheet" href="../styles/register.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
+  <style>
+    .footer-links {
+      display: flex;
+      justify-content: space-between;
+      margin-top: 15px;
+    }
+    .help-link {
+      color: #4e73df;
+      text-decoration: none;
+      font-size: 0.9em;
+      transition: color 0.3s;
+    }
+    .help-link:hover {
+      color: #2e59d9;
+      text-decoration: underline;
+    }
+  </style>
 </head>
 <body>
   <div class="register-container">
@@ -50,9 +66,9 @@
         </div>
       </div>
       <button type="submit" class="register-btn"><span>Register</span></button>
-    </form>
-    <div class="footer-links">
+    </form>    <div class="footer-links">
         <a href="../pages/login.php" class="help-link">Back to Login</a>
+        <a href="../functions/process_id_document.php" class="help-link">Process ID Document</a>
     </div>
     <div class="footer">
       <div class="footer-info">

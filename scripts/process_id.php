@@ -91,47 +91,49 @@ try {
     $rawDocument->setContent($content);
     $rawDocument->setMimeType('image/jpeg');
     
-    // Create and configure the process request
-    $request = new ProcessRequest();
-    $request->setName($formattedName);
-    $request->setRawDocument($rawDocument);
-    
-    // Process the document
+    // Process the document - passing parameters directly in the array
     $response = $client->processDocument($formattedName, [
         'rawDocument' => $rawDocument
     ]);
     $document = $response->getDocument();
-    
-    // Extract fields from the processed document
+      // Extract fields from the processed document
     $extractedData = [];
     
     foreach ($document->getEntities() as $entity) {
         $fieldName = strtolower($entity->getType());
         $fieldValue = $entity->getMentionText();
-
+        
+        // Debug information
+        $debug[] = ["type" => $fieldName, "value" => $fieldValue];
+        
+        // Store extracted data
         $extractedData[$fieldName] = $fieldValue;
     }
     
-    // Updated field mappings for ID cards
+    // Map field names based on what we expect from Google Document AI
+    // These field names should match those shown in your Document AI processor's output
     $result = [
         'address' => $extractedData['address'] ?? '',
-        'date_of_birth' => $extractedData['dateofbirth'] ?? '',
-        'expiration_date' => $extractedData['expirationdate'] ?? '',
-        'full_name' => $extractedData['fullname'] ?? '',
-        'given_name' => $extractedData['givenname'] ?? '',
-        'id_number' => $extractedData['idnumber'] ?? '',
-        'last_name' => $extractedData['lastname'] ?? '',
-        'middle_name' => $extractedData['middlename'] ?? '',
-        'type_of_id' => $extractedData['typeofid'] ?? '',
+        'date_of_birth' => $extractedData['dateofbirth'] ?? $extractedData['date_of_birth'] ?? '',
+        'expiration_date' => $extractedData['expirationdate'] ?? $extractedData['expiration_date'] ?? '',
+        'full_name' => $extractedData['fullname'] ?? $extractedData['full_name'] ?? '',
+        'given_name' => $extractedData['givenname'] ?? $extractedData['given_name'] ?? $extractedData['first_name'] ?? '',
+        'id_number' => $extractedData['idnumber'] ?? $extractedData['id_number'] ?? $extractedData['document_id'] ?? '',
+        'last_name' => $extractedData['lastname'] ?? $extractedData['last_name'] ?? $extractedData['family_name'] ?? '',
+        'middle_name' => $extractedData['middlename'] ?? $extractedData['middle_name'] ?? '',
+        'type_of_id' => $extractedData['typeofid'] ?? $extractedData['type_of_id'] ?? $extractedData['document_type'] ?? '',
     ];
     
     // Clean up temporary file
     unlink($fileName);
-    
-    // Return the extracted data
+      // Return the extracted data along with debug info for troubleshooting
     echo json_encode([
         'success' => true,
-        'data' => $result
+        'data' => $result,
+        'debug' => [
+            'raw_fields' => $extractedData,
+            'debug_info' => $debug ?? []
+        ]
     ]);
     exit;
 

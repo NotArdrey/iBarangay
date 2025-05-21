@@ -214,7 +214,271 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
         exit();
     }
 } else {
-    header("Location: ../pages/register.php");
+    // Check if ID processing is requested
+    if (isset($_GET['process_id'])) {
+        processIdWithDocumentAI();
+    } else {
+        header("Location: ../pages/register.php");
+        exit();
+    }
+}
+
+// ------------------------------------------------------
+// Process ID Document with Google Document AI
+// ------------------------------------------------------
+function processIdWithDocumentAI() {
+    // HTML form for uploading ID document
+    $html = <<<HTML
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <title>ID Document Processing</title>
+        <link rel="stylesheet" href="../styles/register.css">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
+        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+        <style>
+            .id-upload-container {
+                max-width: 800px;
+                margin: 20px auto;
+                padding: 20px;
+                background-color: #fff;
+                border-radius: 8px;
+                box-shadow: 0 0 10px rgba(0,0,0,0.1);
+            }
+            .upload-section {
+                border: 2px dashed #ccc;
+                border-radius: 5px;
+                padding: 20px;
+                text-align: center;
+                margin-bottom: 20px;
+                cursor: pointer;
+            }
+            .upload-section:hover {
+                border-color: #4e73df;
+                background-color: #f8f9fc;
+            }
+            .upload-section i {
+                font-size: 48px;
+                color: #4e73df;
+                margin-bottom: 10px;
+            }
+            #id_preview {
+                max-width: 100%;
+                max-height: 300px;
+                display: none;
+                margin: 10px auto;
+                border-radius: 5px;
+            }
+            .results-container {
+                margin-top: 20px;
+                display: none;
+            }
+            .loading-spinner {
+                display: none;
+                text-align: center;
+                padding: 20px;
+            }
+            .loading-spinner i {
+                font-size: 48px;
+                color: #4e73df;
+            }
+            .data-field {
+                display: flex;
+                padding: 10px;
+                border-bottom: 1px solid #eee;
+            }
+            .field-name {
+                font-weight: bold;
+                width: 150px;
+            }
+            .field-value {
+                flex-grow: 1;
+            }
+            .back-btn {
+                margin-top: 20px;
+                background-color: #4e73df;
+                color: white;
+                border: none;
+                padding: 10px 15px;
+                border-radius: 5px;
+                cursor: pointer;
+            }
+            .back-btn:hover {
+                background-color: #2e59d9;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="id-upload-container">
+            <h2>ID Document Processing</h2>
+            <p>Upload your ID document to automatically extract information using Google Document AI.</p>
+            
+            <form id="idUploadForm" enctype="multipart/form-data">
+                <div class="upload-section" id="dropZone">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <p>Drag and drop your ID document here or click to browse</p>
+                    <input type="file" id="id_document" name="id_document" accept="image/*,.pdf" hidden>
+                </div>
+                <img id="id_preview" alt="ID Preview">
+                
+                <div class="loading-spinner" id="loadingSpinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                    <p>Processing your document with Google Document AI...</p>
+                </div>
+                
+                <div class="results-container" id="resultsContainer">
+                    <h3>Extracted Information</h3>
+                    <div id="extractedData"></div>
+                </div>
+                
+                <button type="button" class="back-btn" onclick="window.location.href='../pages/register.php'">Back to Registration</button>
+            </form>
+        </div>
+        
+        <script>
+            // Set up the drag and drop functionality
+            const dropZone = document.getElementById('dropZone');
+            const fileInput = document.getElementById('id_document');
+            const preview = document.getElementById('id_preview');
+            const loadingSpinner = document.getElementById('loadingSpinner');
+            const resultsContainer = document.getElementById('resultsContainer');
+            const extractedDataDiv = document.getElementById('extractedData');
+            
+            // Click to select file
+            dropZone.addEventListener('click', () => fileInput.click());
+            
+            // Drag and drop events
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = '#4e73df';
+                dropZone.style.backgroundColor = '#f8f9fc';
+            });
+            
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.style.borderColor = '#ccc';
+                dropZone.style.backgroundColor = '#fff';
+            });
+            
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.style.borderColor = '#ccc';
+                dropZone.style.backgroundColor = '#fff';
+                
+                if (e.dataTransfer.files.length) {
+                    fileInput.files = e.dataTransfer.files;
+                    handleFileSelected();
+                }
+            });
+            
+            // Handle file selection
+            fileInput.addEventListener('change', handleFileSelected);
+            
+            function handleFileSelected() {
+                const file = fileInput.files[0];
+                if (file) {
+                    // Show preview if it's an image
+                    if (file.type.startsWith('image/')) {
+                        const reader = new FileReader();
+                        reader.onload = (e) => {
+                            preview.src = e.target.result;
+                            preview.style.display = 'block';
+                        };
+                        reader.readAsDataURL(file);
+                    } else {
+                        preview.style.display = 'none';
+                    }
+                    
+                    // Process the file with Document AI
+                    processFile(file);
+                }
+            }
+            
+            function processFile(file) {
+                const formData = new FormData();
+                formData.append('govt_id', file);
+                
+                // Show loading spinner
+                loadingSpinner.style.display = 'block';
+                resultsContainer.style.display = 'none';
+                
+                // Send to server for processing
+                fetch('../scripts/process_id.php', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.json())
+                .then(data => {
+                    // Hide loading spinner
+                    loadingSpinner.style.display = 'none';
+                    
+                    if (data.error) {
+                        // Show error
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Processing Error',
+                            text: data.error
+                        });
+                        return;
+                    }
+                    
+                    // Display results
+                    displayResults(data.data);
+                    resultsContainer.style.display = 'block';
+                })
+                .catch(error => {
+                    loadingSpinner.style.display = 'none';
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: 'An error occurred while processing the document.'
+                    });
+                    console.error('Error:', error);
+                });
+            }
+            
+            function displayResults(data) {
+                extractedDataDiv.innerHTML = '';
+                
+                // Define the fields to display (based on the image you provided)
+                const fields = [
+                    { key: 'address', label: 'Address' },
+                    { key: 'date_of_birth', label: 'Date of Birth' },
+                    { key: 'expiration_date', label: 'Expiration Date' },
+                    { key: 'full_name', label: 'Full Name' },
+                    { key: 'given_name', label: 'Given Name' },
+                    { key: 'id_number', label: 'ID Number' },
+                    { key: 'last_name', label: 'Last Name' },
+                    { key: 'middle_name', label: 'Middle Name' },
+                    { key: 'type_of_id', label: 'Type of ID' }
+                ];
+                
+                // Create HTML elements for each field
+                fields.forEach(field => {
+                    const value = data[field.key] || 'Not detected';
+                    
+                    const fieldDiv = document.createElement('div');
+                    fieldDiv.className = 'data-field';
+                    
+                    const nameDiv = document.createElement('div');
+                    nameDiv.className = 'field-name';
+                    nameDiv.textContent = field.label + ':';
+                    
+                    const valueDiv = document.createElement('div');
+                    valueDiv.className = 'field-value';
+                    valueDiv.textContent = value;
+                    
+                    fieldDiv.appendChild(nameDiv);
+                    fieldDiv.appendChild(valueDiv);
+                    extractedDataDiv.appendChild(fieldDiv);
+                });
+            }
+        </script>
+    </body>
+    </html>
+    HTML;
+    
+    echo $html;
     exit();
 }
 ?>
