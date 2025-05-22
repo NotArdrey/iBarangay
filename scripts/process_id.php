@@ -6,6 +6,13 @@ use Google\Cloud\DocumentAI\V1\DocumentProcessorServiceClient;
 use Google\Cloud\DocumentAI\V1\RawDocument;
 use Google\Cloud\DocumentAI\V1\ProcessRequest;
 use Google\ApiCore\ApiException;
+use Dotenv\Dotenv;
+
+// Load environment variables if .env file exists
+if (file_exists(__DIR__ . '/../.env')) {
+    $dotenv = Dotenv::createImmutable(__DIR__ . '/..');
+    $dotenv->load();
+}
 
 // Check if file was uploaded
 if (!isset($_FILES['govt_id']) || $_FILES['govt_id']['error'] !== UPLOAD_ERR_OK) {
@@ -57,29 +64,25 @@ if (!$enableOcr) {
 
 // Process the image with Google Document AI
 try {
-    // Load environment variables if .env file exists
-    if (file_exists(__DIR__ . '/../.env')) {
-        $envFile = file(__DIR__ . '/../.env', FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
-        foreach ($envFile as $line) {
-            if (strpos($line, '#') === 0) continue;
-            list($name, $value) = explode('=', $line, 2);
-            $name = trim($name);
-            $value = trim($value);
-            putenv("$name=$value");
-            $_ENV[$name] = $value;
-        }
+    // Google Cloud configuration - use environment variables
+    $credentialsPath = $_ENV['GOOGLE_APPLICATION_CREDENTIALS'] ?? '';
+    if (empty($credentialsPath)) {
+        throw new Exception("Google credentials path not found in environment variables");
     }
-    
-    // Google Cloud configuration - use environment variables or fallback to defaults
-    $credentialsPath = getenv('GOOGLE_APPLICATION_CREDENTIALS') ?: __DIR__ . '/../config/google_credentials.json';
     putenv('GOOGLE_APPLICATION_CREDENTIALS=' . $credentialsPath);
     
-    // Your Document AI processor details from environment variables or fallback to defaults
-    $projectId = getenv('DOCUMENT_AI_PROJECT_ID') ?: 'western-dock-460409-f4';
-    $location = getenv('DOCUMENT_AI_LOCATION') ?: 'us';
-    $processorId = getenv('DOCUMENT_AI_PROCESSOR_ID') ?: '2202a8e5fae104f';
+    // Document AI processor details from environment variables
+    $projectId = $_ENV['DOCUMENT_AI_PROJECT_ID'] ?? '';
+    $location = $_ENV['DOCUMENT_AI_LOCATION'] ?? '';
+    $processorId = $_ENV['DOCUMENT_AI_PROCESSOR_ID'] ?? '';
+    
+    // Validate required configuration
+    if (empty($projectId) || empty($location) || empty($processorId)) {
+        throw new Exception("Missing required Document AI configuration. Please check your .env file.");
+    }
     
     // Initialize Document AI client
+    $client = new DocumentProcessorServiceClient();
     $client = new DocumentProcessorServiceClient();
     $formattedName = $client->processorName($projectId, $location, $processorId);
     

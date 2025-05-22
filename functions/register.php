@@ -8,6 +8,12 @@ use Dotenv\Dotenv;
 
 require "../config/dbconn.php";
 
+// Load environment variables if .env file exists
+if (file_exists(__DIR__ . '/../.env')) {
+    $dotenv = Dotenv::createImmutable(__DIR__ . '/..');
+    $dotenv->load();
+}
+
 // ------------------------------------------------------
 // Email Verification: Process link click with token
 // ------------------------------------------------------
@@ -104,13 +110,37 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
         $errors[] = "Password is required.";
     } elseif (strlen($password) < 8) {
         $errors[] = "Password must be at least 8 characters long.";
-    }
-
-    // Confirm password check
+    }    // Confirm password check
     if (empty($confirmPassword)) {
         $errors[] = "Please confirm your password.";
     } elseif ($password !== $confirmPassword) {
         $errors[] = "Passwords do not match.";
+    }
+    
+    // Validate ID upload
+    if (!isset($_FILES['govt_id']) || $_FILES['govt_id']['error'] !== UPLOAD_ERR_OK) {
+        $errors[] = "Government ID is required for registration.";
+    } else {
+        // Check valid file types
+        $allowed_types = ['image/jpeg', 'image/png', 'application/pdf'];
+        $file_info = finfo_open(FILEINFO_MIME_TYPE);
+        $mime_type = finfo_file($file_info, $_FILES['govt_id']['tmp_name']);
+        finfo_close($file_info);
+        
+        if (!in_array($mime_type, $allowed_types)) {
+            $errors[] = "Invalid file type. Only JPG, PNG, and PDF are allowed.";
+        }
+    }
+      // Collect extracted data from ID document (if available)
+    $extractedData = [];
+    $extractableFields = ['full_name', 'given_name', 'middle_name', 'last_name', 'address', 
+                         'date_of_birth', 'id_number', 'type_of_id'];
+    
+    foreach ($extractableFields as $field) {
+        $key = 'extracted_' . $field;
+        if (isset($_POST[$key])) {
+            $extractedData[$field] = $_POST[$key];
+        }
     }
 
     // Set role_id for residents (every new user gets role_id = 3)
@@ -128,42 +158,85 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
         $stmt->execute([$email]);
         if ($stmt->rowCount() > 0) {
             $errors[] = "This email is already registered.";
-        }
-
-        if (empty($errors)) {
-            // Insert the new user record including role_id = 3
-            $stmt = $pdo->prepare("INSERT INTO Users (email, password_hash, role_id, isverify, verification_token, verification_expiry) VALUES (?, ?, ?, 'no', ?, ?)");
-            if (!$stmt->execute([$email, $passwordHash, $role_id, $verificationToken, $verificationExpiry])) {
-                $errors[] = "Insert failed.";
-            }
-
-            // Create the verification link
-            $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;
-
-            // Send verification email using PHPMailer
-            $mail = new PHPMailer(true);
+        }        if (empty($errors)) {
             try {
-                $mail->isSMTP();
-                $mail->Host       = 'smtp.gmail.com';
-                $mail->SMTPAuth   = true;
-                $mail->Username   = 'barangayhub2@gmail.com';
-                $mail->Password   = 'eisy hpjz rdnt bwrp';
-                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                $mail->Port       = 587;
+                // Begin transaction
+                $pdo->beginTransaction();
+                
+                // Insert the new user record including role_id = 3
+                $stmt = $pdo->prepare("INSERT INTO Users (email, password_hash, role_id, isverify, verification_token, verification_expiry) VALUES (?, ?, ?, 'no', ?, ?)");
+                if (!$stmt->execute([$email, $passwordHash, $role_id, $verificationToken, $verificationExpiry])) {
+                    throw new Exception("Failed to create user account.");
+                }
+                
+                // Get the newly created user ID
+                $user_id = $pdo->lastInsertId();
+                  // Store the extracted ID information if available
+                if (!empty($extractedData)) {
+                    // Create UserProfiles entry with extracted data
+                    $sql = "INSERT INTO UserProfiles (user_id, first_name, middle_name, last_name, address, date_of_birth, id_number, id_type) 
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                    $stmt = $pdo->prepare($sql);
+                    $stmt->execute([
+                        $user_id,
+                        $extractedData['given_name'] ?? null,
+                        $extractedData['middle_name'] ?? null,
+                        $extractedData['last_name'] ?? null,
+                        $extractedData['address'] ?? null,
+                        $extractedData['date_of_birth'] ?? null,
+                        $extractedData['id_number'] ?? null,
+                        $extractedData['type_of_id'] ?? null
+                    ]);
+                }
+                
+                // Handle ID document file
+                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
+                    // Create a unique filename for the ID document
+                    $fileExt = pathinfo($_FILES['govt_id']['name'], PATHINFO_EXTENSION);
+                    $newFilename = 'id_user_' . $user_id . '_' . time() . '.' . $fileExt;
+                    
+                    // Don't move the file yet - as per requirements
+                    // $uploadPath = __DIR__ . '/../uploads/' . $newFilename;
+                    // move_uploaded_file($_FILES['govt_id']['tmp_name'], $uploadPath);
+                    
+                    // Update user record with ID document path
+                    $stmt = $pdo->prepare("UPDATE Users SET id_document_path = ? WHERE user_id = ?");
+                    $stmt->execute(['uploads/' . $newFilename, $user_id]);
+                }
+                
+                // Commit transaction
+                $pdo->commit();
+                
+                // Create the verification link
+                $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;                // Send verification email using PHPMailer
+                $mail = new PHPMailer(true);
+                try {
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'barangayhub2@gmail.com';
+                    $mail->Password   = 'eisy hpjz rdnt bwrp';
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
 
-                $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
-                $mail->addAddress($email);
+                    $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
+                    $mail->addAddress($email);
 
-                $mail->isHTML(true);
-                $mail->Subject = 'Email Verification';
-                $mail->Body    = "Thank you for registering. Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>Your link will expire in 24 hours.";
-                $mail->send();
+                    $mail->isHTML(true);
+                    $mail->Subject = 'Email Verification';
+                    $mail->Body    = "Thank you for registering. Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>Your link will expire in 24 hours.";
+                    $mail->send();
 
-                $message = "Registration successful! Please check your email to verify your account.";
-                $icon = "success";
-                $redirectUrl = "../pages/login.php";
+                    $message = "Registration successful! Please check your email to verify your account.";
+                    $icon = "success";
+                    $redirectUrl = "../pages/login.php";
+                } catch (Exception $e) {
+                    $errors[] = "Message could not be sent. Mailer Error: " . $mail->ErrorInfo;
+                }
             } catch (Exception $e) {
-                $errors[] = "Message could not be sent. Mailer Error: " . $mail->ErrorInfo;
+                // If anything fails, roll back the transaction
+                $pdo->rollBack();
+                $errors[] = $e->getMessage();
             }
         }
     }
@@ -214,13 +287,9 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
         exit();
     }
 } else {
-    // Check if ID processing is requested
-    if (isset($_GET['process_id'])) {
-        processIdWithDocumentAI();
-    } else {
-        header("Location: ../pages/register.php");
-        exit();
-    }
+    // Direct access without POST data - redirect to registration page
+    header("Location: ../pages/register.php");
+    exit();
 }
 
 // ------------------------------------------------------
@@ -282,18 +351,29 @@ function processIdWithDocumentAI() {
             .loading-spinner i {
                 font-size: 48px;
                 color: #4e73df;
-            }
-            .data-field {
+            }            .data-field {
                 display: flex;
                 padding: 10px;
                 border-bottom: 1px solid #eee;
+                align-items: flex-start;
             }
             .field-name {
                 font-weight: bold;
                 width: 150px;
-            }
-            .field-value {
+                padding-top: 6px;
+            }.field-value {
                 flex-grow: 1;
+            }
+            .readonly-textarea {
+                width: 100%;
+                min-height: 80px;
+                border: 1px solid #eee;
+                border-radius: 4px;
+                padding: 8px;
+                background-color: #f8f9fc;
+                font-family: inherit;
+                resize: none;
+                color: #333;
             }
             .back-btn {
                 margin-top: 20px;
@@ -438,13 +518,10 @@ function processIdWithDocumentAI() {
             }
             
             function displayResults(data) {
-                extractedDataDiv.innerHTML = '';
-                
-                // Define the fields to display (based on the image you provided)
+                extractedDataDiv.innerHTML = '';                    // Define the fields to display (based on the image you provided)
                 const fields = [
                     { key: 'address', label: 'Address' },
                     { key: 'date_of_birth', label: 'Date of Birth' },
-                    { key: 'expiration_date', label: 'Expiration Date' },
                     { key: 'full_name', label: 'Full Name' },
                     { key: 'given_name', label: 'Given Name' },
                     { key: 'id_number', label: 'ID Number' },
@@ -452,8 +529,7 @@ function processIdWithDocumentAI() {
                     { key: 'middle_name', label: 'Middle Name' },
                     { key: 'type_of_id', label: 'Type of ID' }
                 ];
-                
-                // Create HTML elements for each field
+                  // Create HTML elements for each field
                 fields.forEach(field => {
                     const value = data[field.key] || 'Not detected';
                     
@@ -466,7 +542,19 @@ function processIdWithDocumentAI() {
                     
                     const valueDiv = document.createElement('div');
                     valueDiv.className = 'field-value';
-                    valueDiv.textContent = value;
+                    
+                    if (field.key === 'address') {
+                        // For address, create a textarea that's readonly in this context
+                        const textArea = document.createElement('textarea');
+                        textArea.readOnly = true;
+                        textArea.className = 'readonly-textarea';
+                        textArea.value = value;
+                        textArea.rows = 3;
+                        valueDiv.appendChild(textArea);
+                    } else {
+                        // For other fields, display as text
+                        valueDiv.textContent = value;
+                    }
                     
                     fieldDiv.appendChild(nameDiv);
                     fieldDiv.appendChild(valueDiv);
