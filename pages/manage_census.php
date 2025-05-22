@@ -1,5 +1,6 @@
 <?php
 
+use \PDO;
 require "../config/dbconn.php";
 require "../functions/manage_census.php";
 

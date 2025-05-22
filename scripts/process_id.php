@@ -80,9 +80,7 @@ try {
     if (empty($projectId) || empty($location) || empty($processorId)) {
         throw new Exception("Missing required Document AI configuration. Please check your .env file.");
     }
-    
-    // Initialize Document AI client
-    $client = new DocumentProcessorServiceClient();
+      // Initialize Document AI client
     $client = new DocumentProcessorServiceClient();
     $formattedName = $client->processorName($projectId, $location, $processorId);
     

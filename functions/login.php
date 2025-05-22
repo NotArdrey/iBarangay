@@ -52,10 +52,49 @@ function postLoginRedirect(int $role_id, ?string $first_name): string
 }
 
 /**
+ * Check if a role ID exists in the roles table
+ */
+function isValidRole(PDO $pdo, int $role_id): bool
+{
+    $stmt = $pdo->prepare("SELECT id FROM roles WHERE id = ?");
+    $stmt->execute([$role_id]);
+    return $stmt->rowCount() > 0;
+}
+
+/**
  * Get user's role and barangay information
  */
 function getUserRoleInfo(PDO $pdo, int $user_id): ?array
 {
+    // First, check the direct role_id in the users table
+    $userRoleStmt = $pdo->prepare("SELECT role_id, barangay_id FROM users WHERE id = ? AND is_active = TRUE");
+    $userRoleStmt->execute([$user_id]);
+    $userRole = $userRoleStmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($userRole && isValidRole($pdo, $userRole['role_id'])) {
+        // Get role name
+        $roleNameStmt = $pdo->prepare("SELECT name FROM roles WHERE id = ?");
+        $roleNameStmt->execute([$userRole['role_id']]);
+        $roleName = $roleNameStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Get barangay name
+        $barangayName = null;
+        if ($userRole['barangay_id']) {
+            $barangayStmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
+            $barangayStmt->execute([$userRole['barangay_id']]);
+            $barangay = $barangayStmt->fetch(PDO::FETCH_ASSOC);
+            $barangayName = $barangay ? $barangay['name'] : null;
+        }
+        
+        return [
+            'role_id' => $userRole['role_id'],
+            'barangay_id' => $userRole['barangay_id'],
+            'barangay_name' => $barangayName,
+            'role_name' => $roleName ? $roleName['name'] : 'unknown'
+        ];
+    }
+    
+    // As fallback, check the user_roles table (previous method)
     $stmt = $pdo->prepare("
         SELECT ur.role_id, ur.barangay_id, b.name as barangay_name, r.name as role_name
         FROM user_roles ur
@@ -66,7 +105,10 @@ function getUserRoleInfo(PDO $pdo, int $user_id): ?array
         LIMIT 1
     ");
     $stmt->execute([$user_id]);
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Convert false to null to match the function's return type declaration
+    return $result === false ? null : $result;
 }
 
 /**
@@ -100,7 +142,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         // Get user role information
         $roleInfo = getUserRoleInfo($pdo, $user['id']);
         if (!$roleInfo) {
-            throw new Exception("No active role assigned");
+            // Check if user has a role_id in the users table
+            $roleStmt = $pdo->prepare("SELECT role_id FROM users WHERE id = ?");
+            $roleStmt->execute([$user['id']]);
+            $userRole = $roleStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$userRole || !$userRole['role_id']) {
+                throw new Exception("No role assigned to this user account");
+            } else if (!isValidRole($pdo, $userRole['role_id'])) {
+                throw new Exception("Invalid role assigned to this user account (Role ID: {$userRole['role_id']})");
+            } else {
+                throw new Exception("Role found but not active or properly configured");
+            }
         }
 
         session_regenerate_id(true);
