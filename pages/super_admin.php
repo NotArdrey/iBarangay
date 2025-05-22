@@ -26,7 +26,7 @@ const ROLE_RESIDENT     = 8;
 /* ───────── Helper: Count overlapping terms ───────── */
 function overlapCount(PDO $pdo, int $roleId, int $barangayId, string $start, string $end, int $excludeUser = 0): int {
     $sql = "
-        SELECT COUNT(*) FROM Users
+        SELECT COUNT(*) FROM users
         WHERE role_id = :role
           AND barangay_id = :bid
           AND user_id <> :uid
@@ -48,7 +48,7 @@ function overlapCount(PDO $pdo, int $roleId, int $barangayId, string $start, str
 /* ─────── Helper: Check councilor limit ─────── */
 function maxCouncilorsReached(PDO $pdo, int $barangayId, string $start, string $end, int $excludeUser = 0): bool {
     $sql = "
-        SELECT COUNT(*) FROM Users
+        SELECT COUNT(*) FROM users
         WHERE role_id = :councilor
           AND barangay_id = :bid
           AND user_id <> :uid
@@ -73,7 +73,7 @@ if (!$user_id) {
     header('Location: ../pages/login.php');
     exit;
 }
-$stmt = $pdo->prepare('SELECT role_id, barangay_id FROM Users WHERE user_id = ?');
+$stmt = $pdo->prepare('SELECT role_id, barangay_id FROM users WHERE user_id = ?');
 $stmt->execute([$user_id]);
 $userInfo = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$userInfo || (int)$userInfo['role_id'] !== ROLE_SUPER_ADMIN) {
@@ -102,7 +102,7 @@ if (isset($_GET['toggle_status'])) {
 
     $newStatus = $action === 'activate' ? 'yes' : 'no';
 
-    $stmt = $pdo->prepare("UPDATE Users SET is_active = ? WHERE user_id = ?");
+    $stmt = $pdo->prepare("UPDATE users SET is_active = ? WHERE user_id = ?");
     if ($stmt->execute([$newStatus, $userId])) {
         echo json_encode(['success' => true, 'newStatus' => $newStatus]);
     } else {
@@ -159,7 +159,7 @@ if (isset($_GET['delete_id'])) {
         ")->execute([$userId]);
 
         /* 2. finally, remove the user */
-        $stmt   = $pdo->prepare("DELETE FROM Users WHERE user_id = ?");
+        $stmt   = $pdo->prepare("DELETE FROM users WHERE user_id = ?");
         $result = $stmt->execute([$userId]);
 
         if ($result) {
@@ -188,7 +188,7 @@ $stmt = $pdo->prepare("
                      'active','inactive')
              ELSE 'N/A'
            END AS term_status
-      FROM Users u
+      FROM users u
       JOIN Role r      ON r.role_id     = u.role_id
       JOIN Barangay b  ON b.barangay_id = u.barangay_id
      WHERE u.role_id IN ($rolePlaceholders)
@@ -202,7 +202,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get'])) {
     $userId = (int)$_GET['get'];
     $stmt = $pdo->prepare("
         SELECT u.*, r.role_name, b.barangay_name
-        FROM Users u
+        FROM users u
         JOIN Role r ON r.role_id = u.role_id
         JOIN Barangay b ON b.barangay_id = u.barangay_id
         WHERE u.user_id = ?
@@ -252,7 +252,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Invalid email format';
     } else {
-        $dup = $pdo->prepare("SELECT COUNT(*) FROM Users WHERE email = ? AND user_id <> ?");
+        $dup = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND user_id <> ?");
         $dup->execute([$email, $uid]);
         if ($dup->fetchColumn() > 0) $error = 'Email already in use';
     }
@@ -312,7 +312,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
             
             if ($action === 'add') {
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-                $sql = "INSERT INTO Users (
+                $sql = "INSERT INTO users (
                             email, password_hash, first_name, last_name, 
                             role_id, barangay_id, is_active, isverify,
                             start_term_date, end_term_date,
@@ -375,7 +375,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                 // Add user_id to params for WHERE clause
                 $params[] = $uid;
                 
-                $sql = "UPDATE Users SET " . implode(", ", $sqlParts) . " WHERE user_id = ?";
+                $sql = "UPDATE users SET " . implode(", ", $sqlParts) . " WHERE user_id = ?";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
             }

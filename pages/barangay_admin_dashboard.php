@@ -7,28 +7,28 @@ $barangay_id = $_SESSION['barangay_id'] ?? 1;
 
 
 // Fetch metrics
-$sql = "SELECT COUNT(*) AS total_residents FROM Users WHERE role_id = 8 AND barangay_id = :bid";
+$sql = "SELECT COUNT(*) AS total_residents FROM users WHERE role_id = 8 AND barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalResidents = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(DISTINCT a.user_id) FROM Address a JOIN Users u ON a.user_id = u.user_id WHERE u.barangay_id = :bid";
+$sql = "SELECT COUNT(DISTINCT a.user_id) FROM addresses a JOIN users u ON a.user_id = u.id WHERE u.barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalHouseholds = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(*) FROM DocumentRequest dr JOIN Users u ON dr.user_id = u.user_id WHERE dr.status = 'Pending' AND u.barangay_id = :bid";
+$sql = "SELECT COUNT(*) FROM document_requests dr JOIN users u ON dr.user_id = u.id WHERE dr.status = 'pending' AND u.barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $pendingRequests = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(*) FROM AuditTrail a JOIN Users u ON a.admin_user_id = u.user_id WHERE u.barangay_id = :bid AND a.action_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
+$sql = "SELECT COUNT(*) FROM audit_trails a JOIN users u ON a.admin_user_id = u.id WHERE u.barangay_id = :bid AND a.action_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $recentActivities = (int) $stmt->fetchColumn();
 
 // Gender data
-$sql = "SELECT gender, COUNT(*) AS count FROM Users WHERE role_id = 3 AND barangay_id = :bid GROUP BY gender";
+$sql = "SELECT gender, COUNT(*) AS count FROM users WHERE role_id = 8 AND barangay_id = :bid GROUP BY gender";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $genderData = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -47,7 +47,7 @@ if (empty($genderLabels)) {
 }
 
 // Document requests
-$sql = "SELECT dt.document_name, COUNT(*) AS count FROM DocumentRequest dr JOIN DocumentType dt ON dr.document_type_id = dt.document_type_id JOIN Users u ON dr.user_id = u.user_id WHERE u.barangay_id = :bid GROUP BY dt.document_name ORDER BY count DESC LIMIT 5";
+$sql = "SELECT dt.document_name, COUNT(*) AS count FROM document_requests dr JOIN document_types dt ON dr.document_type_id = dt.id JOIN users u ON dr.user_id = u.id WHERE u.barangay_id = :bid GROUP BY dt.document_name ORDER BY count DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $docTypeData = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -64,13 +64,13 @@ if (empty($docLabels)) {
 }
 
 // Recent requests
-$sql = "SELECT dr.document_request_id, dt.document_name, CONCAT(u.first_name, ' ', u.last_name) AS requester, dr.status, dr.request_date FROM DocumentRequest dr JOIN DocumentType dt ON dr.document_type_id = dt.document_type_id JOIN Users u ON dr.user_id = u.user_id WHERE u.barangay_id = :bid ORDER BY dr.request_date DESC LIMIT 5";
+$sql = "SELECT dr.id, dt.document_name, CONCAT(u.first_name, ' ', u.last_name) AS requester, dr.status, dr.request_date FROM document_requests dr JOIN document_types dt ON dr.document_type_id = dt.id JOIN users u ON dr.user_id = u.id WHERE u.barangay_id = :bid ORDER BY dr.request_date DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $recentRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch events
-$sql = "SELECT * FROM Events WHERE barangay_id = :bid ORDER BY start_datetime";
+$sql = "SELECT * FROM events WHERE barangay_id = :bid ORDER BY start_datetime";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $events = $stmt->fetchAll(PDO::FETCH_ASSOC);

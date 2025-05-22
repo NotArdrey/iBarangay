@@ -351,7 +351,7 @@ if (isset($_GET['action'])) {
                      MAX(CASE WHEN a.attr_key='indigency_reason'   THEN a.attr_value END) AS indigency_reason
               FROM DocumentRequest dr
               JOIN DocumentType dt ON dr.document_type_id = dt.document_type_id
-              JOIN Users u ON dr.user_id = u.user_id
+              JOIN users u ON dr.user_id = u.user_id
               LEFT JOIN DocumentRequestAttribute a ON dr.document_request_id = a.request_id
               WHERE dr.barangay_id = :bid
                 AND dr.document_request_id = :id
@@ -374,7 +374,7 @@ if (isset($_GET['action'])) {
     
             // 1) Ban in DB
             $stmtBan = $pdo->prepare("
-                UPDATE Users
+                UPDATE users
                    SET is_active = 'no'
                  WHERE user_id     = :id
                    AND barangay_id = :bid
@@ -384,7 +384,7 @@ if (isset($_GET['action'])) {
                 // 2) Fetch user email & name
                 $u = $pdo->prepare("
                     SELECT email, CONCAT(first_name,' ',last_name) AS name
-                      FROM Users
+                      FROM users
                      WHERE user_id = :id
                 ");
                 $u->execute([':id'=>$reqId]);
@@ -417,7 +417,7 @@ if (isset($_GET['action'])) {
          
                 logAuditTrail(
                   $pdo, $current_admin_id,
-                  'UPDATE','Users',$reqId,
+                  'UPDATE','users',$reqId,
                   'Banned user: '.$remarks
                 );
                 $response['success'] = true;
@@ -436,7 +436,7 @@ if (isset($_GET['action'])) {
                      CONCAT(u.first_name,' ',u.last_name) AS requester_name
               FROM DocumentRequest dr
               JOIN DocumentType dt ON dr.document_type_id = dt.document_type_id
-              JOIN Users u ON dr.user_id = u.user_id
+              JOIN users u ON dr.user_id = u.user_id
               WHERE dr.document_request_id = :id
                 AND dr.barangay_id = :bid
           ");
@@ -462,7 +462,7 @@ if (isset($_GET['action'])) {
                   $mail->Password   = 'eisy hpjz rdnt bwrp';
                   $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                   $mail->Port       = 587;
-                  $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
+                  $mail->setFrom('noreply@barangayhub.com','iBarangay');
                   $mail->addAddress($info['email'], $info['requester_name']);
                   $mail->Subject = 'Your Document Request: ' . $info['document_name'];
                   $mail->Body    = "Hello {$info['requester_name']},\n\nPlease find attached your requested document.";
@@ -542,7 +542,7 @@ if (isset($_GET['action'])) {
                   $mail->Password   = 'eisy hpjz rdnt bwrp';
                   $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                   $mail->Port       = 587;
-                  $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
+                  $mail->setFrom('noreply@barangayhub.com','iBarangay');
                   $mail->addAddress($requestInfo['email'], $requestInfo['requester_name']);
                   $mail->Subject = 'Document Request Not Processed';
                   $mail->Body    = "Hello {$requestInfo['requester_name']},\n\nYour request for '{$requestInfo['document_name']}' has been declined.\n\nReason: {$remarks}";

@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 
 // Retrieve all columns from Users table for the logged-in user
-$query = "SELECT * FROM Users WHERE user_id = ?";
+$query = "SELECT * FROM users WHERE user_id = ?";
 $stmt = $pdo->prepare($query);
 $stmt->execute([$user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -70,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // If there are no errors, update the personal details and possibly the password
     if (empty($errors)) {
         // Update personal details (note: email is omitted)
-        $updateQuery = "UPDATE Users SET 
+        $updateQuery = "UPDATE users SET 
                             first_name = ?, 
                             middle_name = ?, 
                             last_name = ?, 
@@ -103,7 +103,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Update password if requested
         if ($old_password !== '' && $new_password !== '' && $confirm_password !== '') {
             $new_password_hash = hash('sha256', $new_password);
-            $updatePassQuery = "UPDATE Users SET password_hash = ? WHERE user_id = ?";
+            $updatePassQuery = "UPDATE users SET password_hash = ? WHERE user_id = ?";
             $stmt_pass = $pdo->prepare($updatePassQuery);
             $stmt_pass->execute([$new_password_hash, $user_id]);
             $success_message .= " Your password has been changed successfully.";
@@ -141,8 +141,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <header>
     <nav class="navbar">
       <a href="#" class="logo">
-        <img src="../photo/logo.png" alt="Barangay Hub Logo" />
-        <h2>Barangay Hub</h2>
+        <img src="../photo/logo.png" alt="iBarangay Logo" />
+        <h2>iBarangay</h2>
       </a>
       <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
         <i class="fas fa-bars"></i>
@@ -278,7 +278,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <!-- Footer -->
   <footer class="footer">
-    <p>&copy; 2025 Barangay Hub. All rights reserved.</p>
+    <p>&copy; 2025 iBarangay. All rights reserved.</p>
   </footer>
 
   <script>
@@ -319,7 +319,7 @@ function getDashboardUrl($role_id) {
  */
 function loadBarangayInfo($pdo, $email) {
     // Retrieve the barangay_id from the Users table
-    $stmt = $pdo->prepare("SELECT barangay_id FROM Users WHERE email = :email LIMIT 1");
+    $stmt = $pdo->prepare("SELECT barangay_id FROM users WHERE email = :email LIMIT 1");
     $stmt->execute([':email' => $email]);
     $userRecord = $stmt->fetch(PDO::FETCH_ASSOC);
     if ($userRecord && !empty($userRecord['barangay_id'])) {

@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Barangay Hub Register</title>
+  <title>iBarangay Register</title>
   <link rel="stylesheet" href="../styles/register.css">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
 </head>
@@ -13,12 +13,38 @@
       <img src="../photo/logo.png" alt="Government Logo">
       <h1>Create Account</h1>
     </div>
+
+    <div class="input-group">
+      <label for="household_id">Household Number (HN)</label>
+      <input type="text" id="household_id" name="household_id" required>
+    </div>
+
+    <div class="input-group">
+      <label for="first_name">First Name</label>
+      <input type="text" id="first_name" name="first_name" required>
+    </div>
+
+    <div class="input-group">
+      <label for="last_name">Last Name</label>
+      <input type="text" id="last_name" name="last_name" required>
+    </div>
+
+    <div class="input-group">
+      <label for="birth_date">Date of Birth</label>
+      <input type="date" id="birth_date" name="birth_date" required>
+    </div>
+
     <form action="../functions/register.php" method="POST">
       <div class="input-group">
         <input type="hidden" name="role_id" value="3">
         <label for="email">Email</label>
         <input type="text" id="email" name="email" required>
       </div>
+      <div class="input-group">
+        <label for="phone">Phone Number</label>
+        <input type="text" id="phone" name="phone" placeholder="e.g. 09123456789" required>
+      </div>
+
       <div class="input-group">
         <label for="password">Password</label>
         <div class="password-container">
@@ -52,11 +78,11 @@
       <button type="submit" class="register-btn"><span>Register</span></button>
     </form>
     <div class="footer-links">
-        <a href="../pages/login.php" class="help-link">Back to Login</a>
+      <a href="../pages/login.php" class="help-link">Back to Login</a>
     </div>
     <div class="footer">
       <div class="footer-info">
-        <p>&copy; 2025 Barangay Hub. All Rights Reserved.</p>
+        <p>&copy; 2025 iBarangay. All Rights Reserved.</p>
       </div>
       <div class="security-note">
         <svg viewBox="0 0 24 24">
@@ -67,13 +93,10 @@
     </div>
   </div>
   <script>
-    // Toggle password visibility for both password fields.
-    const toggleButtons = document.querySelectorAll('.toggle-password');
-    toggleButtons.forEach(function(toggle) {
-      toggle.addEventListener('click', function() {
+    document.querySelectorAll('.toggle-password').forEach(button => {
+      button.addEventListener('click', function() {
         const passwordInput = this.parentElement.querySelector('input');
-        const isPassword = passwordInput.type === 'password';
-        passwordInput.type = isPassword ? 'text' : 'password';
+        passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
         this.classList.toggle('visible');
       });
     });

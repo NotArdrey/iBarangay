@@ -12,7 +12,7 @@ if (isset($_SESSION['user_id'])) {
     $user_id = $_SESSION['user_id'];
     
     // Fetch user's barangay_id using PDO
-    $sql = "SELECT barangay_id FROM Users WHERE user_id = ?";
+    $sql = "SELECT barangay_id FROM users WHERE user_id = ?";
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$user_id]);
     $user = $stmt->fetch();
@@ -54,7 +54,7 @@ if (isset($_SESSION['user_id'])) {
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Barangay Hub - Community Portal</title>
+  <title>iBarangay - Community Portal</title>
   <!-- Link to the separated CSS file -->
   <link rel="stylesheet" href="../styles/user_dashboard.css" />
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
@@ -66,8 +66,8 @@ if (isset($_SESSION['user_id'])) {
   <header> 
     <nav class="navbar">
       <a href="#" class="logo">
-        <img src="../photo/logo.png" alt="Barangay Hub Logo" />
-        <h2>Barangay Hub</h2>
+        <img src="../photo/logo.png" alt="iBarangay Logo" />
+        <h2>iBarangay</h2>
       </a>
       <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
         <i class="fas fa-bars"></i>
@@ -88,7 +88,7 @@ if (isset($_SESSION['user_id'])) {
     <section class="hero" id="home">
       <div class="hero-overlay"></div>
       <div class="hero-content" data-aos="fade-up">
-        <h1>Welcome to Barangay Hub</h1>
+        <h1>Welcome to iBarangay</h1>
         <p>Your one-stop platform for all barangay services</p>
         <a href="#services" class="btn cta-button">Explore Services</a>
       </div>
@@ -98,13 +98,13 @@ if (isset($_SESSION['user_id'])) {
     <section class="about-section" id="about" data-aos="fade-up">
       <div class="section-header">
         <h2>About Us</h2>
-        <p>Learn more about Barangay Hub</p>
+        <p>Learn more about iBarangay</p>
       </div>
       <div class="about-content">
         <div class="about-card history">
           <h3>Our History</h3>
           <p>
-            Barangay Hub was created to unify all barangay services under one platform.
+            iBarangay was created to unify all barangay services under one platform.
             Our goal is to foster community engagement and simplify access to essential services.
           </p>
         </div>
@@ -476,7 +476,7 @@ if (isset($_SESSION['user_id'])) {
 
   <!-- Footer -->
   <footer class="footer">
-    <p>&copy; 2025 Barangay Hub. All rights reserved.</p>
+    <p>&copy; 2025 iBarangay. All rights reserved.</p>
   </footer>
 
   <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
