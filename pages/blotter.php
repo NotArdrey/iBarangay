@@ -85,7 +85,7 @@ $allowedStatuses  = ['Pending','Open','Closed','Completed'];
 
 // Helpers
 function logAuditTrail($pdo, $adminId, $action, $table, $recordId, $desc = '') {
-    $pdo->prepare("INSERT INTO AuditTrail
+    $pdo->prepare("INSERT INTO audit_trail
         (admin_user_id, action, table_name, record_id, description)
         VALUES (?, ?, ?, ?, ?)")
         ->execute([$adminId, $action, $table, $recordId, $desc]);
@@ -93,7 +93,7 @@ function logAuditTrail($pdo, $adminId, $action, $table, $recordId, $desc = '') {
 
 function getResidents($pdo, $bid) {
     $stmt = $pdo->prepare("
-        SELECT user_id, CONCAT(first_name,' ',last_name) AS name
+        SELECT id AS user_id, CONCAT(first_name,' ',last_name) AS name
         FROM users WHERE barangay_id = ?
     ");
     $stmt->execute([$bid]);
@@ -190,7 +190,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
 
       // Insert case
       $pdo->prepare("
-          INSERT INTO BlotterCase
+          INSERT INTO blotter_cases
           (date_reported, location, description, status, barangay_id)
           VALUES (NOW(), ?, ?, 'Pending', ?)
       ")->execute([$location, $description, $bid]);
@@ -199,7 +199,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
       // Categories
       if (!empty($_POST['categories'])) {
           $catStmt = $pdo->prepare("
-              INSERT INTO BlotterCaseCategory (blotter_case_id, category_id)
+              INSERT INTO blotter_case_categories (blotter_case_id, category_id)
               VALUES (?, ?)
           ");
           foreach ($_POST['categories'] as $catId) {
@@ -208,7 +208,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
       }
       if (!empty($_POST['interventions']) && is_array($_POST['interventions'])) {
         $intStmt = $pdo->prepare("
-            INSERT INTO BlotterCaseIntervention
+            INSERT INTO blotter_case_interventions
               (blotter_case_id, intervention_id, date_intervened)
             VALUES (?, ?, NOW())
         ");
@@ -218,12 +218,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
       }
       // Participants
       $regStmt = $pdo->prepare("
-      INSERT INTO BlotterParticipant
+      INSERT INTO blotter_participants
       (blotter_case_id, user_id, role, is_registered)
       VALUES (?, ?, ?, 'Yes')
   ");
   $unregStmt = $pdo->prepare("
-      INSERT INTO BlotterParticipant
+      INSERT INTO blotter_participants
       (blotter_case_id, first_name, last_name, contact_number, address, age, gender, role, is_registered)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'No')
   ");
@@ -246,7 +246,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
   }
 
       $pdo->commit();
-      logAuditTrail($pdo, $current_admin_id, 'INSERT', 'BlotterCase', $caseId, "New case filed ($location)");
+      logAuditTrail($pdo, $current_admin_id, 'INSERT', 'blotter_cases', $caseId, "New case filed ($location)");
       $_SESSION['success_message'] = 'New blotter case recorded.';
   } catch (Exception $e) {
       $pdo->rollBack();
@@ -319,7 +319,7 @@ if (!empty($_GET['action'])) {
               SELECT
                 m.*,
                 CONCAT(u.first_name, ' ', u.last_name) AS prepared_by_name
-              FROM MonthlyReport m
+              FROM monthly_reports m
               JOIN users         u ON m.prepared_by = u.user_id
               WHERE m.report_year  = :y
                 AND m.report_month = :m
@@ -332,54 +332,54 @@ if (!empty($_GET['action'])) {
               // 4) fetch its details
               $dStmt = $pdo->prepare("
                   SELECT
-                      c.category_name,
-                      COUNT(DISTINCT bc.blotter_case_id) AS total_cases,
+                      c.name AS category_name,
+                      COUNT(DISTINCT bc.id) AS total_cases,
                       COUNT(DISTINCT IF(
                         bci.intervention_id = (
-                          SELECT intervention_id
-                          FROM CaseIntervention
-                          WHERE intervention_name = 'M/CSWD'
-                        ), bc.blotter_case_id, NULL
+                          SELECT id
+                          FROM case_interventions
+                          WHERE name = 'M/CSWD'
+                        ), bc.id, NULL
                       )) AS mcwsd,
                       COUNT(DISTINCT IF(
                         bci.intervention_id = (
-                          SELECT intervention_id
-                          FROM CaseIntervention
-                          WHERE intervention_name = 'PNP'
-                        ), bc.blotter_case_id, NULL
+                          SELECT id
+                          FROM case_interventions
+                          WHERE name = 'PNP'
+                        ), bc.id, NULL
                       )) AS total_pnp,
                       COUNT(DISTINCT IF(
                         bci.intervention_id = (
-                          SELECT intervention_id
-                          FROM CaseIntervention
-                          WHERE intervention_name = 'Court'
-                        ), bc.blotter_case_id, NULL
+                          SELECT id
+                          FROM case_interventions
+                          WHERE name = 'Court'
+                        ), bc.id, NULL
                       )) AS total_court,
                       COUNT(DISTINCT IF(
                         bci.intervention_id = (
-                          SELECT intervention_id
-                          FROM CaseIntervention
-                          WHERE intervention_name = 'Issued BPO'
-                        ), bc.blotter_case_id, NULL
+                          SELECT id
+                          FROM case_interventions
+                          WHERE name = 'Issued BPO'
+                        ), bc.id, NULL
                       )) AS total_bpo,
                       COUNT(DISTINCT IF(
                         bci.intervention_id = (
-                          SELECT intervention_id
-                          FROM CaseIntervention
-                          WHERE intervention_name = 'Medical'
-                        ), bc.blotter_case_id, NULL
+                          SELECT id
+                          FROM case_interventions
+                          WHERE name = 'Medical'
+                        ), bc.id, NULL
                       )) AS total_medical
-                  FROM CaseCategory c
-                  LEFT JOIN BlotterCaseCategory bcc
-                    ON c.category_id = bcc.category_id
-                  LEFT JOIN BlotterCase bc
-                    ON bc.blotter_case_id = bcc.blotter_case_id
+                  FROM case_categories c
+                  LEFT JOIN blotter_case_categories bcc
+                    ON c.id = bcc.category_id
+                  LEFT JOIN blotter_cases bc
+                    ON bc.id = bcc.blotter_case_id
                       AND YEAR(bc.date_reported) = :y
                       AND MONTH(bc.date_reported)= :m
-                  LEFT JOIN BlotterCaseIntervention bci
-                    ON bci.blotter_case_id = bc.blotter_case_id
-                  GROUP BY c.category_id
-                  ORDER BY c.category_name
+                  LEFT JOIN blotter_case_interventions bci
+                    ON bci.blotter_case_id = bc.id
+                  GROUP BY c.id
+                  ORDER BY c.name
               ");
               $dStmt->execute([
                   'y' => $year,
@@ -448,16 +448,16 @@ if (!empty($_GET['action'])) {
 
 
             case 'delete':
-                $pdo->prepare("UPDATE BlotterCase SET status='Deleted' WHERE blotter_case_id=?")
+                $pdo->prepare("UPDATE blotter_cases SET status='Deleted' WHERE id=?")
                     ->execute([$id]);
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'BlotterCase', $id, 'Status → Deleted');
+                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, 'Status → Deleted');
                 echo json_encode(['success'=>true]);
                 break;
 
             case 'complete':
-                $pdo->prepare("UPDATE BlotterCase SET status='Closed' WHERE blotter_case_id=?")
+                $pdo->prepare("UPDATE blotter_cases SET status='Closed' WHERE id=?")
                     ->execute([$id]);
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'BlotterCase', $id, 'Status → Closed');
+                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, 'Status → Closed');
                 echo json_encode(['success'=>true]);
                 break;
 
@@ -467,27 +467,27 @@ if (!empty($_GET['action'])) {
                     echo json_encode(['success'=>false,'message'=>'Invalid status']);
                     exit;
                 }
-                $pdo->prepare("UPDATE BlotterCase SET status=? WHERE blotter_case_id=?")
+                $pdo->prepare("UPDATE blotter_cases SET status=? WHERE id=?")
                     ->execute([$newStatus, $id]);
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'BlotterCase', $id, "Status → $newStatus");
+                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, "Status → $newStatus");
                 echo json_encode(['success'=>true]);
                 break;
 
             case 'get_case_details':
                 $caseStmt = $pdo->prepare("
-                    SELECT bc.*, GROUP_CONCAT(cc.category_name SEPARATOR ', ') AS categories
-                    FROM BlotterCase bc
-                    LEFT JOIN BlotterCaseCategory bcc ON bc.blotter_case_id=bcc.blotter_case_id
-                    LEFT JOIN CaseCategory cc ON bcc.category_id=cc.category_id
-                    WHERE bc.blotter_case_id=?
-                    GROUP BY bc.blotter_case_id
+                    SELECT bc.*, GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+                    FROM blotter_cases bc
+                    LEFT JOIN blotter_case_categories bcc ON bc.id=bcc.blotter_case_id
+                    LEFT JOIN case_categories cc ON bcc.category_id=cc.id
+                    WHERE bc.id=?
+                    GROUP BY bc.id
                 ");
                 $caseStmt->execute([$id]);
                 $caseData = $caseStmt->fetch(PDO::FETCH_ASSOC) ?: null;
 
                 $pStmt = $pdo->prepare("
     SELECT 
-        bp.participant_id,
+        bp.id AS participant_id,
         bp.user_id,
         COALESCE(u.first_name, bp.first_name) AS first_name,
         COALESCE(u.last_name, bp.last_name) AS last_name,
@@ -496,17 +496,17 @@ if (!empty($_GET['action'])) {
         bp.age,
         bp.gender,
         bp.role,
-        CASE WHEN u.user_id IS NULL THEN 'No' ELSE 'Yes' END AS is_registered
-    FROM BlotterParticipant bp
-    LEFT JOIN users u ON bp.user_id = u.user_id
+        CASE WHEN u.id IS NULL THEN 'No' ELSE 'Yes' END AS is_registered
+    FROM blotter_participants bp
+    LEFT JOIN users u ON bp.user_id = u.id
     WHERE bp.blotter_case_id = ?
             ");
                 $pStmt->execute([$id]);
 
                 $iStmt = $pdo->prepare("
-                    SELECT ci.intervention_name, bci.date_intervened, bci.remarks
-                    FROM BlotterCaseIntervention bci
-                    JOIN CaseIntervention ci ON bci.intervention_id=ci.intervention_id
+                    SELECT ci.name AS intervention_name, bci.intervened_at, bci.remarks
+                    FROM blotter_case_interventions bci
+                    JOIN case_interventions ci ON bci.intervention_id=ci.id
                     WHERE bci.blotter_case_id=?
                 ");
                 $iStmt->execute([$id]);
@@ -526,8 +526,8 @@ if (!empty($_GET['action'])) {
                     exit;
                 }
                 $pdo->prepare("
-                    INSERT INTO BlotterCaseIntervention
-                    (blotter_case_id, intervention_id, date_intervened, remarks)
+                    INSERT INTO blotter_case_interventions
+                    (blotter_case_id, intervention_id, intervened_at, remarks)
                     VALUES (?, ?, ?, ?)
                 ")->execute([
                     $id,
@@ -551,16 +551,16 @@ if (!empty($_GET['action'])) {
                 try {
                     $pdo->beginTransaction();
                     $pdo->prepare("
-                        UPDATE BlotterCase
+                        UPDATE blotter_cases
                         SET location=?, description=?, status=?
-                        WHERE blotter_case_id=?
+                        WHERE id=?
                     ")->execute([$loc, $descr, $stat, $cid]);
 
-                    $pdo->prepare("DELETE FROM BlotterCaseIntervention WHERE blotter_case_id=?")
+                    $pdo->prepare("DELETE FROM blotter_case_interventions WHERE blotter_case_id=?")
                     ->execute([$cid]);
                 if (!empty($input['interventions']) && is_array($input['interventions'])) {
                     $intStmt = $pdo->prepare("
-                        INSERT INTO BlotterCaseIntervention
+                        INSERT INTO blotter_case_interventions
                           (blotter_case_id, intervention_id, date_intervened)
                         VALUES (?, ?, NOW())
                     ");
@@ -569,15 +569,15 @@ if (!empty($_GET['action'])) {
                     }
                 }
 
-                    $pdo->prepare("DELETE FROM BlotterParticipant WHERE blotter_case_id=?")
+                    $pdo->prepare("DELETE FROM blotter_participants WHERE blotter_case_id=?")
                         ->execute([$cid]);
                     $regStmt = $pdo->prepare("
-                        INSERT INTO BlotterParticipant
+                        INSERT INTO blotter_participants
                         (blotter_case_id, user_id, role, is_registered)
                         VALUES (?, ?, ?, 'Yes')
                     ");
                     $unregStmt = $pdo->prepare("
-                    INSERT INTO BlotterParticipant
+                    INSERT INTO blotter_participants
                     (blotter_case_id, first_name, last_name, contact_number, address, age, gender, role, is_registered)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'No')
                 ");
@@ -599,7 +599,7 @@ if (!empty($_GET['action'])) {
                   }
               }
                     $pdo->commit();
-                    logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'BlotterCase', $cid, "Edited case #{$cid}");
+                    logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $cid, "Edited case #{$cid}");
                     echo json_encode(['success'=>true]);
                 } catch (Exception $e) {
                     $pdo->rollBack();
@@ -620,19 +620,19 @@ require_once "../pages/header.php";
 
 // Fetch for UI
 $stmt = $pdo->prepare("
-    SELECT bc.*, GROUP_CONCAT(cc.category_name SEPARATOR ', ') AS categories
-    FROM BlotterCase bc
-    LEFT JOIN BlotterCaseCategory bcc ON bc.blotter_case_id=bcc.blotter_case_id
-    LEFT JOIN CaseCategory cc ON bcc.category_id=cc.category_id
+    SELECT bc.*, GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+    FROM blotter_cases bc
+    LEFT JOIN blotter_case_categories bcc ON bc.id=bcc.blotter_case_id
+    LEFT JOIN case_categories cc ON bcc.category_id=cc.id
     WHERE bc.barangay_id=? AND bc.status!='Deleted'
-    GROUP BY bc.blotter_case_id
-    ORDER BY bc.date_reported DESC
+    GROUP BY bc.id
+    ORDER BY bc.created_at DESC
 ");
 $stmt->execute([$bid]);
 $cases         = $stmt->fetchAll(PDO::FETCH_ASSOC);
-$categories    = $pdo->query("SELECT * FROM CaseCategory ORDER BY category_name")->fetchAll();
+$categories    = $pdo->query("SELECT * FROM case_categories ORDER BY name")->fetchAll();
 $residents     = getResidents($pdo, $bid);
-$interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY intervention_name")->fetchAll();
+$interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->fetchAll();
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -727,9 +727,9 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
                 <input
                   type="checkbox"
                   name="interventions[]"
-                  value="<?= $int['intervention_id'] ?>"
+                  value="<?= $int['id'] ?>"
                 >
-                <?= htmlspecialchars($int['intervention_name']) ?>
+                <?= htmlspecialchars($int['name']) ?>
               </label>
             <?php endforeach; ?>
           </div>
@@ -743,9 +743,9 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
                 <input
             type="checkbox"
             name="categories[]"
-            value="<?= $cat['category_id'] ?>"
+            value="<?= $cat['id'] ?>"
           >
-                  <?= htmlspecialchars($cat['category_name']) ?>
+                  <?= htmlspecialchars($cat['name']) ?>
                 </label>
               <?php endforeach; ?>
             </div>
@@ -870,9 +870,9 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
               <input
                 type="checkbox"
                 name="interventions[]"
-                value="<?= $int['intervention_id'] ?>"
+                value="<?= $int['id'] ?>"
               >
-              <?= htmlspecialchars($int['intervention_name']) ?>
+              <?= htmlspecialchars($int['name']) ?>
             </label>
           <?php endforeach; ?>
         </div>
@@ -886,9 +886,9 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
                 <input
                   type="checkbox"
                   name="categories[]"
-                  value="<?= $cat['category_id'] ?>"
+                  value="<?= $cat['id'] ?>"
                 >
-                <?= htmlspecialchars($cat['category_name']) ?>
+                <?= htmlspecialchars($cat['name']) ?>
               </label>
             <?php endforeach; ?>
             </div>
@@ -941,7 +941,7 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
       >
         + Add New Case
       </button>
-      
+      <a
         href="?action=generate_report&year=<?=date('Y')?>&month=<?=date('n')?>"
         class="w-full sm:w-auto inline-block text-center text-white bg-indigo-600 hover:bg-indigo-700 
                focus:ring-4 focus:ring-indigo-300 font-medium rounded-lg text-sm px-5 py-2.5"
@@ -965,12 +965,18 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
       <tbody class="bg-white divide-y divide-gray-200">
         <?php if ($cases): foreach ($cases as $case): ?>
         <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-4 py-3 text-sm text-gray-900"><?= date('M d, Y h:i A', strtotime($case['date_reported'])) ?></td>
+          <td class="px-4 py-3 text-sm text-gray-900">
+            <?php
+              // Show created_at as "Date Reported" if date_reported is not set
+              $date = !empty($case['date_reported']) ? $case['date_reported'] : ($case['created_at'] ?? null);
+              echo $date ? date('M d, Y h:i A', strtotime($date)) : '—';
+            ?>
+          </td>
           <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($case['location']) ?></td>
           <td class="px-4 py-3 text-sm text-gray-600"><?= $case['categories'] ?: 'None' ?></td>
           <td class="px-4 py-3">
             <?php if ($role === 1): ?>
-              <select class="status-select p-1 border rounded text-sm" data-id="<?= $case['blotter_case_id'] ?>">
+              <select class="status-select p-1 border rounded text-sm" data-id="<?= $case['id'] ?>">
                 <?php foreach ($allowedStatuses as $s): ?>
                   <?php $disabled = ($s==='Completed' && $case['status']!=='Closed') ? 'disabled':''; ?>
                   <option value="<?= $s ?>" <?= $case['status']===$s?'selected':'' ?> <?= $disabled ?>>
@@ -988,14 +994,14 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
           </td>
           <td class="px-4 py-3 text-sm text-gray-600">
             <div class="flex items-center space-x-3">
-              <button class="view-btn text-blue-600 hover:text-blue-900" data-id="<?= $case['blotter_case_id'] ?>">View</button>
-              <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['blotter_case_id'] ?>">Edit</button>
+              <button class="view-btn text-blue-600 hover:text-blue-900" data-id="<?= $case['id'] ?>">View</button>
+              <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['id'] ?>">Edit</button>
               <?php if ($role === 1): ?>
                 <?php if ($case['status'] !== 'Closed'): ?>
-                  <button class="complete-btn text-green-600 hover:text-green-900" data-id="<?= $case['blotter_case_id'] ?>">Close</button>
+                  <button class="complete-btn text-green-600 hover:text-green-900" data-id="<?= $case['id'] ?>">Close</button>
                 <?php endif; ?>
-                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['blotter_case_id'] ?>">Delete</button>
-                <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['blotter_case_id'] ?>">Intervene</button>
+                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Delete</button>
+                <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
               <?php endif; ?>
             </div>
           </td>
@@ -1240,7 +1246,7 @@ $interventions = $pdo->query("SELECT * FROM CaseIntervention ORDER BY interventi
     document.querySelectorAll('.intervention-btn').forEach(btn => btn.addEventListener('click', async () => {
       let opts = '';
       <?php foreach ($interventions as $int): ?>
-        opts += `<option value="<?= $int['intervention_id'] ?>"><?= htmlspecialchars($int['intervention_name']) ?></option>`;
+        opts += `<option value="<?= $int['id'] ?>"><?= htmlspecialchars($int['name']) ?></option>`;
       <?php endforeach; ?>
       const { value } = await Swal.fire({
         title: 'Add Intervention',
