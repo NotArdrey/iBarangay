@@ -146,97 +146,84 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
     $role_id = 8;
 
     if (empty($errors)) {
-        // Hash the password
-        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-        // Generate a verification token and set expiry to 24 hours
-        $verificationToken = bin2hex(random_bytes(16));
-        $verificationExpiry = date('Y-m-d H:i:s', strtotime('+1 day'));
-
-        // Check if the email is already registered
-        $stmt = $pdo->prepare("SELECT user_id FROM Users WHERE email = ?");
-        $stmt->execute([$email]);
-        if ($stmt->rowCount() > 0) {
-            $errors[] = "This email is already registered.";
-        }        if (empty($errors)) {
-            try {
-                // Begin transaction
-                $pdo->beginTransaction();
-                
-                // Insert the new user record including role_id = 3
-                $stmt = $pdo->prepare("INSERT INTO Users (email, password_hash, role_id, isverify, verification_token, verification_expiry) VALUES (?, ?, ?, 'no', ?, ?)");
-                if (!$stmt->execute([$email, $passwordHash, $role_id, $verificationToken, $verificationExpiry])) {
-                    throw new Exception("Failed to create user account.");
-                }
-                
-                // Get the newly created user ID
-                $user_id = $pdo->lastInsertId();
-                  // Store the extracted ID information if available
-                if (!empty($extractedData)) {
-                    // Create UserProfiles entry with extracted data
-                    $sql = "INSERT INTO UserProfiles (user_id, first_name, middle_name, last_name, address, date_of_birth, id_number, id_type) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-                    $stmt = $pdo->prepare($sql);
-                    $stmt->execute([
-                        $user_id,
-                        $extractedData['given_name'] ?? null,
-                        $extractedData['middle_name'] ?? null,
-                        $extractedData['last_name'] ?? null,
-                        $extractedData['address'] ?? null,
-                        $extractedData['date_of_birth'] ?? null,
-                        $extractedData['id_number'] ?? null,
-                        $extractedData['type_of_id'] ?? null
-                    ]);
-                }
-                
-                // Handle ID document file
-                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
-                    // Create a unique filename for the ID document
-                    $fileExt = pathinfo($_FILES['govt_id']['name'], PATHINFO_EXTENSION);
-                    $newFilename = 'id_user_' . $user_id . '_' . time() . '.' . $fileExt;
-                    
-                    // Don't move the file yet - as per requirements
-                    // $uploadPath = __DIR__ . '/../uploads/' . $newFilename;
-                    // move_uploaded_file($_FILES['govt_id']['tmp_name'], $uploadPath);
-                    
-                    // Update user record with ID document path
-                    $stmt = $pdo->prepare("UPDATE Users SET id_document_path = ? WHERE user_id = ?");
-                    $stmt->execute(['uploads/' . $newFilename, $user_id]);
-                }
-                
-                // Commit transaction
-                $pdo->commit();
-                
-                // Create the verification link
-                $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;                // Send verification email using PHPMailer
-                $mail = new PHPMailer(true);
-                try {
-                    $mail->isSMTP();
-                    $mail->Host       = 'smtp.gmail.com';
-                    $mail->SMTPAuth   = true;
-                    $mail->Username   = 'barangayhub2@gmail.com';
-                    $mail->Password   = 'eisy hpjz rdnt bwrp';
-                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                    $mail->Port       = 587;
-
-                    $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
-                    $mail->addAddress($email);
-
-                    $mail->isHTML(true);
-                    $mail->Subject = 'Email Verification';
-                    $mail->Body    = "Thank you for registering. Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>Your link will expire in 24 hours.";
-                    $mail->send();
-
-                    $message = "Registration successful! Please check your email to verify your account.";
-                    $icon = "success";
-                    $redirectUrl = "../pages/login.php";
-                } catch (Exception $e) {
-                    $errors[] = "Message could not be sent. Mailer Error: " . $mail->ErrorInfo;
-                }
-            } catch (Exception $e) {
-                // If anything fails, roll back the transaction
-                $pdo->rollBack();
-                $errors[] = $e->getMessage();
+        try {
+            // Begin transaction
+            $pdo->beginTransaction();
+            
+            // Insert the new user record including role_id = 3
+            $stmt = $pdo->prepare("INSERT INTO Users (email, password_hash, role_id, isverify, verification_token, verification_expiry) VALUES (?, ?, ?, 'no', ?, ?)");
+            if (!$stmt->execute([$email, $passwordHash, $role_id, $verificationToken, $verificationExpiry])) {
+                throw new Exception("Failed to create user account.");
             }
+            
+            // Get the newly created user ID
+            $user_id = $pdo->lastInsertId();
+              // Store the extracted ID information if available
+            if (!empty($extractedData)) {
+                // Create UserProfiles entry with extracted data
+                $sql = "INSERT INTO UserProfiles (user_id, first_name, middle_name, last_name, address, date_of_birth, id_number, id_type) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
+                $stmt = $pdo->prepare($sql);
+                $stmt->execute([
+                    $user_id,
+                    $extractedData['given_name'] ?? null,
+                    $extractedData['middle_name'] ?? null,
+                    $extractedData['last_name'] ?? null,
+                    $extractedData['address'] ?? null,
+                    $extractedData['date_of_birth'] ?? null,
+                    $extractedData['id_number'] ?? null,
+                    $extractedData['type_of_id'] ?? null
+                ]);
+            }
+            
+            // Handle ID document file
+            if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
+                // Create a unique filename for the ID document
+                $fileExt = pathinfo($_FILES['govt_id']['name'], PATHINFO_EXTENSION);
+                $newFilename = 'id_user_' . $user_id . '_' . time() . '.' . $fileExt;
+                
+                // Don't move the file yet - as per requirements
+                // $uploadPath = __DIR__ . '/../uploads/' . $newFilename;
+                // move_uploaded_file($_FILES['govt_id']['tmp_name'], $uploadPath);
+                
+                // Update user record with ID document path
+                $stmt = $pdo->prepare("UPDATE Users SET id_document_path = ? WHERE user_id = ?");
+                $stmt->execute(['uploads/' . $newFilename, $user_id]);
+            }
+            
+            // Commit transaction
+            $pdo->commit();
+            
+            // Create the verification link
+            $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;                // Send verification email using PHPMailer
+            $mail = new PHPMailer(true);
+            try {
+                $mail->isSMTP();
+                $mail->Host       = 'smtp.gmail.com';
+                $mail->SMTPAuth   = true;
+                $mail->Username   = 'barangayhub2@gmail.com';
+                $mail->Password   = 'eisy hpjz rdnt bwrp';
+                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                $mail->Port       = 587;
+
+                $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
+                $mail->addAddress($email);
+
+                $mail->isHTML(true);
+                $mail->Subject = 'Email Verification';
+                $mail->Body    = "Thank you for registering. Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>Your link will expire in 24 hours.";
+                $mail->send();
+
+                $message = "Registration successful! Please check your email to verify your account.";
+                $icon = "success";
+                $redirectUrl = "../pages/login.php";
+            } catch (Exception $e) {
+                $errors[] = "Message could not be sent. Mailer Error: " . $mail->ErrorInfo;
+            }
+        } catch (Exception $e) {
+            // If anything fails, roll back the transaction
+            $pdo->rollBack();
+            $errors[] = $e->getMessage();
         }
     }
 
@@ -261,18 +248,6 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
             </script>
         </body>
         </html>";
-        exit();
-
-    } catch (Exception $e) {
-        $conn->rollback();
-        $_SESSION['alert'] = "<script>
-            Swal.fire({
-                icon: 'error',
-                title: 'Registration Failed',
-                text: '".addslashes($e->getMessage())."'
-            });
-        </script>";
-        header("Location: register.php");
         exit();
     }
 } else {
