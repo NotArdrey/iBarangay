@@ -215,6 +215,7 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
+<!-- Manage Census -->
 <li>
   <a href="../pages/manage_census.php" class="nav-link">
     <span class="icon-container">
@@ -226,7 +227,6 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     <span class="font-medium text-gray-700">Manage Census</span>
   </a>
 </li>
-
 
 <!-- Audit Trail -->
 <li>
@@ -253,29 +253,28 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     </button>
   </form>
 </li>
-
       </ul>
     </nav>
   </aside>
 
   <main class="ml-64 p-8 space-y-8">
     <script>
-      document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-          Swal.fire({
-            title: 'Ready to leave?',
-            text: "Select 'Logout' below if you are ready to end your current session.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Logout',
-            cancelButtonText: 'Cancel'
-          }).then((result) => {
-            if (result.isConfirmed) {
-              document.getElementById('logoutForm').submit();
-            }
-          });
-        });
-      });
+   document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    Swal.fire({
+      title: 'Ready to leave?',
+      text: "Select 'Logout' below if you are ready to end your current session.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Logout',
+      cancelButtonText: 'Cancel'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        document.getElementById('logoutForm').submit();
+      }
+    });
+  });
+});
     </script>

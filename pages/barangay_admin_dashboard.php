@@ -12,12 +12,16 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalResidents = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(DISTINCT a.user_id) FROM addresses a JOIN users u ON a.user_id = u.id WHERE u.barangay_id = :bid";
+// Updated households query with proper joins; replacing the old query using a.user_id
+$sql = "SELECT COUNT(DISTINCT p.user_id) FROM addresses a 
+        JOIN persons p ON a.person_id = p.id 
+        JOIN users u ON p.user_id = u.id 
+        WHERE u.barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalHouseholds = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(*) FROM document_requests dr JOIN users u ON dr.user_id = u.id WHERE dr.status = 'pending' AND u.barangay_id = :bid";
+$sql = "SELECT COUNT(*) FROM document_requests dr JOIN users u ON dr.requested_by_user_id = u.id WHERE dr.status = 'pending' AND u.barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $pendingRequests = (int) $stmt->fetchColumn();
@@ -47,7 +51,11 @@ if (empty($genderLabels)) {
 }
 
 // Document requests
-$sql = "SELECT dt.document_name, COUNT(*) AS count FROM document_requests dr JOIN document_types dt ON dr.document_type_id = dt.id JOIN users u ON dr.user_id = u.id WHERE u.barangay_id = :bid GROUP BY dt.document_name ORDER BY count DESC LIMIT 5";
+$sql = "SELECT dt.name, COUNT(*) AS count FROM document_requests dr 
+        JOIN document_types dt ON dr.document_type_id = dt.id 
+        JOIN users u ON dr.requested_by_user_id = u.id 
+        WHERE u.barangay_id = :bid 
+        GROUP BY dt.name ORDER BY count DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $docTypeData = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -55,7 +63,7 @@ $docTypeData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $docLabels = [];
 $docCounts = [];
 foreach ($docTypeData as $d) {
-    $docLabels[] = $d['document_name'];
+    $docLabels[] = $d['name'];
     $docCounts[] = (int) $d['count'];
 }
 if (empty($docLabels)) {
@@ -64,7 +72,12 @@ if (empty($docLabels)) {
 }
 
 // Recent requests
-$sql = "SELECT dr.id, dt.document_name, CONCAT(u.first_name, ' ', u.last_name) AS requester, dr.status, dr.request_date FROM document_requests dr JOIN document_types dt ON dr.document_type_id = dt.id JOIN users u ON dr.user_id = u.id WHERE u.barangay_id = :bid ORDER BY dr.request_date DESC LIMIT 5";
+$sql = "SELECT dr.id, dt.name, CONCAT(u.first_name, ' ', u.last_name) AS requester, dr.status, dr.request_date 
+        FROM document_requests dr 
+        JOIN document_types dt ON dr.document_type_id = dt.id 
+        JOIN users u ON dr.requested_by_user_id = u.id 
+        WHERE u.barangay_id = :bid 
+        ORDER BY dr.request_date DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $recentRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -155,7 +168,7 @@ foreach ($events as $event) {
           <?php foreach($recentRequests as $req): ?>
           <tr class="hover:bg-gray-50">
             <td class="px-4 py-2 border-b"><?= htmlspecialchars($req['requester']) ?></td>
-            <td class="px-4 py-2 border-b"><?= htmlspecialchars($req['document_name']) ?></td>
+            <td class="px-4 py-2 border-b"><?= htmlspecialchars($req['name']) ?></td>
             <td class="px-4 py-2 border-b"><?= htmlspecialchars($req['status']) ?></td>
             <td class="px-4 py-2 border-b"><?= htmlspecialchars($req['request_date']) ?></td>
           </tr>

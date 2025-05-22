@@ -1,8 +1,13 @@
 <?php
-session_start();
+
+// Ensure session is started before using $_SESSION
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require __DIR__ . "/../vendor/autoload.php";
 require __DIR__ . "/../config/dbconn.php";
-require_once __DIR__ . "/../pages/header.php";
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -38,14 +43,15 @@ function logAuditTrail(PDO $pdo, int $admin, string $action, string $table, int 
 
 // Build query to fetch residents (role_id = ROLE_RESIDENT)
 $sql = <<<SQL
-SELECT u.*, a.street AS home_address, p.first_name as person_first_name, p.middle_name as person_middle_name, 
-       p.last_name as person_last_name, p.birth_date as person_birth_date, p.gender as person_gender,
-       p.contact_number as person_contact_number, p.civil_status as marital_status,
-       ec.contact_name as emergency_contact_name, ec.contact_number as emergency_contact_number,
-       ec.contact_address as emergency_contact_address, pi.id_image_path
+SELECT u.*, a.street AS home_address, 
+       p.first_name AS person_first_name, p.middle_name AS person_middle_name, 
+       p.last_name AS person_last_name, p.birth_date AS person_birth_date, p.gender AS person_gender,
+       p.contact_number AS person_contact_number, p.civil_status AS marital_status,
+       ec.contact_name AS emergency_contact_name, ec.contact_number AS emergency_contact_number,
+       ec.contact_address AS emergency_contact_address, pi.id_image_path
   FROM users u
-  LEFT JOIN addresses a ON u.id = a.user_id
   LEFT JOIN persons p ON u.id = p.user_id
+  LEFT JOIN addresses a ON p.id = a.person_id
   LEFT JOIN emergency_contacts ec ON p.id = ec.person_id
   LEFT JOIN person_identification pi ON p.id = pi.person_id
  WHERE u.role_id = :role
@@ -247,25 +253,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
 
         // Update or insert Address
         $homeAddress = trim($_POST['edit_home_address'] ?? '');
-        $checkStmt = $pdo->prepare("SELECT id FROM addresses WHERE user_id = :user_id");
-        $checkStmt->execute([':user_id' => $user_id]);
-
-        if ($checkStmt->fetch()) {
-            $upd = $pdo->prepare("UPDATE addresses SET street = :street WHERE user_id = :user_id");
-            $upd->execute([':street' => $homeAddress, ':user_id' => $user_id]);
-        } else {
-            // Get person_id for address insert
-            $getPersonStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = :user_id");
-            $getPersonStmt->execute([':user_id' => $user_id]);
-            $personId = $getPersonStmt->fetchColumn();
-            
-            if ($personId) {
-                $ins = $pdo->prepare("INSERT INTO addresses (person_id, user_id, barangay_id, street, residency_type) VALUES (:person_id, :user_id, :barangay_id, :street, 'Home Owner')");
+        // Retrieve person_id for this user
+        $getPersonStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = :user_id");
+        $getPersonStmt->execute([':user_id' => $user_id]);
+        $personId = $getPersonStmt->fetchColumn();
+        
+        if ($personId) {
+            $checkStmt = $pdo->prepare("SELECT id FROM addresses WHERE person_id = :person_id");
+            $checkStmt->execute([':person_id' => $personId]);
+    
+            if ($checkStmt->fetch()) {
+                $upd = $pdo->prepare("UPDATE addresses SET street = :street WHERE person_id = :person_id");
+                $upd->execute([':street' => $homeAddress, ':person_id' => $personId]);
+            } else {
+                $ins = $pdo->prepare("INSERT INTO addresses (person_id, barangay_id, street, residency_type) VALUES (:person_id, :barangay_id, :street, 'Home Owner')");
                 $ins->execute([
-                    ':person_id' => $personId,
-                    ':user_id' => $user_id, 
+                    ':person_id'   => $personId,
                     ':barangay_id' => $bid,
-                    ':street' => $homeAddress
+                    ':street'      => $homeAddress
                 ]);
             }
         }
@@ -320,7 +325,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
     exit;
 }
 
-
+require_once __DIR__ . "/../pages/header.php";
 ?>
 
 

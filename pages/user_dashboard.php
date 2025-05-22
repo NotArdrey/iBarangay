@@ -94,6 +94,10 @@ if (isset($_SESSION['user_id'])) {
         $orgChartData = $orgChartQuery->fetchAll();
     }
 }
+
+// Fetch persons data using PDO
+$stmt = $pdo->prepare("SELECT * FROM persons WHERE user_id = ?");
+$stmt->execute([$_SESSION['user_id']]);
 ?>
 
 <!DOCTYPE html>
