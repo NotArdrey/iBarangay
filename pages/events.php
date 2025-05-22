@@ -21,11 +21,12 @@ if (!$user_id || !$bid) {
 function logAuditTrail(PDO $pdo, int $adminId, string $action,
                        string $table, int $recordId, string $desc = ''): void
 {
+    // Fix: Always set user_id (required, NOT NULL) and admin_user_id
     $pdo->prepare(
-        "INSERT INTO AuditTrail
-         (admin_user_id, action, table_name, record_id, description)
-         VALUES (?,?,?,?,?)"
-    )->execute([$adminId, $action, $table, $recordId, $desc]);
+        "INSERT INTO audit_trails
+         (user_id, admin_user_id, action, table_name, record_id, description)
+         VALUES (?, ?, ?, ?, ?, ?)"
+    )->execute([$adminId, $adminId, $action, $table, $recordId, $desc]);
 }
 
 function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type): void
@@ -80,13 +81,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* postpone + delete */
     if (isset($_POST['delete']) && $event_id) {
-        $stmt = $pdo->prepare("SELECT * FROM events WHERE event_id = ? AND barangay_id = ?");
+        $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND barangay_id = ?");
         $stmt->execute([$event_id, $bid]);
         $event = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($event) {
             sendEventEmails($pdo, $event, $bid, 'postponed');
-            $pdo->prepare("DELETE FROM events WHERE event_id = ? AND barangay_id = ?")
+            $pdo->prepare("DELETE FROM events WHERE id = ? AND barangay_id = ?")
                 ->execute([$event_id, $bid]);
             logAuditTrail($pdo, $user_id, 'DELETE', 'events', $event_id, 'Event postponed & deleted');
             $_SESSION['message'] = 'Event postponed and removed; residents notified.';
@@ -115,8 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($organizer !== '' && strlen($organizer) > 100)
         $errors[] = 'Organizer max 100 chars';
 
-    $startDT = DateTime::createFromFormat('Y-m-d\TH:i', $startRaw);
-    $endDT   = DateTime::createFromFormat('Y-m-d\TH:i', $endRaw);
+    $startDT = DateTime::createFromFormat('Y-m-d\TH:i', $startRaw) ?: DateTime::createFromFormat('Y-m-d H:i:s', $startRaw);
+    $endDT   = DateTime::createFromFormat('Y-m-d\TH:i', $endRaw)   ?: DateTime::createFromFormat('Y-m-d H:i:s', $endRaw);
 
     if (!$startDT) $errors[] = 'Invalid start date/time';
     if (!$endDT)   $errors[] = 'Invalid end date/time';
@@ -138,7 +139,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "UPDATE events
                    SET title = ?, description = ?, start_datetime = ?, end_datetime = ?,
                        location = ?, organizer = ?
-                 WHERE event_id = ? AND barangay_id = ?"
+                 WHERE id = ? AND barangay_id = ?"
             )->execute([
                 $title, $description, $start_datetime, $end_datetime,
                 $location, $organizer, $event_id, $bid
@@ -150,7 +151,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $pdo->prepare(
                 "INSERT INTO events
                      (title, description, start_datetime, end_datetime,
-                      location, organizer, barangay_id, created_by)
+                      location, organizer, barangay_id, created_by_user_id)
                  VALUES (?,?,?,?,?,?,?,?)"
             )->execute([
                 $title, $description, $start_datetime, $end_datetime,
@@ -158,7 +159,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
 
             $newId = (int)$pdo->lastInsertId();
-            $evt   = $pdo->prepare("SELECT * FROM events WHERE event_id = ?");
+            $evt   = $pdo->prepare("SELECT * FROM events WHERE id = ?");
             $evt->execute([$newId]);
             $evt = $evt->fetch(PDO::FETCH_ASSOC);
 
@@ -176,7 +177,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 /* fetch events */
-$stmt = $pdo->prepare("SELECT * FROM events WHERE barangay_id = :bid ORDER BY start_datetime DESC");
+$stmt = $pdo->prepare("
+    SELECT 
+        e.*, 
+        u.first_name AS creator_first_name, 
+        u.last_name AS creator_last_name
+    FROM events e
+    LEFT JOIN users u ON e.created_by_user_id = u.id
+    WHERE e.barangay_id = :bid 
+    ORDER BY e.start_datetime DESC
+");
 $stmt->execute([':bid' => $bid]);
 $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -216,6 +226,8 @@ require __DIR__ . '/../pages/header.php';
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">End</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organizer</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
                     </thead>
@@ -239,10 +251,14 @@ require __DIR__ . '/../pages/header.php';
                                 <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($event['location']) ?></td>
                                 <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($event['organizer'] ?? 'N/A') ?></td>
                                 <td class="px-4 py-3 text-sm text-gray-600">
+                                    <?= htmlspecialchars(trim(($event['creator_first_name'] ?? '') . ' ' . ($event['creator_last_name'] ?? ''))) ?>
+                                </td>
+                                <td class="px-4 py-3 text-sm text-gray-600"><?= nl2br(htmlspecialchars($event['description'] ?? '')) ?></td>
+                                <td class="px-4 py-3 text-sm text-gray-600">
                                     <div class="flex items-center space-x-3">
-                                        <button onclick="editEvent(<?= $event['event_id'] ?>)" class="p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50">Edit</button>
+                                        <button onclick="editEvent(<?= $event['id'] ?>)" class="p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50">Edit</button>
                                         <form method="POST" class="inline">
-                                            <input type="hidden" name="event_id" value="<?= $event['event_id'] ?>">
+                                            <input type="hidden" name="event_id" value="<?= $event['id'] ?>">
                                             <input type="hidden" name="delete" value="1">
                                             <button type="button" onclick="confirmDelete(this.form)" class="p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50">Delete</button>
                                         </form>
@@ -251,7 +267,7 @@ require __DIR__ . '/../pages/header.php';
                             </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <tr><td colspan="6" class="px-4 py-4 text-center text-gray-500">No events found</td></tr>
+                            <tr><td colspan="8" class="px-4 py-4 text-center text-gray-500">No events found</td></tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -318,8 +334,8 @@ require __DIR__ . '/../pages/header.php';
             modal.classList.toggle('hidden');
             if (eventId) {
                 <?php foreach ($events as $e): ?>
-                if (<?= $e['event_id'] ?> === eventId) {
-                    document.getElementById('eventId').value = <?= $e['event_id'] ?>;
+                if (<?= $e['id'] ?> === eventId) {
+                    document.getElementById('eventId').value = <?= $e['id'] ?>;
                     document.querySelector('[name="title"]').value = '<?= addslashes($e['title']) ?>';
                     document.querySelector('[name="start_datetime"]').value = '<?= str_replace(' ', 'T', $e['start_datetime']) ?>';
                     document.querySelector('[name="end_datetime"]').value = '<?= str_replace(' ', 'T', $e['end_datetime']) ?>';

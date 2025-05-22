@@ -53,39 +53,40 @@ if (isset($_GET['action'])) {
   try {
       if ($action === 'view_doc_request') {
           $stmt = $pdo->prepare("
-              SELECT dr.document_request_id,
-                     dr.request_date,
-                     dr.status,
-                     '' AS delivery_method,
-                     dr.proof_image_path,
-                     dr.remarks AS request_remarks,
-                     dt.document_name,
-                     u.id AS user_id,
-                     u.email,
-                     u.contact_number,
-                     u.birth_date,
-                     u.gender,
-                     u.marital_status,
-                     u.emergency_contact_name,
-                     u.emergency_contact_number,
-                     u.emergency_contact_address,
-                     u.id_image_path,
-                     CONCAT(u.first_name,' ',COALESCE(u.middle_name,''),' ',u.last_name) AS full_name,
-                     MAX(CASE WHEN a.attr_key='clearance_purpose'  THEN a.attr_value END) AS clearance_purpose,
-                     MAX(CASE WHEN a.attr_key='residency_duration' THEN a.attr_value END) AS residency_duration,
-                     MAX(CASE WHEN a.attr_key='residency_purpose'  THEN a.attr_value END) AS residency_purpose,
-                     MAX(CASE WHEN a.attr_key='gmc_purpose'        THEN a.attr_value END) AS gmc_purpose,
-                     MAX(CASE WHEN a.attr_key='nic_reason'         THEN a.attr_value END) AS nic_reason,
-                     MAX(CASE WHEN a.attr_key='indigency_income'   THEN a.attr_value END) AS indigency_income,
-                     MAX(CASE WHEN a.attr_key='indigency_reason'   THEN a.attr_value END) AS indigency_reason
+              SELECT 
+                  dr.id AS document_request_id, 
+                  dr.request_date,
+                  dr.status,
+                  '' AS delivery_method,
+                  dr.proof_image_path,
+                  dr.remarks AS request_remarks,
+                  dt.name AS document_name,
+                  u.id AS user_id,
+                  u.email,
+                  u.contact_number,
+                  u.birth_date,
+                  u.gender,
+                  u.marital_status,
+                  u.emergency_contact_name,
+                  u.emergency_contact_number,
+                  u.emergency_contact_address,
+                  u.id_image_path,
+                  CONCAT(u.first_name,' ',COALESCE(u.middle_name,''),' ',u.last_name) AS full_name,
+                  MAX(CASE WHEN a.attr_key='clearance_purpose'  THEN a.attr_value END) AS clearance_purpose,
+                  MAX(CASE WHEN a.attr_key='residency_duration' THEN a.attr_value END) AS residency_duration,
+                  MAX(CASE WHEN a.attr_key='residency_purpose'  THEN a.attr_value END) AS residency_purpose,
+                  MAX(CASE WHEN a.attr_key='gmc_purpose'        THEN a.attr_value END) AS gmc_purpose,
+                  MAX(CASE WHEN a.attr_key='nic_reason'         THEN a.attr_value END) AS nic_reason,
+                  MAX(CASE WHEN a.attr_key='indigency_income'   THEN a.attr_value END) AS indigency_income,
+                  MAX(CASE WHEN a.attr_key='indigency_reason'   THEN a.attr_value END) AS indigency_reason
               FROM document_requests dr
-              JOIN document_types dt ON dr.document_type_id = dt.document_type_id
-              JOIN users u ON dr.user_id = u.id
-              LEFT JOIN document_request_attributes a ON dr.document_request_id = a.request_id
+              JOIN document_types dt ON dr.document_type_id = dt.id
+              JOIN users u ON dr.requested_by_user_id = u.id
+              LEFT JOIN document_request_attributes a ON dr.id = a.request_id
               WHERE dr.barangay_id = :bid
-                AND dr.document_request_id = :id
+                AND dr.id = :id
                 AND LOWER(dr.status) = 'pending'
-              GROUP BY dr.document_request_id
+              GROUP BY dr.id
           ");
           $stmt->execute([':bid'=>$bid, ':id'=>$reqId]);
           $result = $stmt->fetch();
@@ -159,14 +160,15 @@ if (isset($_GET['action'])) {
         }
     }elseif ($action === 'send_email') {
           $stmt = $pdo->prepare("
-              SELECT dr.document_request_id,
-                     dt.document_name,
-                     u.email,
-                     CONCAT(u.first_name,' ',u.last_name) AS requester_name
+              SELECT 
+                  dr.id AS document_request_id,
+                  dt.name AS document_name,
+                  u.email,
+                  CONCAT(u.first_name,' ',u.last_name) AS requester_name
               FROM document_requests dr
-              JOIN document_types dt ON dr.document_type_id = dt.document_type_id
-              JOIN users u ON dr.user_id = u.id
-              WHERE dr.document_request_id = :id
+              JOIN document_types dt ON dr.document_type_id = dt.id
+              JOIN users u ON dr.requested_by_user_id = u.id
+              WHERE dr.id = :id
                 AND dr.barangay_id = :bid
           ");
           $stmt->execute([':id'=>$reqId, ':bid'=>$bid]);
@@ -200,7 +202,7 @@ if (isset($_GET['action'])) {
                   $upd = $pdo->prepare("
                       UPDATE document_requests
                       SET status = 'Complete'
-                      WHERE document_request_id = :id AND barangay_id = :bid
+                      WHERE id = :id AND barangay_id = :bid
                   ");
                   $upd->execute([':id'=>$reqId,':bid'=>$bid]);
                   logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,'Sent PDF and marked complete.');
@@ -231,7 +233,7 @@ if (isset($_GET['action'])) {
           $stmt = $pdo->prepare("
               UPDATE document_requests
               SET status = 'Complete'
-              WHERE document_request_id = :id AND barangay_id = :bid
+              WHERE id = :id AND barangay_id = :bid
           ");
           if ($stmt->execute([':id'=>$reqId,':bid'=>$bid])) {
               logAuditTrail($pdo,$current_admin_id,'UPDATE','document_requests',$reqId,'Marked complete manually.');
@@ -244,14 +246,15 @@ if (isset($_GET['action'])) {
       } elseif ($action === 'delete') {
           $remarks = $_POST['remarks'] ?? '';
           $stmt = $pdo->prepare("
-              SELECT dr.document_request_id,
-                     dt.document_name,
-                     u.email,
-                     CONCAT(u.first_name,' ',u.last_name) AS requester_name
+              SELECT 
+                  dr.id AS document_request_id,
+                  dt.name AS document_name,
+                  u.email,
+                  CONCAT(u.first_name,' ',u.last_name) AS requester_name
               FROM document_requests dr
-              JOIN document_types dt ON dr.document_type_id = dt.document_type_id
-              JOIN users u ON dr.user_id = u.id
-              WHERE dr.document_request_id = :id
+              JOIN document_types dt ON dr.document_type_id = dt.id
+              JOIN users u ON dr.requested_by_user_id = u.id
+              WHERE dr.id = :id
                 AND dr.barangay_id = :bid
           ");
           $stmt->execute([':id'=>$reqId,':bid'=>$bid]);
@@ -280,7 +283,7 @@ if (isset($_GET['action'])) {
           }
           $stmtDel = $pdo->prepare("
               DELETE FROM document_requests
-              WHERE document_request_id = :id AND barangay_id = :bid
+              WHERE id = :id AND barangay_id = :bid
           ");
           if ($stmtDel->execute([':id'=>$reqId,':bid'=>$bid])) {
               logAuditTrail($pdo,$current_admin_id,'DELETE','document_requests',$reqId,'Deleted request with remarks: '.$remarks);
@@ -292,15 +295,16 @@ if (isset($_GET['action'])) {
 
       } elseif ($action === 'get_requests') {
         $stmtPending = $pdo->prepare("
-        SELECT dr.document_request_id,
-               dr.request_date,
-               dr.status,
-               '' AS delivery_method,
-               dt.document_name,
-               CONCAT(u.first_name,' ',u.last_name) AS requester_name
+        SELECT 
+            dr.id AS document_request_id,
+            dr.request_date,
+            dr.status,
+            '' AS delivery_method,
+            dt.name AS document_name,
+            CONCAT(u.first_name,' ',u.last_name) AS requester_name
         FROM document_requests dr
-        JOIN document_types dt ON dr.document_type_id = dt.document_type_id
-        JOIN users u ON dr.user_id = u.id
+        JOIN document_types dt ON dr.document_type_id = dt.id
+        JOIN users u ON dr.requested_by_user_id = u.id
         WHERE dr.barangay_id = :bid
           AND LOWER(dr.status) = 'pending'
         ORDER BY dr.request_date ASC
@@ -309,15 +313,16 @@ if (isset($_GET['action'])) {
     $pending = $stmtPending->fetchAll(PDO::FETCH_ASSOC);
 
     $stmtCompleted = $pdo->prepare("
-        SELECT dr.document_request_id,
-               dr.request_date,
-               dr.status,
-               '' AS delivery_method,
-               dt.document_name,
-               CONCAT(u.first_name,' ',u.last_name) AS requester_name
+        SELECT 
+            dr.id AS document_request_id,
+            dr.request_date,
+            dr.status,
+            '' AS delivery_method,
+            dt.name AS document_name,
+            CONCAT(u.first_name,' ',u.last_name) AS requester_name
         FROM document_requests dr
-        JOIN document_types dt ON dr.document_type_id = dt.document_type_id
-        JOIN users u ON dr.user_id = u.id
+        JOIN document_types dt ON dr.document_type_id = dt.id
+        JOIN users u ON dr.requested_by_user_id = u.id
         WHERE dr.barangay_id = :bid
           AND LOWER(dr.status) = 'complete'
         ORDER BY dr.request_date ASC
@@ -348,17 +353,17 @@ require_once "../pages/header.php";
 // 1) Fetch all "Pending" doc requests (FIFO => earliest date first)
 $stmt = $pdo->prepare("
   SELECT 
-        dr.document_request_id,
+        dr.id AS document_request_id,
         dr.request_date,
         dr.status,
         '' AS delivery_method,
-        dt.document_name,
+        dt.name AS document_name,
         u.id AS user_id,
         u.is_active,
         CONCAT(u.first_name, ' ', u.last_name) AS requester_name
     FROM document_requests dr
-    JOIN document_types dt ON dr.document_type_id = dt.document_type_id
-    JOIN users u          ON dr.user_id           = u.id
+    JOIN document_types dt ON dr.document_type_id = dt.id
+    JOIN users u          ON dr.requested_by_user_id           = u.id
     WHERE dr.barangay_id   = :bid
       AND u.is_active     = 'yes'
       AND LOWER(dr.status)= 'pending'
@@ -370,15 +375,15 @@ $docRequests = $stmt->fetchAll();
 // 2) Fetch all "Complete" doc requests (History), also FIFO => earliest date first
 $stmtHist = $pdo->prepare("
      SELECT 
-        dr.document_request_id,
+        dr.id AS document_request_id,
         dr.request_date,
         dr.status,
         '' AS delivery_method,
-        dt.document_name,
+        dt.name AS document_name,
         CONCAT(u.first_name, ' ', u.last_name) AS requester_name
     FROM document_requests dr
-    JOIN document_types dt ON dr.document_type_id = dt.document_type_id
-    JOIN users u ON dr.user_id = u.id
+    JOIN document_types dt ON dr.document_type_id = dt.id
+    JOIN users u ON dr.requested_by_user_id = u.id
     WHERE dr.barangay_id = :bid
       AND LOWER(dr.status) = 'complete'
     ORDER BY dr.request_date ASC

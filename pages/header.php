@@ -253,7 +253,6 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     </button>
   </form>
 </li>
-
       </ul>
     </nav>
   </aside>
