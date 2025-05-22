@@ -53,7 +53,7 @@ if (isset($_SESSION['user_id'])) {
             WHERE dr.user_id = ? 
             AND dt.document_name = 'First Time Job Seeker'
         ");
-        $firstTimeJobSeekerCheck->execute([$user_id]);
+        //$firstTimeJobSeekerCheck->execute([$user_id]);
         $result = $firstTimeJobSeekerCheck->fetch(PDO::FETCH_ASSOC);
         $hasRequestedFirstTimeJobSeeker = $result['count'] > 0;
 
@@ -225,12 +225,13 @@ if (isset($_SESSION['user_id'])) {
     <section class="hero" id="home">
       <div class="hero-overlay"></div>
       <div class="hero-content" data-aos="fade-up">
-        <h1>Welcome to iBarangay</h1>
-        <?php if (!empty($userName)): ?>
-        <p>Hello, <?php echo htmlspecialchars($userName); ?>! Your one-stop platform for all barangay services</p>
+        <?php if (!empty($barangayName)): ?>
+        <h1>Welcome to <?php echo htmlspecialchars($barangayName); ?></h1>
         <?php else: ?>
+        <h1>Welcome to iBarangay</h1>
+        <?php endif; ?>       
         <p>Your one-stop platform for all barangay services</p>
-        <?php endif; ?>
+
         <a href="#services" class="btn cta-button">Explore Services</a>
       </div>
     </section>
@@ -349,7 +350,7 @@ if (isset($_SESSION['user_id'])) {
 .carousel-slide {
     min-width: 400px;
     flex-shrink: 0;
-    padding: 0 2rem;
+    padding: 0 rem;
     transition: opacity 0.3s ease;
 }
 
