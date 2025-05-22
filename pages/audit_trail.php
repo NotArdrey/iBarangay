@@ -21,7 +21,7 @@ $stmt = $pdo->prepare("
            CONCAT(u.first_name,' ',u.last_name) AS admin_name,
            r.role_name
     FROM   AuditTrail a
-    JOIN   Users u ON u.user_id  = a.admin_user_id
+    JOIN   users u ON u.user_id  = a.admin_user_id
     JOIN   Role  r ON r.role_id  = u.role_id
     WHERE  u.barangay_id = :bid
     ORDER  BY a.action_timestamp DESC

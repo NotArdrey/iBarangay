@@ -1,18 +1,13 @@
 <?php
 session_start();
-require_once __DIR__ . '/../vendor/autoload.php';
-
+require '../config/dbconn.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
+use PHPMailer\PHPMailer\SMTP;
 use Dotenv\Dotenv;
 
-require "../config/dbconn.php";
-
-// Load environment variables if .env file exists
-if (file_exists(__DIR__ . '/../.env')) {
-    $dotenv = Dotenv::createImmutable(__DIR__ . '/..');
-    $dotenv->load();
-}
+// Include the PHPMailer autoloader
+require_once '../vendor/autoload.php';
 
 // ------------------------------------------------------
 // Email Verification: Process link click with token
@@ -21,16 +16,16 @@ if (isset($_GET['token'])) {
     $token = $_GET['token'];
 
     // Prepare statement to find user with the provided token
-    $stmt = $pdo->prepare("SELECT user_id, email FROM Users WHERE verification_token = :token AND isverify = 'no' AND verification_expiry > NOW()");
+    $stmt = $pdo->prepare("SELECT id, email FROM users WHERE verification_token = :token AND email_verified_at IS NULL AND verification_expiry > NOW()");
     $stmt->execute([':token' => $token]);
     $user = $stmt->fetch();
 
     if ($user) {
-        $user_id = $user['user_id'];
+        $user_id = $user['id'];
         $userEmail = $user['email'];
 
         // Update user record to mark as verified and clear token data
-        $stmt2 = $pdo->prepare("UPDATE Users SET isverify = 'yes', verification_token = NULL, verification_expiry = NULL WHERE user_id = :user_id");
+        $stmt2 = $pdo->prepare("UPDATE users SET email_verified_at = NOW(), verification_token = NULL, verification_expiry = NULL WHERE id = :user_id");
         if ($stmt2->execute([':user_id' => $user_id])) {
             // Prepare and send confirmation email to user
             $mail = new PHPMailer(true);
@@ -96,7 +91,24 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
     $email = trim($_POST['email']);
     $password = $_POST['password'];
     $confirmPassword = $_POST['confirmPassword'];
+    $person_id = isset($_POST['person_id']) ? trim($_POST['person_id']) : null;
     $errors = [];
+
+    // Verify person_id is provided - this confirms the person exists in the database
+    if (empty($person_id)) {
+        $errors[] = "Identity verification failed. Only verified residents can register.";
+    } else {
+        // Verify the person_id exists and is not already linked to a user
+        $stmt = $pdo->prepare("SELECT id, user_id FROM persons WHERE id = ?");
+        $stmt->execute([$person_id]);
+        $person = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$person) {
+            $errors[] = "The provided identity verification has failed.";
+        } elseif (!empty($person['user_id'])) {
+            $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
+        }
+    }
 
     // Validate email
     if (empty($email)) {
@@ -154,61 +166,171 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
         $verificationExpiry = date('Y-m-d H:i:s', strtotime('+1 day'));
 
         // Check if the email is already registered
-        $stmt = $pdo->prepare("SELECT user_id FROM Users WHERE email = ?");
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
         $stmt->execute([$email]);
         if ($stmt->rowCount() > 0) {
             $errors[] = "This email is already registered.";
         }        if (empty($errors)) {
+            // Show loading animation immediately after verification
+            echo "<!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset='UTF-8'>
+                <title>Processing Registration</title>
+                <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+                <style>
+                    body, .swal2-popup {
+                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                    }
+                    .swal2-title, .swal2-html-container {
+                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                    }
+                    .email-animation {
+                        text-align: center;
+                        margin: 20px auto;
+                    }
+                    .email-animation i {
+                        font-size: 40px;
+                        color: #3b82f6;
+                    }
+                    @keyframes fly {
+                        0% { transform: translateY(0) scale(0.8); opacity: 0; }
+                        20% { transform: translateY(-5px) scale(0.9); opacity: 0.6; }
+                        50% { transform: translateY(-15px) scale(1); opacity: 1; }
+                        80% { transform: translateY(-25px) scale(0.9); opacity: 0.6; }
+                        100% { transform: translateY(-35px) scale(0.8); opacity: 0; }
+                    }
+                    .envelope {
+                        animation: fly 2s infinite;
+                        display: inline-block;
+                    }
+                    .btn-login {
+                        background-color: #3b82f6;
+                        color: white;
+                        border: none;
+                        padding: 10px 20px;
+                        border-radius: 5px;
+                        font-size: 16px;
+                        cursor: pointer;
+                        margin-top: 20px;
+                        transition: background-color 0.3s;
+                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                    }
+                    .btn-login:hover {
+                        background-color: #2563eb;
+                    }
+                </style>
+                <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css' />
+            </head>
+            <body>
+                <script>
+                    let timerInterval;
+                    Swal.fire({
+                        title: 'Processing Registration',
+                        html: '<div class=\"email-animation\"><i class=\"fas fa-envelope envelope\"></i></div><p>Please wait while we process your registration...</p>',
+                        allowOutsideClick: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                </script>
+            </body>
+            </html>";
+            flush();
+            ob_flush();
+        
             try {
                 // Begin transaction
                 $pdo->beginTransaction();
                 
-                // Insert the new user record including role_id = 3
-                $stmt = $pdo->prepare("INSERT INTO Users (email, password_hash, role_id, isverify, verification_token, verification_expiry) VALUES (?, ?, ?, 'no', ?, ?)");
-                if (!$stmt->execute([$email, $passwordHash, $role_id, $verificationToken, $verificationExpiry])) {
+                // Get the verified person's information to use in the user account
+                $personStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, gender FROM persons WHERE id = ?");
+                $personStmt->execute([$person_id]);
+                $personData = $personStmt->fetch(PDO::FETCH_ASSOC);
+
+                // Get the phone from the form
+                $phone = trim($_POST['phone'] ?? '');
+                
+                // Read the ID image file into a variable
+                $idImageData = null;
+                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
+                    $idImageData = file_get_contents($_FILES['govt_id']['tmp_name']);
+                }
+
+                // Insert the new user record with all available information
+                $stmt = $pdo->prepare("INSERT INTO users (
+                    email, 
+                    phone,
+                    password, 
+                    role_id, 
+                    first_name,
+                    last_name,
+                    gender,
+                    verification_token, 
+                    verification_expiry,
+                    govt_id_image,
+                    is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
+
+                if (!$stmt->execute([
+                    $email, 
+                    $phone,
+                    $passwordHash, 
+                    $role_id, 
+                    $personData['first_name'],
+                    $personData['last_name'],
+                    $personData['gender'],
+                    $verificationToken, 
+                    $verificationExpiry,
+                    $idImageData
+                ])) {
                     throw new Exception("Failed to create user account.");
                 }
                 
                 // Get the newly created user ID
                 $user_id = $pdo->lastInsertId();
-                  // Store the extracted ID information if available
-                if (!empty($extractedData)) {
-                    // Create UserProfiles entry with extracted data
-                    $sql = "INSERT INTO UserProfiles (user_id, first_name, middle_name, last_name, address, date_of_birth, id_number, id_type) 
-                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-                    $stmt = $pdo->prepare($sql);
-                    $stmt->execute([
-                        $user_id,
-                        $extractedData['given_name'] ?? null,
-                        $extractedData['middle_name'] ?? null,
-                        $extractedData['last_name'] ?? null,
-                        $extractedData['address'] ?? null,
-                        $extractedData['date_of_birth'] ?? null,
-                        $extractedData['id_number'] ?? null,
-                        $extractedData['type_of_id'] ?? null
-                    ]);
+                
+                // Link the user to the verified person record
+                $sql = "UPDATE persons SET user_id = ? WHERE id = ?";
+                $stmt = $pdo->prepare($sql);
+                if (!$stmt->execute([$user_id, $person_id])) {
+                    throw new Exception("Failed to link user account to person record.");
                 }
                 
-                // Handle ID document file
-                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
+                // Handle ID document file - store in filesystem as backup
+                // Note: We've already stored the image in the database above
+                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {                    
                     // Create a unique filename for the ID document
                     $fileExt = pathinfo($_FILES['govt_id']['name'], PATHINFO_EXTENSION);
                     $newFilename = 'id_user_' . $user_id . '_' . time() . '.' . $fileExt;
                     
-                    // Don't move the file yet - as per requirements
-                    // $uploadPath = __DIR__ . '/../uploads/' . $newFilename;
-                    // move_uploaded_file($_FILES['govt_id']['tmp_name'], $uploadPath);
+                    // Move the uploaded file to the uploads directory
+                    $uploadPath = __DIR__ . '/../uploads/' . $newFilename;
+                    move_uploaded_file($_FILES['govt_id']['tmp_name'], $uploadPath);
                     
-                    // Update user record with ID document path
-                    $stmt = $pdo->prepare("UPDATE Users SET id_document_path = ? WHERE user_id = ?");
-                    $stmt->execute(['uploads/' . $newFilename, $user_id]);
+                    // Store the file path in the person_identification table as a backup
+                    $checkStmt = $pdo->prepare("SELECT id FROM person_identification WHERE person_id = ?");
+                    $checkStmt->execute([$person_id]);
+                    
+                    if ($checkStmt->rowCount() > 0) {
+                        // Update existing record
+                        $idStmt = $pdo->prepare("UPDATE person_identification SET id_image_path = ? WHERE person_id = ?");
+                        $idStmt->execute(['uploads/' . $newFilename, $person_id]);
+                    } else {
+                        // Create new record
+                        $idStmt = $pdo->prepare("INSERT INTO person_identification (person_id, id_image_path) VALUES (?, ?)");
+                        $idStmt->execute([$person_id, 'uploads/' . $newFilename]);
+                    }
                 }
                 
                 // Commit transaction
                 $pdo->commit();
                 
                 // Create the verification link
-                $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;                // Send verification email using PHPMailer
+                $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;
+                
+                // Send verification email using PHPMailer
                 $mail = new PHPMailer(true);
                 try {
                     $mail->isSMTP();
@@ -230,8 +352,108 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $message = "Registration successful! Please check your email to verify your account.";
                     $icon = "success";
                     $redirectUrl = "../pages/login.php";
+                    
+                    // Now show the success message with button to return to login
+                    echo "<!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset='UTF-8'>
+                        <title>Registration Success</title>
+                        <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+                        <style>
+                            body, .swal2-popup {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .swal2-title, .swal2-html-container {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login {
+                                background-color: #3b82f6;
+                                color: white;
+                                border: none;
+                                padding: 10px 25px;
+                                border-radius: 5px;
+                                font-size: 16px;
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login:hover {
+                                background-color: #2563eb;
+                                transform: translateY(-2px);
+                                box-shadow: 0 6px 8px rgba(37, 99, 235, 0.3);
+                            }
+                            .btn-login:active {
+                                transform: translateY(0);
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <script>
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Registration Successful!',
+                                html: 'Your account has been created and a verification email has been sent to your address.<br>Please check your email to verify your account.<br><br><button class=\"btn-login\" onclick=\"window.location.href=\'../pages/login.php\'\">Return to Login</button>',
+                                showConfirmButton: false,
+                                footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Resend verification email?</a>'
+                            });
+                        </script>
+                    </body>
+                    </html>";
+                    exit();
                 } catch (Exception $e) {
-                    $errors[] = "Message could not be sent. Mailer Error: " . $mail->ErrorInfo;
+                    // Close the loading animation and show error message
+                    echo "<!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset='UTF-8'>
+                        <title>Email Error</title>
+                        <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+                        <style>
+                            body, .swal2-popup {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .swal2-title, .swal2-html-container {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login {
+                                background-color: #3b82f6;
+                                color: white;
+                                border: none;
+                                padding: 10px 25px;
+                                border-radius: 5px;
+                                font-size: 16px;
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login:hover {
+                                background-color: #2563eb;
+                                transform: translateY(-2px);
+                                box-shadow: 0 6px 8px rgba(37, 99, 235, 0.3);
+                            }
+                            .btn-login:active {
+                                transform: translateY(0);
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <script>
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Email Verification Error',
+                                html: 'We couldn\\'t send the verification email. Your account has been created, but you need to verify it.<br><br><button class=\"btn-login\" onclick=\"window.location.href=\\'../pages/login.php\\'\">Return to Login</button>',
+                                showConfirmButton: false,
+                                footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Try sending verification email again?</a>'
+                            });
+                        </script>
+                    </body>
+                    </html>";
+                    exit();
                 }
             } catch (Exception $e) {
                 // If anything fails, roll back the transaction
@@ -249,6 +471,14 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
             <meta charset='UTF-8'>
             <title>Registration Error</title>
             <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+            <style>
+                body, .swal2-popup {
+                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                }
+                .swal2-title, .swal2-html-container {
+                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                }
+            </style>
         </head>
         <body>
             <script>

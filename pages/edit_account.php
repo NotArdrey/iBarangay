@@ -11,7 +11,7 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 
 // Retrieve all columns from Users table for the logged-in user
-$query = "SELECT * FROM Users WHERE user_id = ?";
+$query = "SELECT * FROM users WHERE id = ?";  // Changed from user_id to id
 $stmt = $pdo->prepare($query);
 $stmt->execute([$user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -44,10 +44,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $errors = [];
     if (empty($first_name)) { $errors[] = "First name is required."; }
     if (empty($last_name)) { $errors[] = "Last name is required."; }
-    if (empty($birth_date)) { $errors[] = "Birth date is required."; }
-    if (empty($gender)) { $errors[] = "Gender is required."; }
-    if (empty($contact_number)) { $errors[] = "Contact number is required."; }
-
+    
     // If any of the password change fields are provided, process password update
     if ($old_password !== '' || $new_password !== '' || $confirm_password !== '') {
         // Ensure all password fields are filled
@@ -62,7 +59,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         
         // Verify old password (using SHA-256 as in your existing logic)
         $old_password_hash = hash('sha256', $old_password);
-        if ($old_password_hash !== $user['password_hash']) {
+        if ($old_password_hash !== $user['password']) {  // Changed from password_hash to password
             $errors[] = "Old password is incorrect.";
         }
     }
@@ -70,31 +67,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // If there are no errors, update the personal details and possibly the password
     if (empty($errors)) {
         // Update personal details (note: email is omitted)
-        $updateQuery = "UPDATE Users SET 
+        $updateQuery = "UPDATE users SET 
                             first_name = ?, 
-                            middle_name = ?, 
                             last_name = ?, 
-                            birth_date = ?, 
                             gender = ?, 
-                            contact_number = ?, 
-                            marital_status = ?, 
-                            emergency_contact_name = ?, 
-                            emergency_contact_number = ?, 
-                            emergency_contact_address = ?, 
+                            phone = ?, 
                             barangay_id = ?
-                        WHERE user_id = ?";
+                        WHERE id = ?";  // Changed from user_id to id
         $updateStmt = $pdo->prepare($updateQuery);
         $params = [
             $first_name,
-            $middle_name,
             $last_name,
-            $birth_date,
             $gender,
-            $contact_number,
-            $marital_status,
-            $emergency_contact_name,
-            $emergency_contact_number,
-            $emergency_contact_address,
+            $contact_number,  // Maps to phone column
             $barangay_id,
             $user_id
         ];
@@ -103,7 +88,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Update password if requested
         if ($old_password !== '' && $new_password !== '' && $confirm_password !== '') {
             $new_password_hash = hash('sha256', $new_password);
-            $updatePassQuery = "UPDATE Users SET password_hash = ? WHERE user_id = ?";
+            $updatePassQuery = "UPDATE users SET password = ? WHERE id = ?";  // Changed from password_hash to password and user_id to id
             $stmt_pass = $pdo->prepare($updatePassQuery);
             $stmt_pass->execute([$new_password_hash, $user_id]);
             $success_message .= " Your password has been changed successfully.";
@@ -117,6 +102,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $error_message = implode("<br>", $errors);
     }
 }
+
+// Get barangay list for the dropdown
+$barangayQuery = "SELECT id, name FROM barangay ORDER BY name";
+$barangayStmt = $pdo->prepare($barangayQuery);
+$barangayStmt->execute();
+$barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
 
 ?>
 <!DOCTYPE html>
@@ -141,8 +132,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   <header>
     <nav class="navbar">
       <a href="#" class="logo">
-        <img src="../photo/logo.png" alt="Barangay Hub Logo" />
-        <h2>Barangay Hub</h2>
+        <img src="../photo/logo.png" alt="iBarangay Logo" />
+        <h2>iBarangay</h2>
       </a>
       <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
         <i class="fas fa-bars"></i>
@@ -152,7 +143,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <a href="../pages/user_dashboard.php#about">About</a>
         <a href="../pages/user_dashboard.php#services">Services</a>
         <a href="../pages/user_dashboard.php#contact">Contact</a>
-        <a href="edit_account.php">Account</a>
+
         <a href="../functions/logout.php" style="color: red;"><i class="fas fa-sign-out-alt"></i> Logout</a>
       </div>
     </nav>
@@ -201,20 +192,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           <input type="text" id="first_name" name="first_name" value="<?php echo htmlspecialchars($user['first_name'] ?? ''); ?>" required>
         </div>
         <div class="form-group">
-          <label for="middle_name">Middle Name</label>
-          <input type="text" id="middle_name" name="middle_name" value="<?php echo htmlspecialchars($user['middle_name'] ?? ''); ?>">
-        </div>
-        <div class="form-group">
           <label for="last_name">Last Name *</label>
           <input type="text" id="last_name" name="last_name" value="<?php echo htmlspecialchars($user['last_name'] ?? ''); ?>" required>
         </div>
         <div class="form-group">
-          <label for="birth_date">Birth Date *</label>
-          <input type="date" id="birth_date" name="birth_date" value="<?php echo htmlspecialchars($user['birth_date'] ?? ''); ?>" required>
-        </div>
-        <div class="form-group">
-          <label for="gender">Gender *</label>
-          <select name="gender" id="gender" required>
+          <label for="gender">Gender</label>
+          <select name="gender" id="gender">
             <option value="">Select Gender</option>
             <option value="Male" <?php echo (isset($user['gender']) && $user['gender'] === "Male") ? 'selected' : ''; ?>>Male</option>
             <option value="Female" <?php echo (isset($user['gender']) && $user['gender'] === "Female") ? 'selected' : ''; ?>>Female</option>
@@ -222,31 +205,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
           </select>
         </div>
         <div class="form-group">
-          <label for="contact_number">Contact Number *</label>
-          <input type="text" id="contact_number" name="contact_number" value="<?php echo htmlspecialchars($user['contact_number'] ?? ''); ?>" required>
+          <label for="contact_number">Contact Number</label>
+          <input type="text" id="contact_number" name="contact_number" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>">
         </div>
         <div class="form-group">
-          <label for="marital_status">Marital Status</label>
-          <select name="marital_status" id="marital_status">
-            <option value="">Select Status</option>
-            <option value="Single" <?php echo (isset($user['marital_status']) && $user['marital_status'] === "Single") ? 'selected' : ''; ?>>Single</option>
-            <option value="Married" <?php echo (isset($user['marital_status']) && $user['marital_status'] === "Married") ? 'selected' : ''; ?>>Married</option>
-            <option value="Widowed" <?php echo (isset($user['marital_status']) && $user['marital_status'] === "Widowed") ? 'selected' : ''; ?>>Widowed</option>
-            <option value="Separated" <?php echo (isset($user['marital_status']) && $user['marital_status'] === "Separated") ? 'selected' : ''; ?>>Separated</option>
+          <label for="barangay_id">Barangay</label>
+          <select name="barangay_id" id="barangay_id">
+            <option value="">Select Barangay</option>
+            <?php foreach ($barangays as $barangay): ?>
+            <option value="<?php echo $barangay['id']; ?>" <?php echo (isset($user['barangay_id']) && $user['barangay_id'] == $barangay['id']) ? 'selected' : ''; ?>>
+              <?php echo htmlspecialchars($barangay['name']); ?>
+            </option>
+            <?php endforeach; ?>
           </select>
-        </div>
-        <!-- Removed Senior/PWD and Solo Parent fields -->
-        <div class="form-group">
-          <label for="emergency_contact_name">Emergency Contact Name</label>
-          <input type="text" id="emergency_contact_name" name="emergency_contact_name" value="<?php echo htmlspecialchars($user['emergency_contact_name'] ?? ''); ?>">
-        </div>
-        <div class="form-group">
-          <label for="emergency_contact_number">Emergency Contact Number</label>
-          <input type="text" id="emergency_contact_number" name="emergency_contact_number" value="<?php echo htmlspecialchars($user['emergency_contact_number'] ?? ''); ?>">
-        </div>
-        <div class="form-group">
-          <label for="emergency_contact_address">Emergency Contact Address</label>
-          <input type="text" id="emergency_contact_address" name="emergency_contact_address" value="<?php echo htmlspecialchars($user['emergency_contact_address'] ?? ''); ?>">
         </div>
       </div>
 
@@ -278,7 +249,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
   <!-- Footer -->
   <footer class="footer">
-    <p>&copy; 2025 Barangay Hub. All rights reserved.</p>
+    <p>&copy; 2025 iBarangay. All rights reserved.</p>
   </footer>
 
   <script>
@@ -291,45 +262,3 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
   </script>
 </body>
 </html>
-<?php
-// functions.php
-
-/**
- * Returns the dashboard URL based on the user's role.
- *
- * @param int $role_id The user's role ID.
- * @return string The appropriate dashboard URL.
- */
-function getDashboardUrl($role_id) {
-    if ($role_id == 1) {
-        return "../pages/super_admin_dashboard.php";
-    } elseif ($role_id == 2) {
-        return "../pages/barangay_admin_dashboard.php";
-    } else {
-        return "../pages/user_dashboard.php";
-    }
-}
-
-/**
- * Loads the barangay name for a given user based on email.
- *
- * @param PDO|mysqli $pdo The database connection object.
- * @param string $email The user's email.
- * @return string|null The barangay name if found, or null otherwise.
- */
-function loadBarangayInfo($pdo, $email) {
-    // Retrieve the barangay_id from the Users table
-    $stmt = $pdo->prepare("SELECT barangay_id FROM Users WHERE email = :email LIMIT 1");
-    $stmt->execute([':email' => $email]);
-    $userRecord = $stmt->fetch(PDO::FETCH_ASSOC);
-    if ($userRecord && !empty($userRecord['barangay_id'])) {
-        $stmt2 = $pdo->prepare("SELECT barangay_name FROM Barangay WHERE barangay_id = :barangay_id LIMIT 1");
-        $stmt2->execute([':barangay_id' => $userRecord['barangay_id']]);
-        $barangayRecord = $stmt2->fetch(PDO::FETCH_ASSOC);
-        if ($barangayRecord) {
-            return $barangayRecord['barangay_name'];
-        }
-    }
-    return null;
-}
-?>

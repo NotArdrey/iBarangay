@@ -94,7 +94,7 @@ function logAuditTrail($pdo, $adminId, $action, $table, $recordId, $desc = '') {
 function getResidents($pdo, $bid) {
     $stmt = $pdo->prepare("
         SELECT user_id, CONCAT(first_name,' ',last_name) AS name
-        FROM Users WHERE barangay_id = ?
+        FROM users WHERE barangay_id = ?
     ");
     $stmt->execute([$bid]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -320,7 +320,7 @@ if (!empty($_GET['action'])) {
                 m.*,
                 CONCAT(u.first_name, ' ', u.last_name) AS prepared_by_name
               FROM MonthlyReport m
-              JOIN Users         u ON m.prepared_by = u.user_id
+              JOIN users         u ON m.prepared_by = u.user_id
               WHERE m.report_year  = :y
                 AND m.report_month = :m
               ORDER BY m.monthly_report_id DESC
@@ -498,7 +498,7 @@ if (!empty($_GET['action'])) {
         bp.role,
         CASE WHEN u.user_id IS NULL THEN 'No' ELSE 'Yes' END AS is_registered
     FROM BlotterParticipant bp
-    LEFT JOIN Users u ON bp.user_id = u.user_id
+    LEFT JOIN users u ON bp.user_id = u.user_id
     WHERE bp.blotter_case_id = ?
             ");
                 $pStmt->execute([$id]);

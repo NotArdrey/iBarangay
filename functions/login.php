@@ -13,8 +13,8 @@ require __DIR__ . "/../config/dbconn.php";
 function logAuditTrail(PDO $pdo, int $user_id, string $action, ?string $table_name = null, ?int $record_id = null, string $description = '')
 {
     $stmt = $pdo->prepare(
-        "INSERT INTO AuditTrail 
-         (admin_user_id, action, table_name, record_id, description) 
+        "INSERT INTO audit_trails 
+         (user_id, action, table_name, record_id, new_values) 
          VALUES (?, ?, ?, ?, ?)"
     );
     $stmt->execute([$user_id, $action, $table_name, $record_id, $description]);
@@ -52,6 +52,66 @@ function postLoginRedirect(int $role_id, ?string $first_name): string
 }
 
 /**
+ * Check if a role ID exists in the roles table
+ */
+function isValidRole(PDO $pdo, int $role_id): bool
+{
+    $stmt = $pdo->prepare("SELECT id FROM roles WHERE id = ?");
+    $stmt->execute([$role_id]);
+    return $stmt->rowCount() > 0;
+}
+
+/**
+ * Get user's role and barangay information
+ */
+function getUserRoleInfo(PDO $pdo, int $user_id): ?array
+{
+    // First, check the direct role_id in the users table
+    $userRoleStmt = $pdo->prepare("SELECT role_id, barangay_id FROM users WHERE id = ? AND is_active = TRUE");
+    $userRoleStmt->execute([$user_id]);
+    $userRole = $userRoleStmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($userRole && isValidRole($pdo, $userRole['role_id'])) {
+        // Get role name
+        $roleNameStmt = $pdo->prepare("SELECT name FROM roles WHERE id = ?");
+        $roleNameStmt->execute([$userRole['role_id']]);
+        $roleName = $roleNameStmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Get barangay name
+        $barangayName = null;
+        if ($userRole['barangay_id']) {
+            $barangayStmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
+            $barangayStmt->execute([$userRole['barangay_id']]);
+            $barangay = $barangayStmt->fetch(PDO::FETCH_ASSOC);
+            $barangayName = $barangay ? $barangay['name'] : null;
+        }
+        
+        return [
+            'role_id' => $userRole['role_id'],
+            'barangay_id' => $userRole['barangay_id'],
+            'barangay_name' => $barangayName,
+            'role_name' => $roleName ? $roleName['name'] : 'unknown'
+        ];
+    }
+    
+    // As fallback, check the user_roles table (previous method)
+    $stmt = $pdo->prepare("
+        SELECT ur.role_id, ur.barangay_id, b.name as barangay_name, r.name as role_name
+        FROM user_roles ur
+        JOIN roles r ON ur.role_id = r.id
+        LEFT JOIN barangay b ON ur.barangay_id = b.id
+        WHERE ur.user_id = ? AND ur.is_active = TRUE
+        ORDER BY ur.role_id
+        LIMIT 1
+    ");
+    $stmt->execute([$user_id]);
+    $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    // Convert false to null to match the function's return type declaration
+    return $result === false ? null : $result;
+}
+
+/**
  * TRADITIONAL EMAIL/PASSWORD LOGIN
  */
 if ($_SERVER['REQUEST_METHOD'] === 'POST'
@@ -61,59 +121,73 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
     $password = $_POST['password'];
 
     try {
-        // fetch user + hash + verification + first_name
+        // Fetch user data with person information
         $stmt = $pdo->prepare("
-            SELECT user_id, email, password_hash, isverify, is_active, role_id, first_name
-            FROM Users
-            WHERE email = ?
+            SELECT u.id, u.email, u.password, u.email_verified_at, u.is_active,
+                   p.first_name, p.middle_name, p.last_name
+            FROM users u
+            LEFT JOIN persons p ON u.id = p.user_id
+            WHERE u.email = ?
         ");
         $stmt->execute([$email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-        if (! $user || ! password_verify($password, $user['password_hash'])) {
+        if (! $user || ! password_verify($password, $user['password'])) {
             throw new Exception("Invalid credentials");
         }
-        if ($user['isverify'] !== 'yes' || $user['is_active'] !== 'yes') {
+        if ($user['email_verified_at'] === null || $user['is_active'] != 1) {
             throw new Exception("Account not verified or inactive");
+        }
+
+        // Get user role information
+        $roleInfo = getUserRoleInfo($pdo, $user['id']);
+        if (!$roleInfo) {
+            // Check if user has a role_id in the users table
+            $roleStmt = $pdo->prepare("SELECT role_id FROM users WHERE id = ?");
+            $roleStmt->execute([$user['id']]);
+            $userRole = $roleStmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$userRole || !$userRole['role_id']) {
+                throw new Exception("No role assigned to this user account");
+            } else if (!isValidRole($pdo, $userRole['role_id'])) {
+                throw new Exception("Invalid role assigned to this user account (Role ID: {$userRole['role_id']})");
+            } else {
+                throw new Exception("Role found but not active or properly configured");
+            }
         }
 
         session_regenerate_id(true);
 
-        // normalize first_name to empty string if null
-        $firstName = $user['first_name'] ?? '';
-
-        $_SESSION['user_id']    = $user['user_id'];
+        // Set session variables
+        $_SESSION['user_id']    = $user['id'];
         $_SESSION['email']      = $user['email'];
-        $_SESSION['role_id']    = $user['role_id'];
-        $_SESSION['first_name'] = $firstName;
+        $_SESSION['role_id']    = $roleInfo['role_id'];
+        $_SESSION['first_name'] = $user['first_name'] ?? '';
+        $_SESSION['middle_name'] = $user['middle_name'] ?? '';
+        $_SESSION['last_name'] = $user['last_name'] ?? '';
 
-        // if barangay admin, also look up barangay_id/name
-        if (in_array($user['role_id'], [3,4,5,6,7], true)) {
-            $stmt2 = $pdo->prepare("
-                SELECT u.barangay_id, b.barangay_name
-                FROM Users u
-                  JOIN Barangay b ON u.barangay_id = b.barangay_id
-                WHERE u.user_id = ?
-            ");
-            $stmt2->execute([$user['user_id']]);
-            if ($row = $stmt2->fetch(PDO::FETCH_ASSOC)) {
-                $_SESSION['barangay_id']   = $row['barangay_id'];
-                $_SESSION['barangay_name'] = $row['barangay_name'];
-            }
+        // Set barangay info if applicable
+        if ($roleInfo['barangay_id']) {
+            $_SESSION['barangay_id']   = $roleInfo['barangay_id'];
+            $_SESSION['barangay_name'] = $roleInfo['barangay_name'];
         }
+
+        // Update last login
+        $updateStmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+        $updateStmt->execute([$user['id']]);
 
         logAuditTrail(
             $pdo,
-            $user['user_id'],
+            $user['id'],
             "LOGIN",
-            "Users",
-            $user['user_id'],
+            "users",
+            $user['id'],
             "Email login"
         );
 
         header("Location: " . postLoginRedirect(
-            $user['role_id'],
-            $firstName
+            $roleInfo['role_id'],
+            $user['first_name'] ?? ''
         ));
         exit;
     } catch (Exception $e) {
@@ -146,68 +220,117 @@ if (stripos($contentType, "application/json") !== false) {
             throw new Exception("Invalid token");
         }
 
-        // check existing user
+        // Check existing user
         $stmt = $pdo->prepare("
-            SELECT user_id, email, role_id, first_name
-            FROM Users
-            WHERE email = ?
+            SELECT u.id, u.email, p.first_name, p.middle_name, p.last_name
+            FROM users u
+            LEFT JOIN persons p ON u.id = p.user_id
+            WHERE u.email = ?
         ");
         $stmt->execute([$tokenInfo['email']]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if (! $user) {
-            // new resident
+            // Create new resident user
             $pdo->beginTransaction();
+            
+            // Insert user
             $ins = $pdo->prepare("
-                INSERT INTO Users (email, password_hash, isverify, role_id)
-                VALUES (?, '', 'yes', 8)
+                INSERT INTO users (email, password, email_verified_at, is_active)
+                VALUES (?, '', NOW(), TRUE)
             ");
             $ins->execute([$tokenInfo['email']]);
-            $newId = $pdo->lastInsertId();
+            $newUserId = $pdo->lastInsertId();
+
+            // Create person record if we have name info from Google
+            if (!empty($tokenInfo['given_name']) || !empty($tokenInfo['family_name'])) {
+                $personStmt = $pdo->prepare("
+                    INSERT INTO persons (user_id, first_name, last_name, birth_date, gender, civil_status)
+                    VALUES (?, ?, ?, '1990-01-01', 'Male', 'Single')
+                ");
+                $personStmt->execute([
+                    $newUserId,
+                    $tokenInfo['given_name'] ?? '',
+                    $tokenInfo['family_name'] ?? ''
+                ]);
+            }
+
+            // Assign resident role (role_id = 8) to a default barangay (id = 1)
+            $roleStmt = $pdo->prepare("
+                INSERT INTO user_roles (user_id, role_id, barangay_id, is_active)
+                VALUES (?, 8, 1, TRUE)
+            ");
+            $roleStmt->execute([$newUserId]);
 
             session_regenerate_id(true);
-            $_SESSION['user_id']    = $newId;
+            $_SESSION['user_id']    = $newUserId;
             $_SESSION['email']      = $tokenInfo['email'];
             $_SESSION['role_id']    = 8;
-            $_SESSION['first_name'] = ''; // Empty first_name - no longer forcing completion
+            $_SESSION['first_name'] = $tokenInfo['given_name'] ?? '';
+            $_SESSION['last_name']  = $tokenInfo['family_name'] ?? '';
 
             logAuditTrail(
                 $pdo,
-                $newId,
+                $newUserId,
                 "ACCOUNT_CREATED",
-                "Users",
-                $newId,
+                "users",
+                $newUserId,
                 "Google signup"
             );
             $pdo->commit();
         } else {
-            // existing user → demote to resident
-            session_regenerate_id(true);
-            $_SESSION['user_id']    = $user['user_id'];
-            $_SESSION['email']      = $user['email'];
-            $_SESSION['role_id']    = 8;
-            $_SESSION['first_name'] = $user['first_name'] ?? '';
-
-            if ($user['role_id'] !== 8) {
-                $upd = $pdo->prepare("
-                    UPDATE Users
-                    SET role_id = 8
-                    WHERE user_id = ?
+            // Existing user login
+            $roleInfo = getUserRoleInfo($pdo, $user['id']);
+            if (!$roleInfo) {
+                // If no role exists, assign resident role
+                $roleStmt = $pdo->prepare("
+                    INSERT INTO user_roles (user_id, role_id, barangay_id, is_active)
+                    VALUES (?, 8, 1, TRUE)
                 ");
-                $upd->execute([$user['user_id']]);
+                $roleStmt->execute([$user['id']]);
+                $roleInfo = ['role_id' => 8, 'barangay_id' => 1, 'barangay_name' => null];
             }
+
+            session_regenerate_id(true);
+            $_SESSION['user_id']    = $user['id'];
+            $_SESSION['email']      = $user['email'];
+            $_SESSION['role_id']    = $roleInfo['role_id'];
+            $_SESSION['first_name'] = $user['first_name'] ?? '';
+            $_SESSION['middle_name'] = $user['middle_name'] ?? '';
+            $_SESSION['last_name'] = $user['last_name'] ?? '';
+
+            if ($roleInfo['barangay_id']) {
+                $_SESSION['barangay_id']   = $roleInfo['barangay_id'];
+                $_SESSION['barangay_name'] = $roleInfo['barangay_name'];
+            }
+
+            // Update last login
+            $updateStmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+            $updateStmt->execute([$user['id']]);
+
+            logAuditTrail(
+                $pdo,
+                $user['id'],
+                "LOGIN",
+                "users",
+                $user['id'],
+                "Google login"
+            );
         }
 
         header('Content-Type: application/json');
         echo json_encode([
             'success'  => true,
             'redirect' => postLoginRedirect(
-                8,
+                $_SESSION['role_id'],
                 $_SESSION['first_name']
             )
         ]);
         exit;
     } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         header('Content-Type: application/json');
         http_response_code(400);
         echo json_encode(['error' => $e->getMessage()]);

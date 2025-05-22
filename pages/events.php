@@ -30,7 +30,7 @@ function logAuditTrail(PDO $pdo, int $adminId, string $action,
 
 function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type): void
 {
-    $stmt = $pdo->prepare("SELECT email FROM Users WHERE barangay_id = ?");
+    $stmt = $pdo->prepare("SELECT email FROM users WHERE barangay_id = ?");
     $stmt->execute([$barangayId]);
     $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
     if (!$recipients) return;
@@ -44,7 +44,7 @@ function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type):
         $mail->Password   = 'eisy hpjz rdnt bwrp';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
-        $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
+        $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
         $mail->isHTML(false);
 
         foreach ($recipients as $email) {

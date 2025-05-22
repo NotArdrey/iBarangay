@@ -42,7 +42,7 @@ $documentFees = [
 $userBarangayId = null;
 
 try {
-    $stmt = $pdo->prepare("SELECT barangay_id FROM Users WHERE user_id = ?");
+    $stmt = $pdo->prepare("SELECT barangay_id FROM users WHERE user_id = ?");
     $stmt->execute([$userId]);
     $userBarangay = $stmt->fetch(PDO::FETCH_ASSOC);
     $userBarangayId = $userBarangay['barangay_id'];
@@ -93,7 +93,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Barangay Hub - Document Request</title>
+    <title>iBarangay - Document Request</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <link rel="stylesheet" href="../styles/services.css">
@@ -274,8 +274,8 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
     <header>
         <nav class="navbar">
             <a href="#" class="logo">
-                <img src="../photo/logo.png" alt="Barangay Hub Logo">
-                <h2>Barangay Hub</h2>
+                <img src="../photo/logo.png" alt="iBarangay Logo">
+                <h2>iBarangay</h2>
             </a>
             <div class="nav-links">
                 <a href="../pages/user_dashboard.php#home">Home</a>
@@ -477,7 +477,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
     </main>
 
     <footer class="footer">
-        <p>&copy; 2025 Barangay Hub. All rights reserved.</p>
+        <p>&copy; 2025 iBarangay. All rights reserved.</p>
     </footer>
 
     <script>
