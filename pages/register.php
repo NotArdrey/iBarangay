@@ -20,6 +20,11 @@
         <input type="text" id="email" name="email" required>
       </div>
       <div class="input-group">
+        <label for="phone">Phone Number</label>
+        <input type="text" id="phone" name="phone" placeholder="e.g. 09123456789" required>
+      </div>
+
+      <div class="input-group">
         <label for="password">Password</label>
         <div class="password-container">
           <input type="password" id="password" name="password" required>
@@ -71,7 +76,7 @@
     </div>
     <div class="footer">
       <div class="footer-info">
-        <p>&copy; 2025 Barangay Hub. All Rights Reserved.</p>
+        <p>&copy; 2025 iBarangay. All Rights Reserved.</p>
       </div>
       <div class="security-note">
         <svg viewBox="0 0 24 24">
@@ -86,8 +91,7 @@
     toggleButtons.forEach(function(toggle) {
       toggle.addEventListener('click', function() {
         const passwordInput = this.parentElement.querySelector('input');
-        const isPassword = passwordInput.type === 'password';
-        passwordInput.type = isPassword ? 'text' : 'password';
+        passwordInput.type = passwordInput.type === 'password' ? 'text' : 'password';
         this.classList.toggle('visible');
       });
     });

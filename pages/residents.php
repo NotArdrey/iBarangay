@@ -1,7 +1,13 @@
 <?php
-session_start();
+
+// Ensure session is started before using $_SESSION
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
 require __DIR__ . "/../vendor/autoload.php";
 require __DIR__ . "/../config/dbconn.php";
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -23,7 +29,7 @@ if ($current_admin_id === null || !in_array($role, [2,3,4,5,6,7], true)) {
  */
 function logAuditTrail(PDO $pdo, int $admin, string $action, string $table, int $id, string $desc): void {
     $stmt = $pdo->prepare(
-        "INSERT INTO AuditTrail (admin_user_id, action, table_name, record_id, description)
+        "INSERT INTO audit_trails (admin_user_id, action, table_name, record_id, old_values)
          VALUES (:admin, :act, :tbl, :rid, :desc)"
     );
     $stmt->execute([
@@ -37,9 +43,17 @@ function logAuditTrail(PDO $pdo, int $admin, string $action, string $table, int 
 
 // Build query to fetch residents (role_id = ROLE_RESIDENT)
 $sql = <<<SQL
-SELECT u.*, a.street AS home_address
-  FROM Users u
-  LEFT JOIN Address a ON u.user_id = a.user_id
+SELECT u.*, a.street AS home_address, 
+       p.first_name AS person_first_name, p.middle_name AS person_middle_name, 
+       p.last_name AS person_last_name, p.birth_date AS person_birth_date, p.gender AS person_gender,
+       p.contact_number AS person_contact_number, p.civil_status AS marital_status,
+       ec.contact_name AS emergency_contact_name, ec.contact_number AS emergency_contact_number,
+       ec.contact_address AS emergency_contact_address, pi.id_image_path
+  FROM users u
+  LEFT JOIN persons p ON u.id = p.user_id
+  LEFT JOIN addresses a ON p.id = a.person_id
+  LEFT JOIN emergency_contacts ec ON p.id = ec.person_id
+  LEFT JOIN person_identification pi ON p.id = pi.person_id
  WHERE u.role_id = :role
 SQL;
 $params = [':role' => ROLE_RESIDENT];
@@ -57,8 +71,8 @@ if (isset($_GET['action'], $_GET['id'])) {
     // Fetch user email and name
     $stmtUser = $pdo->prepare("
         SELECT email, CONCAT(first_name,' ', last_name) AS name
-          FROM Users
-         WHERE user_id = :id
+          FROM users
+         WHERE id = :id
     ");
     $stmtUser->execute([':id' => $resId]);
     $userInfo = $stmtUser->fetch(PDO::FETCH_ASSOC);
@@ -69,9 +83,9 @@ if (isset($_GET['action'], $_GET['id'])) {
 
         // Deactivate the user
         $stmt = $pdo->prepare("
-            UPDATE Users
-               SET is_active = 'no'
-             WHERE user_id     = :id
+            UPDATE users
+               SET is_active = FALSE
+             WHERE id     = :id
                AND barangay_id = :bid
         ");
         $success = $stmt->execute([':id' => $resId, ':bid' => $bid]);
@@ -87,7 +101,7 @@ if (isset($_GET['action'], $_GET['id'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
+                    $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
                     $mail->addAddress($userInfo['email'], $userInfo['name']);
                     $mail->Subject = 'Your account has been suspended';
                     $mail->Body    = "Hello {$userInfo['name']},\n\n"
@@ -104,7 +118,7 @@ if (isset($_GET['action'], $_GET['id'])) {
                 $pdo,
                 $current_admin_id,
                 'UPDATE',
-                'Users',
+                'users',
                 $resId,
                 'Banned resident: ' . $remarks
             );
@@ -116,9 +130,9 @@ if (isset($_GET['action'], $_GET['id'])) {
     } elseif ($act === 'unban') {
         // Reactivate the user
         $stmt = $pdo->prepare("
-            UPDATE Users
-               SET is_active = 'yes'
-             WHERE user_id     = :id
+            UPDATE users
+               SET is_active = TRUE
+             WHERE id     = :id
                AND barangay_id = :bid
         ");
         $success = $stmt->execute([':id' => $resId, ':bid' => $bid]);
@@ -134,7 +148,7 @@ if (isset($_GET['action'], $_GET['id'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
+                    $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
                     $mail->addAddress($userInfo['email'], $userInfo['name']);
                     $mail->Subject = 'Your account has been reactivated';
                     $mail->Body    = "Hello {$userInfo['name']},\n\n"
@@ -149,7 +163,7 @@ if (isset($_GET['action'], $_GET['id'])) {
                 $pdo,
                 $current_admin_id,
                 'UPDATE',
-                'Users',
+                'users',
                 $resId,
                 'Unbanned resident.'
             );
@@ -166,9 +180,9 @@ if (isset($_GET['action'], $_GET['id'])) {
 
 // ─── Active/banned filter ────────────────────────────
 if ($filter === 'active') {
-    $sql .= " AND u.is_active = 'yes'";
+    $sql .= " AND u.is_active = TRUE";
 } elseif ($filter === 'banned') {
-    $sql .= " AND u.is_active = 'no'";
+    $sql .= " AND u.is_active = FALSE";
 }
 
 try {
@@ -182,40 +196,112 @@ try {
 // Handle edit form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'])) {
     $user_id = (int) ($_POST['edit_person_id'] ?? 0);
-    $fields  = [
-        'first_name', 'middle_name', 'last_name', 'email', 'birth_date',
-        'gender', 'contact_number', 'marital_status',
-        'emergency_contact_name', 'emergency_contact_number',
-        'emergency_contact_address'
-    ];
-
-    $updateParts = [];
-    $params      = [':user_id' => $user_id];
-
-    foreach ($fields as $field) {
-        $updateParts[]        = "{$field} = :{$field}";
-        $params[":{$field}"] = trim($_POST["edit_{$field}"] ?? '');
-    }
-
+    
     try {
         $pdo->beginTransaction();
 
         // Update Users table
-        $updateSql = "UPDATE Users SET " . implode(', ', $updateParts) . " WHERE user_id = :user_id";
-        $stmt      = $pdo->prepare($updateSql);
-        $stmt->execute($params);
+        $userFields = ['first_name', 'last_name', 'email', 'gender'];
+        $userUpdateParts = [];
+        $userParams = [':user_id' => $user_id];
+
+        foreach ($userFields as $field) {
+            if (isset($_POST["edit_{$field}"])) {
+                $userUpdateParts[] = "{$field} = :{$field}";
+                $userParams[":{$field}"] = trim($_POST["edit_{$field}"]);
+            }
+        }
+
+        if (!empty($userUpdateParts)) {
+            $updateUserSql = "UPDATE users SET " . implode(', ', $userUpdateParts) . " WHERE id = :user_id";
+            $stmt = $pdo->prepare($updateUserSql);
+            $stmt->execute($userParams);
+        }
+
+        // Update persons table
+        $personFields = ['first_name', 'middle_name', 'last_name', 'birth_date', 'gender', 'contact_number', 'civil_status'];
+        $personUpdateParts = [];
+        $personParams = [':user_id' => $user_id];
+
+        foreach ($personFields as $field) {
+            $editField = $field === 'civil_status' ? 'marital_status' : $field;
+            if (isset($_POST["edit_{$editField}"])) {
+                $personUpdateParts[] = "{$field} = :{$field}";
+                $personParams[":{$field}"] = trim($_POST["edit_{$editField}"]);
+            }
+        }
+
+        if (!empty($personUpdateParts)) {
+            // Check if person record exists
+            $checkPersonStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = :user_id");
+            $checkPersonStmt->execute([':user_id' => $user_id]);
+            $personId = $checkPersonStmt->fetchColumn();
+
+            if ($personId) {
+                $updatePersonSql = "UPDATE persons SET " . implode(', ', $personUpdateParts) . " WHERE user_id = :user_id";
+                $stmt = $pdo->prepare($updatePersonSql);
+                $stmt->execute($personParams);
+            } else {
+                // Insert new person record
+                $personParams[':citizenship'] = 'Filipino';
+                $insertPersonSql = "INSERT INTO persons (user_id, " . implode(', ', $personFields) . ", citizenship) VALUES (:user_id, :" . implode(', :', $personFields) . ", :citizenship)";
+                $stmt = $pdo->prepare($insertPersonSql);
+                $stmt->execute($personParams);
+                $personId = $pdo->lastInsertId();
+            }
+        }
 
         // Update or insert Address
         $homeAddress = trim($_POST['edit_home_address'] ?? '');
-        $checkStmt   = $pdo->prepare("SELECT 1 FROM Address WHERE user_id = :user_id");
-        $checkStmt->execute([':user_id' => $user_id]);
+        // Retrieve person_id for this user
+        $getPersonStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = :user_id");
+        $getPersonStmt->execute([':user_id' => $user_id]);
+        $personId = $getPersonStmt->fetchColumn();
+        
+        if ($personId) {
+            $checkStmt = $pdo->prepare("SELECT id FROM addresses WHERE person_id = :person_id");
+            $checkStmt->execute([':person_id' => $personId]);
+    
+            if ($checkStmt->fetch()) {
+                $upd = $pdo->prepare("UPDATE addresses SET street = :street WHERE person_id = :person_id");
+                $upd->execute([':street' => $homeAddress, ':person_id' => $personId]);
+            } else {
+                $ins = $pdo->prepare("INSERT INTO addresses (person_id, barangay_id, street, residency_type) VALUES (:person_id, :barangay_id, :street, 'Home Owner')");
+                $ins->execute([
+                    ':person_id'   => $personId,
+                    ':barangay_id' => $bid,
+                    ':street'      => $homeAddress
+                ]);
+            }
+        }
 
-        if ($checkStmt->fetch()) {
-            $upd = $pdo->prepare("UPDATE Address SET street = :street WHERE user_id = :user_id");
-            $upd->execute([':street' => $homeAddress, ':user_id' => $user_id]);
-        } else {
-            $ins = $pdo->prepare("INSERT INTO Address (user_id, street) VALUES (:user_id, :street)");
-            $ins->execute([':user_id' => $user_id, ':street' => $homeAddress]);
+        // Update emergency contacts
+        if ($personId && (isset($_POST['edit_emergency_contact_name']) || isset($_POST['edit_emergency_contact_number']) || isset($_POST['edit_emergency_contact_address']))) {
+            $emergencyName = trim($_POST['edit_emergency_contact_name'] ?? '');
+            $emergencyNumber = trim($_POST['edit_emergency_contact_number'] ?? '');
+            $emergencyAddress = trim($_POST['edit_emergency_contact_address'] ?? '');
+
+            // Check if emergency contact exists
+            $checkEmergencyStmt = $pdo->prepare("SELECT id FROM emergency_contacts WHERE person_id = :person_id");
+            $checkEmergencyStmt->execute([':person_id' => $personId]);
+
+            if ($checkEmergencyStmt->fetch()) {
+                $updateEmergencyStmt = $pdo->prepare("UPDATE emergency_contacts SET contact_name = :name, contact_number = :number, contact_address = :address WHERE person_id = :person_id");
+                $updateEmergencyStmt->execute([
+                    ':name' => $emergencyName,
+                    ':number' => $emergencyNumber,
+                    ':address' => $emergencyAddress,
+                    ':person_id' => $personId
+                ]);
+            } else {
+                $insertEmergencyStmt = $pdo->prepare("INSERT INTO emergency_contacts (person_id, contact_name, contact_number, contact_address) VALUES (:person_id, :name, :number, :address)");
+                $insertEmergencyStmt->execute([
+                    ':person_id' => $personId,
+                    ':name' => $emergencyName,
+                    ':number' => $emergencyNumber,
+                    ':address' => $emergencyAddress
+                ]);
+            }
         }
 
         // Log audit trail
@@ -223,7 +309,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
             $pdo,
             $current_admin_id,
             'UPDATE',
-            'Users',
+            'users',
             $user_id,
             "Updated resident ID {$user_id}"
         );
@@ -287,10 +373,15 @@ require_once __DIR__ . "/../pages/header.php";
                 <tbody class="bg-white divide-y divide-gray-200">
                     <?php foreach ($residents as $r): ?>
                         <?php
-                            $fullName = trim("{$r['first_name']} {$r['middle_name']} {$r['last_name']}");
-                            $age = !empty($r['birth_date']) ? (new DateTime())->diff(new DateTime($r['birth_date']))->y : '';
+                            // Prefer person data over user data
+                            $firstName = ($r['person_first_name'] ?? '') ?: ($r['first_name'] ?? '');
+                            $middleName = ($r['person_middle_name'] ?? '') ?: ($r['middle_name'] ?? '');
+                            $lastName = ($r['person_last_name'] ?? '') ?: ($r['last_name'] ?? '');
+                            $fullName = trim("{$firstName} {$middleName} {$lastName}");
+                            $birthDate = $r['person_birth_date'] ?? $r['birth_date'] ?? '';
+                            $age = !empty($birthDate) ? (new DateTime())->diff(new DateTime($birthDate))->y : '';
                         ?>
-                        <tr class="hover:bg-gray-50 transition-colors">
+                    <tr class="hover:bg-gray-50 transition-colors">
                             <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($fullName) ?></td>
                             <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($age) ?></td>
                             <td class="px-4 py-3 text-sm text-gray-900">
@@ -306,9 +397,9 @@ require_once __DIR__ . "/../pages/header.php";
                                     <?php if ($role >= 3 && $role <= 7): ?>
   <button
     class="deactivateBtn bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600"
-    data-id="<?= $r['user_id'] ?>"
+    data-id="<?= $r['id'] ?>"
   >
-    <?= $r['is_active']==='yes' ? 'Ban' : 'Unban' ?>
+    <?= $r['is_active'] ? 'Ban' : 'Unban' ?>
   </button>
 <?php endif; ?>
                                 </div>
@@ -389,6 +480,7 @@ require_once __DIR__ . "/../pages/header.php";
                                     <option>Married</option>
                                     <option>Widowed</option>
                                     <option>Separated</option>
+                                    <option>Widow/Widower</option>
                                 </select>
                             </div>
                             <div><label class="block text-sm font-medium">Emergency Contact Name</label><input type="text" name="edit_emergency_contact_name" id="edit_emergency_contact_name" class="w-full p-2 border rounded"></div>
@@ -424,13 +516,13 @@ require_once __DIR__ . "/../pages/header.php";
             document.querySelectorAll('.viewBtn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const resident = JSON.parse(btn.dataset.res);
-                    document.getElementById('viewFirstName').textContent = resident.first_name || '—';
-                    document.getElementById('viewMiddleName').textContent = resident.middle_name || '—';
-                    document.getElementById('viewLastName').textContent = resident.last_name || '—';
+                    document.getElementById('viewFirstName').textContent = resident.person_first_name || resident.first_name || '—';
+                    document.getElementById('viewMiddleName').textContent = resident.person_middle_name || resident.middle_name || '—';
+                    document.getElementById('viewLastName').textContent = resident.person_last_name || resident.last_name || '—';
                     document.getElementById('viewEmail').textContent = resident.email || '—';
-                    document.getElementById('viewBirthDate').textContent = resident.birth_date || '—';
-                    document.getElementById('viewGender').textContent = resident.gender || '—';
-                    document.getElementById('viewContact').textContent = resident.contact_number || '—';
+                    document.getElementById('viewBirthDate').textContent = resident.person_birth_date || resident.birth_date || '—';
+                    document.getElementById('viewGender').textContent = resident.person_gender || resident.gender || '—';
+                    document.getElementById('viewContact').textContent = resident.person_contact_number || resident.contact_number || '—';
                     document.getElementById('viewMaritalStatus').textContent = resident.marital_status || '—';
                     document.getElementById('viewHomeAddress').textContent = resident.home_address || '—';
                     document.getElementById('viewEmergencyName').textContent = resident.emergency_contact_name || '—';
@@ -453,14 +545,14 @@ require_once __DIR__ . "/../pages/header.php";
             document.querySelectorAll('.editBtn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const resident = JSON.parse(btn.dataset.res);
-                    document.getElementById('edit_person_id').value = resident.user_id;
-                    document.getElementById('edit_first_name').value = resident.first_name || '';
-                    document.getElementById('edit_middle_name').value = resident.middle_name || '';
-                    document.getElementById('edit_last_name').value = resident.last_name || '';
+                    document.getElementById('edit_person_id').value = resident.id;
+                    document.getElementById('edit_first_name').value = resident.person_first_name || resident.first_name || '';
+                    document.getElementById('edit_middle_name').value = resident.person_middle_name || resident.middle_name || '';
+                    document.getElementById('edit_last_name').value = resident.person_last_name || resident.last_name || '';
                     document.getElementById('edit_email').value = resident.email || '';
-                    document.getElementById('edit_birth_date').value = resident.birth_date || '';
-                    document.getElementById('edit_gender').value = resident.gender || '';
-                    document.getElementById('edit_contact_number').value = resident.contact_number || '';
+                    document.getElementById('edit_birth_date').value = resident.person_birth_date || resident.birth_date || '';
+                    document.getElementById('edit_gender').value = resident.person_gender || resident.gender || '';
+                    document.getElementById('edit_contact_number').value = resident.person_contact_number || resident.contact_number || '';
                     document.getElementById('edit_marital_status').value = resident.marital_status || '';
                     document.getElementById('edit_emergency_contact_name').value = resident.emergency_contact_name || '';
                     document.getElementById('edit_emergency_contact_number').value = resident.emergency_contact_number || '';

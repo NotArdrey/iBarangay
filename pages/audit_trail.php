@@ -19,10 +19,10 @@ $bid = $_SESSION['barangay_id'];
 $stmt = $pdo->prepare("
     SELECT a.*,
            CONCAT(u.first_name,' ',u.last_name) AS admin_name,
-           r.role_name
-    FROM   AuditTrail a
-    JOIN   Users u ON u.user_id  = a.admin_user_id
-    JOIN   Role  r ON r.role_id  = u.role_id
+           r.name AS role_name
+    FROM   audit_trails a
+    JOIN   users u ON u.id  = a.user_id
+    JOIN   roles r ON r.id  = u.role_id
     WHERE  u.barangay_id = :bid
     ORDER  BY a.action_timestamp DESC
 ");
@@ -144,7 +144,9 @@ $roles =array_keys($roles);
         data-ts="<?=$r['action_timestamp']?>">
       <td class="px-4 py-3 text-sm text-gray-600 border-b"><?=htmlspecialchars($r['table_name'])?></td>
       <td class="px-4 py-3 text-sm text-gray-600 border-b"><?=htmlspecialchars($r['admin_name'])?></td>
-      <td class="px-4 py-3 text-sm text-gray-600 max-w-xs truncate border-b"><?=htmlspecialchars($r['description'])?></td>
+      <td class="px-4 py-3 text-sm text-gray-600 max-w-xs truncate border-b">
+        <?= isset($r['description']) ? htmlspecialchars($r['description']) : '' ?>
+      </td>
       <td class="px-4 py-3 text-sm text-gray-500 whitespace-nowrap border-b">
         <?=date('M j, Y H:i',strtotime($r['action_timestamp']))?>
       </td>

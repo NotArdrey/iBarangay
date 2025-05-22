@@ -15,38 +15,41 @@ if (empty($_SESSION['user_id'])) {
 
 // ── Load User Info from DB ────────────────────────────────────────
 $userId = (int) $_SESSION['user_id'];
+
+// Updated query to match your database schema
 $stmt = $pdo->prepare('
-    SELECT role_id, barangay_id
-      FROM Users
-     WHERE user_id = ?
+    SELECT ur.role_id, ur.barangay_id, u.email, u.is_active
+    FROM users u
+    LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = 1
+    WHERE u.id = ?
     LIMIT 1
 ');
 $stmt->execute([$userId]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
-if (!$user) {
-    // Invalid session: user no longer exists
+if (!$user || !$user['is_active']) {
+    // Invalid session: user no longer exists or is inactive
     session_destroy();
     header('Location: ../pages/login.php');
     exit;
 }
 
 // ── Store in Session ──────────────────────────────────────────────
-$_SESSION['role_id']     = (int) $user['role_id'];
-$_SESSION['barangay_id'] = (int) $user['barangay_id'];
+$_SESSION['role_id']     = (int) ($user['role_id'] ?? 8); // Default to resident role
+$_SESSION['barangay_id'] = (int) ($user['barangay_id'] ?? 1); // Default barangay
 
 // ── Lookup Barangay Name for Official Roles ───────────────────────
 $officialRoles = [3,4,5,6,7]; // e.g. Captain, Secretary, Treasurer, etc.
 if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     $stmt2 = $pdo->prepare('
-        SELECT barangay_name
-          FROM Barangay
-         WHERE barangay_id = ?
+        SELECT name
+        FROM barangay
+        WHERE id = ?
         LIMIT 1
     ');
     $stmt2->execute([$_SESSION['barangay_id']]);
     $bName = $stmt2->fetchColumn();
-    $_SESSION['barangay_name'] = $bName ?: 'Barangay Hub';
+    $_SESSION['barangay_name'] = $bName ?: 'iBarangay';
 } else {
     unset($_SESSION['barangay_name']);
 }
@@ -131,7 +134,7 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   <aside class="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 p-4 shadow-md">
     <div class="mb-8 px-2">
     <h2 class="text-2xl font-bold text-blue-800">
-  <?= htmlspecialchars($_SESSION['barangay_name'] ?? 'Barangay Hub') ?>
+  <?= htmlspecialchars($_SESSION['barangay_name'] ?? 'iBarangay') ?>
 </h2>
       <p class="text-sm text-gray-600">Administration System</p>
     </div>
@@ -212,6 +215,19 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
+<!-- Manage Census -->
+<li>
+  <a href="../pages/manage_census.php" class="nav-link">
+    <span class="icon-container">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" 
+          d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H4v-2a4 4 0 015-3.87M12 12a4 4 0 100-8 4 4 0 000 8zm6 0a3 3 0 100-6 3 3 0 000 6zm-12 0a3 3 0 100-6 3 3 0 000 6z" />
+      </svg>
+    </span>
+    <span class="font-medium text-gray-700">Manage Census</span>
+  </a>
+</li>
+
 <!-- Audit Trail -->
 <li>
   <a href="../pages/audit_trail.php" class="nav-link">
@@ -227,7 +243,7 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
 <!-- Logout -->
 <li>
   <form id="logoutForm" action="../functions/logout.php" method="post">
-    <button type="button" id="logoutBtn" class="nav-link">
+    <button type="submit" id="logoutBtn" class="nav-link">
       <span class="icon-container logout">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
@@ -237,29 +253,29 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     </button>
   </form>
 </li>
-
       </ul>
     </nav>
   </aside>
 
   <main class="ml-64 p-8 space-y-8">
     <script>
-      document.addEventListener('DOMContentLoaded', () => {
-        document.getElementById('logoutBtn').addEventListener('click', () => {
-          Swal.fire({
-            title: 'Ready to leave?',
-            text: "Select 'Logout' below if you are ready to end your current session.",
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Logout',
-            cancelButtonText: 'Cancel'
-          }).then((result) => {
-            if (result.isConfirmed) {
-              document.getElementById('logoutForm').submit();
-            }
-          });
-        });
-      });
+   document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('logoutBtn').addEventListener('click', function(e) {
+    e.preventDefault();
+    Swal.fire({
+      title: 'Ready to leave?',
+      text: "Select 'Logout' below if you are ready to end your current session.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Logout',
+      cancelButtonText: 'Cancel'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        document.getElementById('logoutForm').submit();
+      }
+    });
+  });
+});
     </script>

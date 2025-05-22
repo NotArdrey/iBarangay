@@ -26,7 +26,7 @@ const ROLE_RESIDENT     = 8;
 /* ───────── Helper: Count overlapping terms ───────── */
 function overlapCount(PDO $pdo, int $roleId, int $barangayId, string $start, string $end, int $excludeUser = 0): int {
     $sql = "
-        SELECT COUNT(*) FROM Users
+        SELECT COUNT(*) FROM users
         WHERE role_id = :role
           AND barangay_id = :bid
           AND user_id <> :uid
@@ -48,7 +48,7 @@ function overlapCount(PDO $pdo, int $roleId, int $barangayId, string $start, str
 /* ─────── Helper: Check councilor limit ─────── */
 function maxCouncilorsReached(PDO $pdo, int $barangayId, string $start, string $end, int $excludeUser = 0): bool {
     $sql = "
-        SELECT COUNT(*) FROM Users
+        SELECT COUNT(*) FROM users
         WHERE role_id = :councilor
           AND barangay_id = :bid
           AND user_id <> :uid
@@ -73,9 +73,12 @@ if (!$user_id) {
     header('Location: ../pages/login.php');
     exit;
 }
-$stmt = $pdo->prepare('SELECT role_id, barangay_id FROM Users WHERE user_id = ?');
+
+// Fix the query to use 'id' instead of 'user_id'
+$stmt = $pdo->prepare('SELECT role_id, barangay_id FROM users WHERE id = ?');
 $stmt->execute([$user_id]);
 $userInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+
 if (!$userInfo || (int)$userInfo['role_id'] !== ROLE_SUPER_ADMIN) {
     if ($isAjax) {
         http_response_code(403);
@@ -102,7 +105,7 @@ if (isset($_GET['toggle_status'])) {
 
     $newStatus = $action === 'activate' ? 'yes' : 'no';
 
-    $stmt = $pdo->prepare("UPDATE Users SET is_active = ? WHERE user_id = ?");
+    $stmt = $pdo->prepare("UPDATE users SET is_active = ? WHERE user_id = ?");
     if ($stmt->execute([$newStatus, $userId])) {
         echo json_encode(['success' => true, 'newStatus' => $newStatus]);
     } else {
@@ -159,7 +162,7 @@ if (isset($_GET['delete_id'])) {
         ")->execute([$userId]);
 
         /* 2. finally, remove the user */
-        $stmt   = $pdo->prepare("DELETE FROM Users WHERE user_id = ?");
+        $stmt   = $pdo->prepare("DELETE FROM users WHERE user_id = ?");
         $result = $stmt->execute([$userId]);
 
         if ($result) {
@@ -180,19 +183,25 @@ if (isset($_GET['delete_id'])) {
 $officialRoles    = [ROLE_SUPER_ADMIN, ROLE_CAPTAIN, ROLE_SECRETARY, ROLE_TREASURER, ROLE_COUNCILOR, ROLE_CHIEF, ROLE_RESIDENT];
 $rolePlaceholders = implode(',', $officialRoles);
 $stmt = $pdo->prepare("
-    SELECT u.*, r.role_name, b.barangay_name,
-           CASE
-             WHEN u.role_id IN ($rolePlaceholders) THEN
-                  IF(u.start_term_date <= CURDATE() AND
-                     (u.end_term_date IS NULL OR u.end_term_date >= CURDATE()),
-                     'active','inactive')
-             ELSE 'N/A'
-           END AS term_status
-      FROM Users u
-      JOIN Role r      ON r.role_id     = u.role_id
-      JOIN Barangay b  ON b.barangay_id = u.barangay_id
-     WHERE u.role_id IN ($rolePlaceholders)
-     ORDER BY u.role_id, u.last_name, u.first_name
+    SELECT 
+        u.id as user_id, u.first_name, u.last_name, u.email, u.role_id, u.barangay_id, u.is_active,
+        r.name as role_name, b.name as barangay_name,
+        ur.start_term_date, ur.end_term_date,
+        pi.id_image_path, pi.signature_image_path,
+        CASE
+            WHEN u.role_id IN ($rolePlaceholders) THEN
+                IF(ur.start_term_date <= CURDATE() AND
+                   (ur.end_term_date IS NULL OR ur.end_term_date >= CURDATE()),
+                   'active','inactive')
+            ELSE 'N/A'
+        END AS term_status
+    FROM users u
+    JOIN roles r ON r.id = u.role_id
+    JOIN barangay b ON b.id = u.barangay_id
+    LEFT JOIN user_roles ur ON ur.user_id = u.id AND ur.is_active = 1
+    LEFT JOIN person_identification pi ON pi.person_id = (SELECT id FROM persons WHERE user_id = u.id LIMIT 1)
+    WHERE u.role_id IN ($rolePlaceholders)
+    ORDER BY u.role_id, u.last_name, u.first_name
 ");
 $stmt->execute();
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -202,7 +211,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get'])) {
     $userId = (int)$_GET['get'];
     $stmt = $pdo->prepare("
         SELECT u.*, r.role_name, b.barangay_name
-        FROM Users u
+        FROM users u
         JOIN Role r ON r.role_id = u.role_id
         JOIN Barangay b ON b.barangay_id = u.barangay_id
         WHERE u.user_id = ?
@@ -252,7 +261,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Invalid email format';
     } else {
-        $dup = $pdo->prepare("SELECT COUNT(*) FROM Users WHERE email = ? AND user_id <> ?");
+        $dup = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND user_id <> ?");
         $dup->execute([$email, $uid]);
         if ($dup->fetchColumn() > 0) $error = 'Email already in use';
     }
@@ -312,7 +321,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
             
             if ($action === 'add') {
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-                $sql = "INSERT INTO Users (
+                $sql = "INSERT INTO users (
                             email, password_hash, first_name, last_name, 
                             role_id, barangay_id, is_active, isverify,
                             start_term_date, end_term_date,
@@ -375,7 +384,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                 // Add user_id to params for WHERE clause
                 $params[] = $uid;
                 
-                $sql = "UPDATE Users SET " . implode(", ", $sqlParts) . " WHERE user_id = ?";
+                $sql = "UPDATE users SET " . implode(", ", $sqlParts) . " WHERE user_id = ?";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
             }
@@ -567,7 +576,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                         <div id="roleField">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Role</label>
                             <select name="role_id" required class="w-full px-3 py-2 border rounded-lg">
-                                <?php foreach ([3] as $rid): 
+                               <?php foreach ([3] as $rid): 
                                     $role = $pdo->query("SELECT role_name FROM Role WHERE role_id = $rid")->fetch();
                                     ?>
                                     <option value="<?= $rid ?>"><?= htmlspecialchars($role['role_name']) ?></option>

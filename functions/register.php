@@ -1,7 +1,6 @@
 <?php
 session_start();
-require_once __DIR__ . '/../vendor/autoload.php';
-
+require '../includes/db_connect.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 use Dotenv\Dotenv;
@@ -263,27 +262,17 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
         </body>
         </html>";
         exit();
-    } else {
-        echo "<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='UTF-8'>
-            <title>Registration Success</title>
-            <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-        </head>
-        <body>
-            <script>
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success',
-                    text: '$message',
-                    footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Resend verification email?</a>'
-                }).then(() => {
-                    window.location.href = '$redirectUrl';
-                });
-            </script>
-        </body>
-        </html>";
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        $_SESSION['alert'] = "<script>
+            Swal.fire({
+                icon: 'error',
+                title: 'Registration Failed',
+                text: '".addslashes($e->getMessage())."'
+            });
+        </script>";
+        header("Location: register.php");
         exit();
     }
 } else {
