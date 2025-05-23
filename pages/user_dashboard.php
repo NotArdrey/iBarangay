@@ -50,10 +50,11 @@ if (isset($_SESSION['user_id'])) {
             SELECT COUNT(*) as count 
             FROM document_requests dr
             JOIN document_types dt ON dr.document_type_id = dt.id
-            WHERE dr.user_id = ? 
-            AND dt.document_name = 'First Time Job Seeker'
+            JOIN persons p ON dr.person_id = p.id
+            WHERE p.user_id = ? 
+            AND dt.name = 'First Time Job Seeker'
         ");
-        //$firstTimeJobSeekerCheck->execute([$user_id]);
+        $firstTimeJobSeekerCheck->execute([$user_id]);
         $result = $firstTimeJobSeekerCheck->fetch(PDO::FETCH_ASSOC);
         $hasRequestedFirstTimeJobSeeker = $result['count'] > 0;
 
@@ -96,8 +97,10 @@ if (isset($_SESSION['user_id'])) {
 }
 
 // Fetch persons data using PDO
-$stmt = $pdo->prepare("SELECT * FROM persons WHERE user_id = ?");
-$stmt->execute([$_SESSION['user_id']]);
+if (isset($_SESSION['user_id'])) {
+    $stmt = $pdo->prepare("SELECT * FROM persons WHERE user_id = ?");
+    $stmt->execute([$_SESSION['user_id']]);
+}
 ?>
 
 <!DOCTYPE html>
@@ -182,45 +185,12 @@ $stmt->execute([$_SESSION['user_id']]);
 .user-name {
     font-size: 0.9rem;
     font-weight: 500;
-    color: #333333;
+    color: #0a2240; /* navy blue */
 }
 
 .user-barangay {
     font-size: 0.75rem;
-    color: #666666;
-}
-
-/* Responsive adjustments */
-@media (max-width: 768px) {
-    .user-info {
-        margin: 1rem 0;
-        padding: 0.8rem;
-        justify-content: center;
-        width: 100%;
-    }
-    
-    .user-details {
-        text-align: left;
-    }
-}
-
-/* Alternative compact style for smaller screens */
-@media (max-width: 1200px) and (min-width: 769px) {
-    .user-info {
-        padding: 0.4rem 0.8rem;
-    }
-    
-    .user-name {
-        font-size: 0.85rem;
-    }
-    
-    .user-barangay {
-        font-size: 0.7rem;
-    }
-    
-    .user-avatar {
-        font-size: 1.3rem;
-    }
+    color: #0a2240; /* navy blue */
 }
   </style>
 
@@ -312,11 +282,12 @@ $stmt->execute([$_SESSION['user_id']]);
 </button>
 
 <style>
-/* Minimalist About Section */
-.about-section {
-    padding: 6rem 5%;
-    background: #fff;
-}
+    /* About Section - Consistent styling */
+    .about-section {
+        padding: 4rem 5%;
+        background: #f8f9fa;
+        min-height: 70vh;
+    }
 
 .section-header {
     text-align: center;
@@ -354,7 +325,7 @@ $stmt->execute([$_SESSION['user_id']]);
 .carousel-slide {
     min-width: 400px;
     flex-shrink: 0;
-    padding: 0 rem;
+    padding: 0 1rem;
     transition: opacity 0.3s ease;
 }
 
@@ -601,6 +572,709 @@ $stmt->execute([$_SESSION['user_id']]);
 }
 </style>
 
+    <!-- Services Section -->
+    <section class="services-section" id="services">
+        <div class="services-container">
+            <div class="section-header">
+                <h2>Services</h2>
+                <p>Complete barangay services at your fingertips</p>
+            </div>
+
+            <!-- Barangay Certificates Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('certificates')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-certificate"></i></div>
+                    <h3>Barangay Certificates</h3>
+                    <p>Official documents and certifications</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="certificates-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="certificates-grid" style="display: none;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangayClearance';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-file-alt"></i></div>
+                        <div class="service-content">
+                            <h4>Barangay Clearance</h4>
+                            <p>Required for employment, business permits, and various transactions</p>
+                            <a href="../pages/services.php?documentType=barangayClearance" class="service-cta">
+                                Request <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangayIndigency';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-hand-holding-heart"></i></div>
+                        <div class="service-content">
+                            <h4>Certificate of Indigency</h4>
+                            <p>For accessing social welfare programs and financial assistance</p>
+                            <a href="../pages/services.php?documentType=barangayIndigency" class="service-cta">
+                                Apply <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=businessPermit';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-store"></i></div>
+                        <div class="service-content">
+                            <h4>Business Permit Clearance</h4>
+                            <p>Barangay clearance required for business license applications</p>
+                            <a href="../pages/services.php?documentType=businessPermit" class="service-cta">
+                                Apply <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=sedula';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-id-card"></i></div>
+                        <div class="service-content">
+                            <h4>Community Tax Certificate (Sedula)</h4>
+                            <p>Annual tax certificate required for government transactions</p>
+                            <a href="../pages/services.php?documentType=sedula" class="service-cta">
+                                Get Certificate <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=proofOfResidency';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-home"></i></div>
+                        <div class="service-content">
+                            <h4>Certificate of Residency</h4>
+                            <p>Official proof of residence in the barangay</p>
+                            <a href="../pages/services.php?documentType=proofOfResidency" class="service-cta">
+                                Request <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Services Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('other')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-hands-helping"></i></div>
+                    <h3>Other Services</h3>
+                    <p>Social services and community assistance</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="other-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="other-grid" style="display: none;">
+                    <div class="service-item" onclick="window.location.href='../pages/ayuda_request.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                        <div class="service-content">
+                            <h4>Financial Assistance (Ayuda)</h4>
+                            <p>Emergency financial assistance for community members in need</p>
+                            <a href="../pages/ayuda_request.php" class="service-cta">
+                                Apply for Assistance <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/scholarship_application.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-graduation-cap"></i></div>
+                        <div class="service-content">
+                            <h4>Educational Scholarship</h4>
+                            <p>Scholarship programs for deserving students in the community</p>
+                            <a href="../pages/scholarship_application.php" class="service-cta">
+                                Apply for Scholarship <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/medical_assistance.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-heart"></i></div>
+                        <div class="service-content">
+                            <h4>Medical Assistance Program</h4>
+                            <p>Healthcare support and medical aid for community members</p>
+                            <a href="../pages/medical_assistance.php" class="service-cta">
+                                Request Assistance <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/senior_citizen_services.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-users"></i></div>
+                        <div class="service-content">
+                            <h4>Senior Citizen Services</h4>
+                            <p>Special services and benefits for senior citizens</p>
+                            <a href="../pages/senior_citizen_services.php" class="service-cta">
+                                Learn More <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/pwd_services.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-wheelchair"></i></div>
+                        <div class="service-content">
+                            <h4>PWD Services</h4>
+                            <p>Services and assistance for Persons with Disabilities</p>
+                            <a href="../pages/pwd_services.php" class="service-cta">
+                                Access Services <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/livelihood_programs.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-seedling"></i></div>
+                        <div class="service-content">
+                            <h4>Livelihood Programs</h4>
+                            <p>Skills training and livelihood opportunities for residents</p>
+                            <a href="../pages/livelihood_programs.php" class="service-cta">
+                                Join Program <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Blotter Services Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('blotter')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-file-signature"></i></div>
+                    <h3>Blotter Services</h3>
+                    <p>Incident reporting and documentation</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="blotter-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="blotter-grid" style="display: none;">
+                    <div class="service-item" onclick="window.location.href='../pages/blotter_request.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                        <div class="service-content">
+                            <h4>File a Blotter Report</h4>
+                            <p>Report incidents and request official documentation</p>
+                            <a href="../pages/blotter_request.php" class="service-cta">
+                                File Report <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/blotter_status.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-search"></i></div>
+                        <div class="service-content">
+                            <h4>Check Blotter Status</h4>
+                            <p>Track the status of your blotter requests</p>
+                            <a href="../pages/blotter_status.php" class="service-cta">
+                                Check Status <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <style>
+    /* Services Section - Consistent styling */
+    .services-section {
+        padding: 4rem 5%;
+        background: #fff; /* Match contact-section background */
+        min-height: 70vh;
+    }
+
+    .services-container {
+        max-width: 1200px;
+        margin: 0 auto;
+    }
+
+    .section-header {
+        text-align: center;
+        margin-bottom: 3rem;
+    }
+
+    .section-header h2 {
+        font-size: 2.5rem;
+        color: #2c3e50;
+        margin-bottom: 1rem;
+        font-weight: 600;
+    }
+
+    .section-header p {
+        font-size: 1.2rem;
+        color: #7f8c8d;
+        max-width: 600px;
+        margin: 0 auto;
+    }
+
+    /* Service Category Styles */
+    .service-category {
+        margin-bottom: 2rem;
+        background: white;
+        border-radius: 20px;
+        padding: 0;
+        box-shadow: 0 5px 15px rgba(0,0,0,0.08);
+        border: 1px solid rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+
+    .category-header {
+        position: relative;
+        text-align: center;
+        padding: 2.5rem;
+        /* Darker blue gradient */
+        background: linear-gradient(135deg, #0056b3 0%, #003366 100%);
+        color: white;
+        transition: all 0.3s ease;
+    }
+
+    .category-header:hover {
+        /* Even darker blue gradient for hover */
+        background: linear-gradient(135deg, #003366 0%, #001a33 100%);
+    }
+
+    .category-icon {
+        width: 80px;
+        height: 80px;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.2);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin: 0 auto 1.5rem;
+        font-size: 2rem;
+        color: white;
+    }
+
+    .category-header h3 {
+        font-size: 2.2rem;
+        color: white;
+        margin-bottom: 0.8rem;
+        font-weight: 600;
+    }
+
+    .toggle-icon {
+        position: absolute;
+        bottom: 1rem;
+        right: 2rem;
+        font-size: 1.5rem;
+        color: rgba(255, 255, 255, 0.8);
+        transition: transform 0.3s ease;
+    }
+
+    .toggle-icon.expanded {
+        transform: rotate(180deg);
+    }
+
+    /* Services Grid */
+    .services-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+        gap: 2rem;
+        padding: 2.5rem;
+        transition: all 0.3s ease;
+        opacity: 0;
+        max-height: 0;
+        overflow: hidden;
+    }
+
+    .services-grid.show {
+        opacity: 1;
+        max-height: none;
+    }
+
+    .service-item {
+        background: #fff;
+        border-radius: 15px;
+        padding: 2rem;
+        border: 2px solid #f1f2f6;
+        transition: all 0.3s ease;
+        position: relative;
+        overflow: hidden;
+    }
+
+    .service-item::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #3498db 0%, #2ecc71 100%);
+        transform: scaleX(0);
+        transition: transform 0.3s ease;
+    }
+
+    .service-item:hover::before {
+        transform: scaleX(1);
+    }
+
+    .service-item:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 15px 30px rgba(0,0,0,0.1);
+        border-color: #e8e9ef;
+    }
+
+    .service-icon {
+        width: 60px;
+        height: 60px;
+        border-radius: 12px;
+        /* Darker blue gradient */
+        background: linear-gradient(135deg, #0056b3 0%, #003366 100%);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-bottom: 1.5rem;
+        font-size: 1.5rem;
+        color: white;
+    }
+
+    .service-content h4 {
+        font-size: 1.3rem;
+        color: #2c3e50;
+        margin-bottom: 1rem;
+        font-weight: 600;
+        line-height: 1.3;
+    }
+
+    .service-content p {
+        color: #7f8c8d;
+        line-height: 1.6;
+        margin-bottom: 1.5rem;
+        font-size: 0.95rem;
+    }
+
+    .service-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        color: #3498db;
+        text-decoration: none;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        font-size: 0.9rem;
+    }
+
+    .service-cta:hover {
+        color: #2980b9;
+        gap: 0.8rem;
+    }
+
+    .service-cta i {
+        font-size: 0.8rem;
+        transition: transform 0.2s ease;
+    }
+
+    .service-cta:hover i {
+        transform: translateX(3px);
+    }
+
+    /* Responsive Design */
+    @media (max-width: 1200px) {
+        .services-grid {
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 1.5rem;
+        }
+    }
+
+    @media (max-width: 768px) {
+        .services-section {
+            padding: 3rem 5%;
+        }
+        
+        .section-header h2 {
+            font-size: 2rem;
+        }
+        
+        .service-category {
+            margin-bottom: 1.5rem;
+        }
+        
+        .category-header {
+            padding: 2rem 1.5rem;
+        }
+        
+        .category-icon {
+            width: 70px;
+            height: 70px;
+            font-size: 1.8rem;
+        }
+        
+        .category-header h3 {
+            font-size: 1.8rem;
+        }
+        
+        .services-grid {
+            grid-template-columns: 1fr;
+            gap: 1.5rem;
+            padding: 2rem 1.5rem;
+        }
+        
+        .service-item {
+            padding: 1.5rem;
+        }
+        
+        .service-content h4 {
+            font-size: 1.2rem;
+        }
+
+        .toggle-icon {
+            bottom: 0.8rem;
+            right: 1.5rem;
+            font-size: 1.3rem;
+        }
+    }
+
+    @media (max-width: 480px) {
+        .services-section {
+            padding: 2.5rem 3%;
+        }
+        
+        .section-header h2 {
+            font-size: 1.8rem;
+        }
+        
+        .category-header {
+            padding: 1.5rem 1rem;
+        }
+        
+        .category-header h3 {
+            font-size: 1.6rem;
+        }
+        
+        .services-grid {
+            padding: 1.5rem 1rem;
+        }
+        
+        .service-item {
+            padding: 1.2rem;
+        }
+        
+        .service-icon {
+            width: 50px;
+            height: 50px;
+            font-size: 1.3rem;
+        }
+
+        .toggle-icon {
+            bottom: 0.5rem;
+            right: 1rem;
+            font-size: 1.2rem;
+        }
+    }
+
+    /* Animation for service items */
+    .service-item {
+        opacity: 0;
+        transform: translateY(20px);
+        animation: fadeInUp 0.6s ease forwards;
+    }
+
+    .service-item:nth-child(1) { animation-delay: 0.1s; }
+    .service-item:nth-child(2) { animation-delay: 0.2s; }
+    .service-item:nth-child(3) { animation-delay: 0.3s; }
+    .service-item:nth-child(4) { animation-delay: 0.4s; }
+    .service-item:nth-child(5) { animation-delay: 0.5s; }
+    .service-item:nth-child(6) { animation-delay: 0.6s; }
+
+    @keyframes fadeInUp {
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+
+    /* Announcements Section - Consistent styling */
+    .announcements-section {
+        padding: 4rem 5%;
+        background: #f8f9fa;
+        min-height: 70vh;
+    }
+
+    .announcements-container {
+        max-width: 1000px;
+        margin: 0 auto;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+        gap: 2rem;
+        padding: 0;
+    }
+
+    .announcement-card {
+        background: white;
+        border-radius: 15px;
+        overflow: hidden;
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+        position: relative;
+        border: 1px solid rgba(0,0,0,0.05);
+        min-height: auto;
+        display: flex;
+        flex-direction: column;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+
+    .announcement-card:hover {
+        transform: translateY(-3px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.08);
+    }
+
+    .announcement-card::before {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 4px;
+        background: linear-gradient(90deg, #3498db 0%, #2ecc71 100%);
+    }
+
+    .announcement-card h3 {
+        font-size: 1.3rem;
+        color: #2c3e50;
+        margin: 1.5rem 1.5rem 1rem;
+        line-height: 1.3;
+        flex-shrink: 0;
+    }
+
+    .event-details {
+        padding: 0 1.5rem 1.5rem;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+
+    .event-meta {
+        display: flex;
+        flex-direction: column;
+        gap: 0.8rem;
+        margin-bottom: 1rem;
+        flex-shrink: 0;
+    }
+
+    .meta-item {
+        display: flex;
+        align-items: center;
+        color: #7f8c8d;
+        font-size: 0.95rem;
+    }
+
+    .meta-item i {
+        width: 24px;
+        text-align: center;
+        margin-right: 10px;
+        color: #3498db;
+        font-size: 1rem;
+    }
+
+    .event-date {
+        font-weight: 500;
+        color: #2c3e50;
+        font-size: 0.95rem;
+    }
+
+    .event-location {
+        font-size: 0.9rem;
+    }
+
+    .event-description {
+        color: #34495e;
+        line-height: 1.6;
+        margin-bottom: 1.5rem;
+        font-size: 0.95rem;
+        flex: 1;
+    }
+
+    .event-organizer {
+        font-size: 0.85rem;
+        color: #7f8c8d;
+        border-top: 1px solid #eee;
+        padding-top: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-shrink: 0;
+        margin-top: auto;
+    }
+
+    .no-announcements {
+        text-align: center;
+        color: #7f8c8d;
+        font-size: 1.1rem;
+        grid-column: 1 / -1;
+        padding: 3rem 0;
+    }
+
+    /* Postponed Event Styles */
+    .postponed {
+        position: relative;
+        opacity: 0.8;
+        background: #fff9e6;
+    }
+
+    .postponed-banner {
+        background: #ffeb3b;
+        color: #856404;
+        padding: 8px 15px;
+        font-weight: bold;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-size: 0.85rem;
+    }
+
+    .postponed::after {
+        content: '';
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        background: repeating-linear-gradient(
+            45deg,
+            transparent,
+            transparent 10px,
+            rgba(0,0,0,0.05) 10px,
+            rgba(0,0,0,0.05) 20px
+        );
+        z-index: 1;
+    }
+
+    .postponed .announcement-card {
+        position: relative;
+        z-index: 2;
+    }
+
+    /* Responsive Design for Announcements */
+    @media (max-width: 1000px) {
+        .announcements-container {
+            grid-template-columns: 1fr;
+            max-width: 600px;
+            gap: 1.5rem;
+        }
+    }
+
+    @media (max-width: 600px) {
+        .announcements-container {
+            max-width: 100%;
+            padding: 0 1rem;
+            gap: 1rem;
+        }
+        
+        .announcement-card h3 {
+            font-size: 1.2rem;
+            margin: 1.2rem 1.2rem 1rem;
+        }
+        
+        .event-details {
+            padding: 0 1.2rem 1.2rem;
+        }
+
+        .meta-item {
+            font-size: 0.9rem;
+        }
+
+        .event-description {
+            font-size: 0.9rem;
+        }
+
+        .event-organizer {
+            font-size: 0.8rem;
+        }
+    }
+    </style>
+
 <script>
 // Minimalist Carousel Controller
 document.addEventListener('DOMContentLoaded', function() {
@@ -709,300 +1383,50 @@ document.addEventListener('DOMContentLoaded', function() {
         window.scrollTo({ top: 0, behavior: 'smooth' });
     });
 });
+
+// Toggle Category Function
+function toggleCategory(categoryName) {
+    const grid = document.getElementById(categoryName + '-grid');
+    const icon = document.getElementById(categoryName + '-icon');
+    const toggleIcon = icon.parentElement;
+    
+    if (grid.style.display === 'none' || grid.style.display === '') {
+        // Show the grid
+        grid.style.display = 'grid';
+        setTimeout(() => {
+            grid.classList.add('show');
+        }, 10);
+        
+        // Rotate the icon
+        toggleIcon.classList.add('expanded');
+    } else {
+        // Hide the grid
+        grid.classList.remove('show');
+        toggleIcon.classList.remove('expanded');
+        
+        setTimeout(() => {
+            grid.style.display = 'none';
+        }, 300);
+    }
+}
 </script>
 
-
-</script>
-
-    <!-- Services Section -->
-    <section class="services-section" id="services">
-    <div class="services-container">
-
-    <div class="section-header">
-        <h2>Services</h2>
-    </div>
-  <div class="services-list">
-    <div class="service-item"
-         onclick="window.location.href='../pages/services.php?documentType=barangayClearance';"
-         style="cursor:pointer;">
-      <div class="service-icon"><i class="fas fa-file-alt"></i></div>
-      <div class="service-content">
-        <h3>Barangay Clearance</h3>
-        <p>Obtain official barangay clearance for various transactions and requirements.</p>
-        <a href="../pages/services.php?documentType=barangayClearance" class="service-cta">
-          Get Started <i class="fas fa-arrow-right arrow-icon"></i>
-        </a>
-      </div>
-    </div>
-
-    <?php if (!$hasRequestedFirstTimeJobSeeker): ?>
-    <div class="service-item"
-         onclick="window.location.href='../pages/services.php?documentType=firstTimeJobSeeker';"
-         style="cursor:pointer;">
-      <div class="service-icon"><i class="fas fa-briefcase"></i></div>
-      <div class="service-content">
-        <h3>First Time Job Seeker</h3>
-        <p>Assistance and certification for first-time job seekers in the community.</p>
-        <a href="../pages/services.php?documentType=firstTimeJobSeeker" class="service-cta">
-          Apply Now <i class="fas fa-arrow-right arrow-icon"></i>
-        </a>
-      </div>
-    </div>
-    <?php endif; ?>
-
-    <div class="service-item"
-         onclick="window.location.href='../pages/services.php?documentType=proofOfResidency';"
-         style="cursor:pointer;">
-      <div class="service-icon"><i class="fas fa-home"></i></div>
-      <div class="service-content">
-        <h3>Proof of Residency</h3>
-        <p>Get official certification of your residency status for legal and administrative purposes.</p>
-        <a href="../pages/services.php?documentType=proofOfResidency" class="service-cta">
-          Request Certificate <i class="fas fa-arrow-right arrow-icon"></i>
-        </a>
-      </div>
-    </div>
-
-    <div class="service-item"
-         onclick="window.location.href='../pages/services.php?documentType=barangayIndigency';"
-         style="cursor:pointer;">
-      <div class="service-icon"><i class="fas fa-hand-holding-heart"></i></div>
-      <div class="service-content">
-        <h3>Barangay Indigency</h3>
-        <p>Obtain certification for social welfare and financial assistance programs.</p>
-        <a href="../pages/services.php?documentType=barangayIndigency" class="service-cta">
-          Apply Here <i class="fas fa-arrow-right arrow-icon"></i>
-        </a>
-      </div>
-    </div>
-
-    <div class="service-item"
-         onclick="window.location.href='../pages/services.php?documentType=goodMoralCertificate';"
-         style="cursor:pointer;">
-      <div class="service-icon"><i class="fas fa-user-check"></i></div>
-      <div class="service-content">
-        <h3>Good Moral Certificate</h3>
-        <p>Request certification of good moral character for employment and education purposes.</p>
-        <a href="../pages/services.php?documentType=goodMoralCertificate" class="service-cta">
-          Get Certified <i class="fas fa-arrow-right arrow-icon"></i>
-        </a>
-      </div>
-    </div>
-
-    <div class="service-item"
-         onclick="window.location.href='../pages/services.php?documentType=noIncomeCertification';"
-         style="cursor:pointer;">
-      <div class="service-icon"><i class="fas fa-file-invoice-dollar"></i></div>
-      <div class="service-content">
-        <h3>No Income Certification</h3>
-        <p>Official certification for individuals without regular income source.</p>
-        <a href="../pages/services.php?documentType=noIncomeCertification" class="service-cta">
-          Request Now <i class="fas fa-arrow-right arrow-icon"></i>
-        </a>
-      </div>
-    </div>
-  </div>
-</div>
-    </section>
-
-    <style>
-.announcements-section {
-    padding: 4rem 1.5rem;
-    background: #f8f9fa;
-}
-
-.section-header {
-    text-align: center;
-    margin-bottom: 3rem;
-}
-
-.section-header h2 {
-    font-size: 2.5rem;
-    color: #2c3e50;
-    margin-bottom: 1rem;
-    position: relative;
-}
-
-.section-header h2::after {
-    content: '';
-    position: absolute;
-    bottom: -10px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 60px;
-    height: 3px;
-    background: #3498db;
-    border-radius: 2px;
-}
-
-.announcements-container {
-    max-width: 1200px;
-    margin: 0 auto;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 2rem;
-    padding: 0 1rem;
-}
-
-.announcement-card {
-    background: white;
-    border-radius: 15px;
-    overflow: hidden;
-    transition: transform 0.3s ease, box-shadow 0.3s ease;
-    position: relative;
-    border: 1px solid rgba(0,0,0,0.05);
-}
-
-.announcement-card:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 10px 20px rgba(0,0,0,0.08);
-}
-
-.announcement-card::before {
-    content: '';
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, #3498db 0%, #2ecc71 100%);
-}
-
-.announcement-card h3 {
-    font-size: 1.3rem;
-    color: #2c3e50;
-    margin: 1.5rem 1.5rem 1rem;
-}
-
-.event-details {
-    padding: 0 1.5rem 1.5rem;
-}
-
-.event-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.8rem;
-    margin-bottom: 1rem;
-}
-
-.meta-item {
-    display: flex;
-    align-items: center;
-    color: #7f8c8d;
-    font-size: 0.95rem;
-}
-
-.meta-item i {
-    width: 24px;
-    text-align: center;
-    margin-right: 10px;
-    color: #3498db;
-}
-
-.event-date {
-    font-weight: 500;
-    color: #2c3e50;
-}
-
-.event-location {
-    font-size: 0.9rem;
-}
-
-.event-description {
-    color: #34495e;
-    line-height: 1.6;
-    margin-bottom: 1.5rem;
-    font-size: 0.95rem;
-}
-
-.event-organizer {
-    font-size: 0.85rem;
-    color: #7f8c8d;
-    border-top: 1px solid #eee;
-    padding-top: 1rem;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.no-announcements {
-    text-align: center;
-    color: #7f8c8d;
-    font-size: 1.1rem;
-    grid-column: 1 / -1;
-    padding: 3rem 0;
-}
-
-/* Responsive Design */
-@media (max-width: 1024px) {
-    .announcements-container {
-        grid-template-columns: 1fr;
-        max-width: 600px;
-    }
-    
-    .announcement-card {
-        margin-bottom: 1rem;
-    }
-}
-
-@media (max-width: 768px) {
-    .section-header h2 {
-        font-size: 2rem;
-    }
-    
-    .announcement-card h3 {
-        font-size: 1.2rem;
-    }
-}
-.postponed {
-  position: relative;
-  opacity: 0.8;
-  background: #fff9e6;
-}
-
-.postponed-banner {
-  background: #ffeb3b;
-  color: #856404;
-  padding: 8px 15px;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.postponed::after {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background: repeating-linear-gradient(
-    45deg,
-    transparent,
-    transparent 10px,
-    rgba(0,0,0,0.05) 10px,
-    rgba(0,0,0,0.05) 20px
-  );
-}
-</style>
-
+<!-- Announcements Section -->
 <section class="announcements-section" id="announcements">
   <div class="section-header">
     <h2>Announcements</h2>
     <p>Stay updated with the latest news and events</p>
   </div>
   <div class="announcements-container">
-  <?php if (count($events_result) > 0): ?>
-    <?php foreach ($events_result as $event): ?>
-      <div class="announcement-card <?= $event['status'] === 'postponed' ? 'postponed' : '' ?>">
-        <?php if ($event['status'] === 'postponed'): ?>
-          <div class="postponed-banner">
-            <i class="fas fa-exclamation-triangle"></i>
-            Event Postponed - New Date TBA
-          </div>
-        <?php endif; ?>
-        <div class="announcement-card">
+    <?php if (count($events_result) > 0): ?>
+      <?php foreach ($events_result as $event): ?>
+        <div class="announcement-card <?= $event['status'] === 'postponed' ? 'postponed' : '' ?>">
+          <?php if ($event['status'] === 'postponed'): ?>
+            <div class="postponed-banner">
+              <i class="fas fa-exclamation-triangle"></i>
+              Event Postponed - New Date TBA
+            </div>
+          <?php endif; ?>
           <h3><?php echo htmlspecialchars($event['title']); ?></h3>
           <div class="event-details">
             <div class="event-meta">

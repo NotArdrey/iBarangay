@@ -243,9 +243,9 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
 
 <!-- Log out -->
 <li>
-  <form id="logoutForm" action="../functions/logout.php" method="post" class="w-full">
-    <button type="button" id="logoutBtn" class="nav-link w-full">
-      <span class="icon-container">
+  <form id="logoutForm" action="../functions/logout.php" method="post">
+    <button type="submit" id="logoutBtn" class="nav-link">
+      <span class="icon-container logout">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" 
           d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15M12 9l-3 3m0 0l3 3m-3-3h12.75" />
@@ -263,7 +263,8 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   <main class="ml-64 p-8 space-y-8">
     <script>
    document.addEventListener('DOMContentLoaded', () => {
-  document.getElementById('logoutBtn').addEventListener('click', () => {
+  document.getElementById('logoutBtn').addEventListener('click', function(e) {
+    e.preventDefault();
     Swal.fire({
       title: 'Ready to leave?',
       text: "Select 'Logout' below if you are ready to end your current session.",
