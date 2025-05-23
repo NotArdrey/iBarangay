@@ -20,6 +20,9 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
+
+
+
 // Get all document types (only the 6 supported)
 $stmt = $pdo->query("
 SELECT dt.id, dt.name, dt.code, dt.description
