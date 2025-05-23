@@ -155,15 +155,18 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
-    <?php include "../pages/header.php"; ?>
     
-    <!-- Navigation Buttons for Census Pages -->
-    <div class="flex flex-wrap gap-4 mb-6 mt-6">
-        <a href="manage_census.php" class="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800 transition">Add Resident</a>
-        <a href="add_child.php" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Add Child</a>
-        <a href="census_records.php" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Census Records</a>
-        <a href="manage_households.php" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Manage Households</a>
-    </div>
+        <!-- Navigation Buttons for Census Pages -->
+        <div class="flex flex-wrap gap-4 mb-6 mt-6">
+            <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
+            <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
+            <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
+            <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+        </div>
     
     <?php if ($add_error): ?>
         <div class="bg-red-100 text-red-700 px-4 py-2 rounded mb-4"><?= $add_error ?></div>

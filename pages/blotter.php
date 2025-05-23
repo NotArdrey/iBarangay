@@ -685,7 +685,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <title>Blotter Case Management</title>
-  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
   <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
   <style>
     /* Transcription loader styles */

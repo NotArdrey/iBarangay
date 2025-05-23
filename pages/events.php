@@ -200,12 +200,12 @@ require __DIR__ . '/../pages/header.php';
     <title>Event Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
 </head>
 <body class="bg-gray-50">
     <main class="ml-0 lg:ml-64 p-4 md:p-8 space-y-6">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
-            <h1 class="text-2xl md:text-3xl font-bold text-gray-800 mb-4 md:mb-0">Event Management</h1>
+            <h1 class="text-3xl font-bold text-blue-800">Event Management</h1>
             <button onclick="toggleModal()" class="w-full md:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">+ Add New Event</button>
         </div>
 
