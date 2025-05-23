@@ -256,14 +256,13 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $idImageData = null;
                 if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
                     $idImageData = file_get_contents($_FILES['govt_id']['tmp_name']);
-                }
-
-                // Insert the new user record with all available information
+                }                // Insert the new user record with all available information
                 $stmt = $pdo->prepare("INSERT INTO users (
                     email, 
                     phone,
                     password, 
-                    role_id, 
+                    role_id,
+                    barangay_id, 
                     first_name,
                     last_name,
                     gender,
@@ -271,13 +270,14 @@ elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
                     verification_expiry,
                     govt_id_image,
                     is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
 
                 if (!$stmt->execute([
                     $email, 
                     $phone,
                     $passwordHash, 
-                    $role_id, 
+                    $role_id,
+                    32, // Set Tambubong barangay (ID 32) as default 
                     $personData['first_name'],
                     $personData['last_name'],
                     $personData['gender'],

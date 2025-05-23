@@ -172,8 +172,7 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       </script>
     <?php endif; ?>
 
-    <form class="account-form" action="" method="POST">
-      <!-- Non-Editable Section -->
+    <form class="account-form" action="" method="POST">      <!-- Non-Editable Section -->
       <div class="form-section">
         <h3>Account Information (Read-Only)</h3>
         <div class="form-group">
@@ -182,6 +181,30 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
           <input type="email" id="email" value="<?php echo htmlspecialchars($user['email']); ?>" readonly>
           <a href="change_email.php" class="btn" style="margin-top: 0.5em; display: inline-block; color:black;">Change Email</a>
         </div>
+        
+        <!-- Government ID Display -->
+        <div class="form-group" style="margin-top: 1.5em;">
+          <label>Government ID</label>
+          <div style="margin-top: 0.5em;">
+            <?php if(!empty($user['govt_id_image'])): ?>
+              <div class="govt-id-container" style="border: 1px solid #ddd; padding: 10px; border-radius: 5px; background-color: #f9f9f9;">
+                <img src="data:image/jpeg;base64,<?php echo base64_encode($user['govt_id_image']); ?>" 
+                     alt="Government ID" 
+                     style="max-width: 100%; max-height: 300px; display: block; margin: 0 auto; cursor: pointer;" 
+                     onclick="openImageModal(this.src)">
+                <p style="text-align: center; margin-top: 8px; font-size: 0.9em; color: #666;">Click on image to enlarge</p>
+              </div>
+            <?php else: ?>
+              <p>No government ID uploaded.</p>
+            <?php endif; ?>
+          </div>
+        </div>
+      </div>
+      
+      <!-- Modal for Enlarged Image -->
+      <div id="imageModal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); overflow: auto;">
+        <span style="position: absolute; top: 15px; right: 25px; color: #f1f1f1; font-size: 35px; font-weight: bold; cursor: pointer;" onclick="closeImageModal()">&times;</span>
+        <img id="modalImage" style="display: block; margin: 60px auto; max-width: 90%; max-height: 90%;">
       </div>
 
       <!-- Editable Section: Personal Details -->
@@ -251,13 +274,38 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
   <footer class="footer">
     <p>&copy; 2025 iBarangay. All rights reserved.</p>
   </footer>
-
   <script>
     // Mobile menu toggle functionality
     const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
     const navLinks = document.querySelector('.nav-links');
     mobileMenuBtn.addEventListener('click', () => {
       navLinks.classList.toggle('active');
+    });
+    
+    // Image modal functionality
+    function openImageModal(src) {
+      document.getElementById('modalImage').src = src;
+      document.getElementById('imageModal').style.display = 'block';
+      document.body.style.overflow = 'hidden'; // Prevent scrolling when modal is open
+    }
+    
+    function closeImageModal() {
+      document.getElementById('imageModal').style.display = 'none';
+      document.body.style.overflow = 'auto'; // Restore scrolling
+    }
+    
+    // Close modal when clicking outside the image
+    document.getElementById('imageModal').addEventListener('click', function(event) {
+      if (event.target === this) {
+        closeImageModal();
+      }
+    });
+    
+    // Close modal with ESC key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape' && document.getElementById('imageModal').style.display === 'block') {
+        closeImageModal();
+      }
     });
   </script>
 </body>

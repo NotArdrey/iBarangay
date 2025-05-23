@@ -1,3 +1,22 @@
+<?php
+// Load environment variables for XAMPP compatibility
+$envPath = __DIR__ . '/../.env';
+if (file_exists($envPath)) {
+    $env = file($envPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+    foreach ($env as $line) {
+        if (strpos($line, '#') !== 0 && strpos($line, '=') !== false) {
+            list($name, $value) = explode('=', $line, 2);
+            putenv(sprintf('%s=%s', trim($name), trim($value)));
+            $_ENV[trim($name)] = trim($value);
+        }
+    }
+}
+
+// Check if Document AI credentials are properly loaded
+if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APPLICATION_CREDENTIALS'))) {
+    error_log('Google Document AI credentials not found or inaccessible: ' . getenv('GOOGLE_APPLICATION_CREDENTIALS'));
+}
+?>
 <!DOCTYPE html>
 <html lang="en">
 
@@ -342,9 +361,7 @@
           // Process the file with Document AI
           processFile(file);
         }
-      }
-
-      function processFile(file) {
+      }      function processFile(file) {
         
         // Create loading indicator
         const loadingIndicator = document.createElement('div');
@@ -355,6 +372,7 @@
 
         const formData = new FormData();
         formData.append('govt_id', file);
+        formData.append('debug', 'true'); // Add debug flag to help identify issues
 
         // Send to server for processing
         fetch('../scripts/process_id.php', {
@@ -372,13 +390,22 @@
             loadingIndicator.style.display = 'none';
 
             if (data.error) {
-              // Show error
+              // Show error with more detailed information
+              let errorMessage = data.error;
+              if (data.debug_info) {
+                console.error('Debug info:', data.debug_info);
+                if (data.debug_info.includes('credentials') || data.debug_info.includes('env')) {
+                  errorMessage += " (Environment configuration issue detected)";
+                }
+              }
+              
               Swal.fire({
                 icon: 'error',
                 title: 'Processing Error',
-                text: data.error
+                text: errorMessage,
+                footer: '<a href="#">Contact system administrator for help</a>'
               });
-              console.error('Error details:', data.error);
+              console.error('Error details:', data);
               return;
             }
 
@@ -390,7 +417,8 @@
             Swal.fire({
               icon: 'error',
               title: 'Error',
-              text: 'An error occurred while processing the document.'
+              text: 'An error occurred while processing the document. Please try again later.',
+              footer: '<a href="#">Report this issue</a>'
             });
             console.error('Error:', error);
           });

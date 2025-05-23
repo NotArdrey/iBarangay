@@ -1,6 +1,5 @@
 <?php
 
-use \PDO;
 require "../config/dbconn.php";
 require "../functions/manage_census.php";
 
@@ -229,26 +228,68 @@ function isCheckboxChecked($form_data, $key) {
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
-        <!-- Navigation Buttons for Census Pages -->
-        <div class="flex flex-wrap gap-4 mb-6 mt-6">
-            <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
-            <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
-            <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
-            <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+        <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
+            <h1 class="text-3xl font-bold text-blue-800 mb-6">Resident Census Management</h1>
+            
+            <!-- Navigation Buttons -->
+            <div class="flex flex-wrap gap-4 mb-6">
+                <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                    </svg>
+                    Add Resident
+                </a>
+                <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                    Add Child
+                </a>
+                <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                    </svg>
+                    Census Records
+                </a>
+                <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                    </svg>
+                    Manage Households
+                </a>
+            </div>
         </div>
 
         <!-- Error/Success Messages -->
         <?php if ($add_error): ?>
-            <div class="error-message">
-                <strong>Error:</strong> <?= $add_error ?>
+            <div class="error-message transform transition-all duration-300">
+                <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm text-red-700"><?= $add_error ?></p>
+                        </div>
+                    </div>
+                </div>
             </div>
         <?php elseif ($add_success): ?>
-            <div class="success-message">
-                <strong>Success:</strong> <?= $add_success ?>
+            <div class="success-message transform transition-all duration-300">
+                <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
+                    <div class="flex">
+                        <div class="flex-shrink-0">
+                            <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                            </svg>
+                        </div>
+                        <div class="ml-3">
+                            <p class="text-sm text-green-700"><?= $add_success ?></p>
+                        </div>
+                    </div>
+                </div>
             </div>
         <?php endif; ?>
 
@@ -401,50 +442,110 @@ function isCheckboxChecked($form_data, $key) {
                         <input type="text" name="contact_number" value="<?= getFormValue('contact_number', $form_data) ?>"
                                class="mt-1 block w-full border rounded p-2">
                     </div>
-                </div>
+                </div>                <div class="space-y-4">
+                    <div class="border-b pb-4 mb-4">
+                        <h3 class="font-semibold text-lg mb-4">Present Address</h3>
+                        <p class="text-sm text-gray-600 mb-4">Where you currently reside</p>
+                        
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">House No.</label>
+                                <input type="text" name="present_house_no" value="<?= getFormValue('present_house_no', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Street</label>
+                                <input type="text" name="present_street" value="<?= getFormValue('present_street', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Subdivision/Purok/Zone/Sitio</label>
+                                <input type="text" name="present_subdivision" value="<?= getFormValue('present_subdivision', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Block/Lot</label>
+                                <input type="text" name="present_block_lot" value="<?= getFormValue('present_block_lot', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Phase</label>
+                                <input type="text" name="present_phase" value="<?= getFormValue('present_phase', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">City/Municipality</label>
+                                <input type="text" name="present_municipality" value="<?= getFormValue('present_municipality', $form_data) ?: 'SAN RAFAEL' ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Province</label>
+                                <input type="text" name="present_province" value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                        </div>
+                    </div>
 
-                <div class="space-y-4">
-                    <h3 class="font-semibold text-lg">Address Information</h3>
-                    <div>
-                        <label class="block text-sm font-medium">House No.</label>
-                        <input type="text" name="house_no" value="<?= getFormValue('house_no', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Street</label>
-                        <input type="text" name="street" value="<?= getFormValue('street', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Subdivision/Purok/Zone/Sitio</label>
-                        <input type="text" name="subdivision" value="<?= getFormValue('subdivision', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Block/Lot</label>
-                        <input type="text" name="block_lot" value="<?= getFormValue('block_lot', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Phase</label>
-                        <input type="text" name="phase" value="<?= getFormValue('phase', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">City/Municipality</label>
-                        <input type="text" name="municipality" value="<?= getFormValue('municipality', $form_data) ?: 'SAN RAFAEL' ?>"
-                               class="mt-1 block w-full border rounded p-2" readonly>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Province</label>
-                        <input type="text" name="province" value="<?= getFormValue('province', $form_data) ?: 'BULACAN' ?>"
-                               class="mt-1 block w-full border rounded p-2" readonly>
+                    <div class="pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Permanent Address</h3>
+                        <p class="text-sm text-gray-600 mb-4">Your long-term or official residence</p>
+                        
+                        <div class="mb-4">
+                            <label class="inline-flex items-center">
+                                <input type="checkbox" id="sameAsPresent" name="same_as_present" class="form-checkbox">
+                                <span class="ml-2 text-sm">Same as Present Address</span>
+                            </label>
+                        </div>
+                        
+                        <div id="permanentAddressFields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">House No.</label>
+                                <input type="text" name="permanent_house_no" value="<?= getFormValue('permanent_house_no', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Street</label>
+                                <input type="text" name="permanent_street" value="<?= getFormValue('permanent_street', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Subdivision/Purok/Zone/Sitio</label>
+                                <input type="text" name="permanent_subdivision" value="<?= getFormValue('permanent_subdivision', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Block/Lot</label>
+                                <input type="text" name="permanent_block_lot" value="<?= getFormValue('permanent_block_lot', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Phase</label>
+                                <input type="text" name="permanent_phase" value="<?= getFormValue('permanent_phase', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">City/Municipality</label>
+                                <input type="text" name="permanent_municipality" value="<?= getFormValue('permanent_municipality', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Province</label>
+                                <input type="text" name="permanent_province" value="<?= getFormValue('permanent_province', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2">
+                            </div>
+                        </div>
                     </div>
                     
                     <div>
@@ -520,6 +621,39 @@ function isCheckboxChecked($form_data, $key) {
         document.addEventListener('DOMContentLoaded', function() {
             const select = document.getElementById('residentTypeSelect');
             const form = document.getElementById('residentForm');
+            
+            // Handle "Same as Present Address" checkbox
+            const sameAsPresent = document.getElementById('sameAsPresent');
+            const permanentFields = document.getElementById('permanentAddressFields');
+            
+            function copyPresentToPermanent() {
+                if (sameAsPresent.checked) {
+                    // Copy values from present to permanent address fields
+                    const fieldMappings = [
+                        ['house_no', 'permanent_house_no'],
+                        ['street', 'permanent_street'],
+                        ['subdivision', 'permanent_subdivision'],
+                        ['block_lot', 'permanent_block_lot'],
+                        ['phase', 'permanent_phase'],
+                        ['municipality', 'permanent_municipality'],
+                        ['province', 'permanent_province']
+                    ];
+                    
+                    fieldMappings.forEach(([presentField, permanentField]) => {
+                        const presentValue = document.querySelector(`[name="present_${presentField}"]`).value;
+                        const permanentInput = document.querySelector(`[name="${permanentField}"]`);
+                        permanentInput.value = presentValue;
+                        permanentInput.disabled = true;
+                    });
+                } else {
+                    // Enable permanent address fields
+                    permanentFields.querySelectorAll('input').forEach(input => {
+                        input.disabled = false;
+                    });
+                }
+            }
+            
+            sameAsPresent.addEventListener('change', copyPresentToPermanent);
             
             function updateResidentType() {
                 let existing = form.querySelector('input[name="resident_type"]');

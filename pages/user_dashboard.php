@@ -592,56 +592,56 @@ if (isset($_SESSION['user_id'])) {
                 </div>
                 
                 <div class="services-grid" id="certificates-grid" style="display: none;">
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangayClearance';" style="cursor:pointer;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_clearance';" style="cursor:pointer;">
                         <div class="service-icon"><i class="fas fa-file-alt"></i></div>
                         <div class="service-content">
                             <h4>Barangay Clearance</h4>
                             <p>Required for employment, business permits, and various transactions</p>
-                            <a href="../pages/services.php?documentType=barangayClearance" class="service-cta">
+                            <a href="../pages/services.php?documentType=barangay_clearance" class="service-cta">
                                 Request <i class="fas fa-arrow-right"></i>
                             </a>
                         </div>
                     </div>
 
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangayIndigency';" style="cursor:pointer;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_indigency';" style="cursor:pointer;">
                         <div class="service-icon"><i class="fas fa-hand-holding-heart"></i></div>
                         <div class="service-content">
                             <h4>Certificate of Indigency</h4>
                             <p>For accessing social welfare programs and financial assistance</p>
-                            <a href="../pages/services.php?documentType=barangayIndigency" class="service-cta">
+                            <a href="../pages/services.php?documentType=barangay_indigency" class="service-cta">
                                 Apply <i class="fas fa-arrow-right"></i>
                             </a>
                         </div>
                     </div>
 
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=businessPermit';" style="cursor:pointer;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=business_permit_clearance';" style="cursor:pointer;">
                         <div class="service-icon"><i class="fas fa-store"></i></div>
                         <div class="service-content">
                             <h4>Business Permit Clearance</h4>
                             <p>Barangay clearance required for business license applications</p>
-                            <a href="../pages/services.php?documentType=businessPermit" class="service-cta">
+                            <a href="../pages/services.php?documentType=business_permit_clearance" class="service-cta">
                                 Apply <i class="fas fa-arrow-right"></i>
                             </a>
                         </div>
                     </div>
 
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=sedula';" style="cursor:pointer;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=cedula';" style="cursor:pointer;">
                         <div class="service-icon"><i class="fas fa-id-card"></i></div>
                         <div class="service-content">
                             <h4>Community Tax Certificate (Sedula)</h4>
                             <p>Annual tax certificate required for government transactions</p>
-                            <a href="../pages/services.php?documentType=sedula" class="service-cta">
+                            <a href="../pages/services.php?documentType=cedula" class="service-cta">
                                 Get Certificate <i class="fas fa-arrow-right"></i>
                             </a>
                         </div>
                     </div>
 
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=proofOfResidency';" style="cursor:pointer;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=proof_of_residency';" style="cursor:pointer;">
                         <div class="service-icon"><i class="fas fa-home"></i></div>
                         <div class="service-content">
                             <h4>Certificate of Residency</h4>
                             <p>Official proof of residence in the barangay</p>
-                            <a href="../pages/services.php?documentType=proofOfResidency" class="service-cta">
+                            <a href="../pages/services.php?documentType=proof_of_residency" class="service-cta">
                                 Request <i class="fas fa-arrow-right"></i>
                             </a>
                         </div>
