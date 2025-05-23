@@ -58,6 +58,7 @@ $roles =array_keys($roles);
 <link rel="stylesheet"
       href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 </head>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
 <body class="bg-gray-50 p-4 md:p-6">
 
 <section class="max-w-7xl mx-auto">

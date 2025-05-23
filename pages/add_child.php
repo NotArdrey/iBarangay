@@ -84,21 +84,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
-    <?php include "../pages/header.php"; ?>
-    <!-- Navigation Buttons for Census Pages -->
-    <div class="flex flex-wrap gap-4 mb-6 mt-6">
-        <a href="manage_census.php" class="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800 transition">Add Resident</a>
-        <a href="add_child.php" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Add Child</a>
-        <a href="census_records.php" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Census Records</a>
-        <a href="manage_households.php" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Manage Households</a>
-    </div>
+        <!-- Navigation Buttons for Census Pages -->
+        <div class="flex flex-wrap gap-4 mb-6 mt-6">
+            <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
+            <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
+            <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
+            <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+        </div>
     <?php if ($add_error): ?>
         <div class="bg-red-100 text-red-700 px-4 py-2 rounded mb-4"><?= $add_error ?></div>
     <?php elseif ($add_success): ?>
         <div class="bg-green-100 text-green-700 px-4 py-2 rounded mb-4"><?= $add_success ?></div>
     <?php endif; ?>
     <section id="add-child" class="bg-white rounded-lg shadow-sm p-6 mb-8">
-      <h2 class="text-2xl font-bold mb-4">Add Child (0-17 Years Old)</h2>
+      <h2 class="text-3xl font-bold text-blue-800">Add Child (0-17 Years Old)</h2>
       <form method="POST" class="space-y-8" autocomplete="off">
         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
@@ -158,7 +161,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </div>
         </div>
         <div>
-            <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">
+            <button type="submit" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">
                 Save Child Data
             </button>
         </div>

@@ -265,8 +265,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
             if ($checkStmt->fetch()) {
                 $upd = $pdo->prepare("UPDATE addresses SET street = :street WHERE person_id = :person_id");
                 $upd->execute([':street' => $homeAddress, ':person_id' => $personId]);
-            } else {
-                $ins = $pdo->prepare("INSERT INTO addresses (person_id, barangay_id, street, residency_type) VALUES (:person_id, :barangay_id, :street, 'Home Owner')");
+            } else {                $ins = $pdo->prepare("INSERT INTO addresses (person_id, barangay_id, street, residency_type) VALUES (:person_id, :barangay_id, :street, 'Homeowner')");
                 $ins->execute([
                     ':person_id'   => $personId,
                     ':barangay_id' => $bid,

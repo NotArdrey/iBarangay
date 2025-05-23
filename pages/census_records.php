@@ -34,21 +34,48 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
-    <?php include "../pages/header.php"; ?>
-    <!-- Navigation Buttons for Census Pages -->
-    <div class="flex flex-wrap gap-4 mb-6 mt-6">
-        <a href="manage_census.php" class="px-4 py-2 bg-blue-700 text-white rounded hover:bg-blue-800 transition">Add Resident</a>
-        <a href="add_child.php" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 transition">Add Child</a>
-        <a href="census_records.php" class="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700 transition">Census Records</a>
-        <a href="manage_households.php" class="px-4 py-2 bg-purple-600 text-white rounded hover:bg-purple-700 transition">Manage Households</a>
-    </div>
+
+        <!-- Navigation Buttons for Census Pages -->
+        <div class="flex flex-wrap gap-4 mb-6 mt-6">
+            <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
+            <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
+            <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
+            <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+        </div>
+        
     <section id="censusRecords" class="bg-white rounded-lg shadow-sm p-6">
-      <h2 class="text-2xl font-bold mb-4">Census Records</h2>
+      <h2 class="text-3xl font-bold text-blue-800">Census Records</h2>
       <div class="mb-4 flex justify-between items-center">
         <div class="flex gap-2">
-          <button id="btn-all" class="px-4 py-2 bg-blue-600 text-white rounded">All</button>
-          <button id="btn-seniors" class="px-4 py-2 bg-gray-200 rounded">Seniors</button>
-          <button id="btn-children" class="px-4 py-2 bg-gray-200 rounded">Children</button>
+          <button id="btn-all" 
+                  class="filter-btn px-4 py-2 bg-blue-600 text-white rounded transition-colors duration-200" 
+                  data-filter="all">
+            All
+          </button>
+          <button id="btn-regular" 
+                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
+                  data-filter="regular">
+            Regular
+          </button>
+          <button id="btn-pwd" 
+                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
+                  data-filter="pwd">
+            PWD
+          </button>
+          <button id="btn-seniors" 
+                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
+                  data-filter="seniors">
+            Seniors
+          </button>
+          <button id="btn-children" 
+                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
+                  data-filter="children">
+            Children
+          </button>
         </div>
         <div>
           <input type="text" id="search-resident" placeholder="Search by name..." class="px-4 py-2 border rounded w-64">
@@ -107,7 +134,126 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
     </section>
   </div>
   <script>
-    // JavaScript for filtering and sorting can be added here
+    document.addEventListener('DOMContentLoaded', function() {
+      const filterButtons = document.querySelectorAll('.filter-btn');
+      const residentRows = document.querySelectorAll('.resident-row');
+      const searchInput = document.getElementById('search-resident');
+      
+      // Active and inactive button styles
+      const activeClasses = ['bg-blue-600', 'text-white'];
+      const inactiveClasses = ['bg-gray-200', 'text-gray-700', 'hover:bg-gray-300'];
+      
+      // Function to update button styles
+      function updateButtonStyles(activeButton) {
+        filterButtons.forEach(btn => {
+          // Remove all style classes
+          btn.classList.remove(...activeClasses, ...inactiveClasses);
+          
+          if (btn === activeButton) {
+            // Apply active styles
+            btn.classList.add(...activeClasses);
+          } else {
+            // Apply inactive styles
+            btn.classList.add(...inactiveClasses);
+          }
+        });
+      }
+      
+      // Function to filter residents
+      function filterResidents(filterType) {
+        residentRows.forEach(row => {
+          const category = row.getAttribute('data-category');
+          let shouldShow = false;
+          
+          switch(filterType) {
+            case 'all':
+              shouldShow = true;
+              break;
+            case 'regular':
+              shouldShow = category === 'Adult';
+              break;
+            case 'pwd':
+              // You'll need to add PWD data attribute to your PHP loop
+              // For now, this is just a placeholder
+              shouldShow = row.hasAttribute('data-pwd');
+              break;
+            case 'seniors':
+              shouldShow = category === 'Senior';
+              break;
+            case 'children':
+              shouldShow = category === 'Child';
+              break;
+          }
+          
+          if (shouldShow) {
+            row.style.display = '';
+          } else {
+            row.style.display = 'none';
+          }
+        });
+      }
+      
+      // Function to search residents by name
+      function searchResidents(searchTerm) {
+        const lowercaseSearch = searchTerm.toLowerCase();
+        
+        residentRows.forEach(row => {
+          const name = row.getAttribute('data-name').toLowerCase();
+          const isVisible = row.style.display !== 'none';
+          
+          if (name.includes(lowercaseSearch)) {
+            // Only show if it passes the current filter
+            if (isVisible || searchTerm === '') {
+              row.style.display = '';
+            }
+          } else {
+            row.style.display = 'none';
+          }
+        });
+      }
+      
+      // Add click event listeners to filter buttons
+      filterButtons.forEach(button => {
+        button.addEventListener('click', function() {
+          const filterType = this.getAttribute('data-filter');
+          
+          // Update button styles
+          updateButtonStyles(this);
+          
+          // Filter residents
+          filterResidents(filterType);
+          
+          // Re-apply search if there's a search term
+          const searchTerm = searchInput.value.trim();
+          if (searchTerm) {
+            searchResidents(searchTerm);
+          }
+        });
+      });
+      
+      // Add search functionality
+      searchInput.addEventListener('input', function() {
+        const searchTerm = this.value.trim();
+        
+        if (searchTerm === '') {
+          // If search is empty, just apply the current filter
+          const activeButton = document.querySelector('.filter-btn.bg-blue-600');
+          const filterType = activeButton.getAttribute('data-filter');
+          filterResidents(filterType);
+        } else {
+          // First apply the current filter, then search
+          const activeButton = document.querySelector('.filter-btn.bg-blue-600');
+          const filterType = activeButton.getAttribute('data-filter');
+          filterResidents(filterType);
+          searchResidents(searchTerm);
+        }
+      });
+      
+      // Initialize with "All" filter active
+      const allButton = document.getElementById('btn-all');
+      updateButtonStyles(allButton);
+      filterResidents('all');
+    });
   </script>
 </body>
 </html>
