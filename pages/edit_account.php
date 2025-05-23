@@ -129,26 +129,83 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
 </head>
 <body>
   <!-- Navigation Header -->
-  <header>
-    <nav class="navbar">
-      <a href="#" class="logo">
-        <img src="../photo/logo.png" alt="iBarangay Logo" />
-        <h2>iBarangay</h2>
-      </a>
-      <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
-        <i class="fas fa-bars"></i>
-      </button>
-      <div class="nav-links">
-        <a href="../pages/user_dashboard.php#home">Home</a>
-        <a href="../pages/user_dashboard.php#about">About</a>
-        <a href="../pages/user_dashboard.php#services">Services</a>
-        <a href="../pages/user_dashboard.php#contact">Contact</a>
-
-        <a href="../functions/logout.php" style="color: red;"><i class="fas fa-sign-out-alt"></i> Logout</a>
+ <!-- Navigation Bar -->
+<header> 
+  <nav class="navbar">
+    <a href="#" class="logo">
+      <img src="../photo/logo.png" alt="iBarangay Logo" />
+      <h2>iBarangay</h2>
+    </a>
+    <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
+      <i class="fas fa-bars"></i>
+    </button>
+    <div class="nav-links">
+      <a href="#home">Home</a>
+      <a href="#about">About</a>
+      <a href="#services">Services</a>
+      <a href="#contact">Contact</a>
+      
+      <!-- User Info Section -->
+      <?php if (!empty($userName)): ?>
+      <div class="user-info" onclick="window.location.href='../pages/edit_account.php'" style="cursor: pointer;">
+        <div class="user-avatar">
+          <i class="fas fa-user-circle"></i>
+        </div>
+        <div class="user-details">
+          <div class="user-name"><?php echo htmlspecialchars($userName); ?></div>
+          <div class="user-barangay"><?php echo htmlspecialchars($barangayName); ?></div>
+        </div>
       </div>
-    </nav>
-  </header>
+      <?php endif; ?>
+    </div>
+  </nav>
+</header>
 
+  <!-- Add CSS for User Info in Navbar -->
+  <style>
+  /* User Info Styles - Minimalist Version */
+.user-info {
+    display: flex;
+    align-items: center;
+    gap: 0.8rem;
+    padding: 0.5rem 1rem;
+    background: #ffffff;
+    border: 1px solid #e0e0e0;
+    border-radius: 8px;
+    color: #333333;
+    margin-left: 1rem;
+    transition: all 0.2s ease;
+}
+
+.user-info:hover {
+    background: #f8f8f8;
+    border-color: #d0d0d0;
+}
+
+.user-avatar {
+    font-size: 1.5rem;
+    color: #666666;
+    display: flex;
+    align-items: center;
+}
+
+.user-details {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+}
+
+.user-name {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: #0a2240; /* navy blue */
+}
+
+.user-barangay {
+    font-size: 0.75rem;
+    color: #0a2240; /* navy blue */
+}
+  </style>
   <!-- Main Content -->
   <main class="edit-account-section">
 
