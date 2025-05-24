@@ -42,8 +42,8 @@ $stmt = $pdo->prepare("
 $stmt->execute([$barangay_id]);
 $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-// Fetch barangay details for header
-$stmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
+// Fetch barangay details
+$stmt = $pdo->prepare("SELECT id, name FROM barangay WHERE id = ?");
 $stmt->execute([$barangay_id]);
 $barangay = $stmt->fetch(PDO::FETCH_ASSOC);
 require_once "../pages/header.php";
@@ -96,54 +96,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0,
             'resident_type' => $_POST['resident_type'] ?? 'regular',
         ];
-        
+
         // Store form data for repopulation
         $form_data = $data;
-        
+
         // Basic validation
         $validation_errors = [];
-        
+
         if (empty($data['first_name'])) {
             $validation_errors[] = "First name is required.";
         }
-        
+
         if (empty($data['last_name'])) {
             $validation_errors[] = "Last name is required.";
         }
-        
+
         if (empty($data['birth_date'])) {
             $validation_errors[] = "Birth date is required.";
         } elseif (!strtotime($data['birth_date'])) {
             $validation_errors[] = "Invalid birth date format.";
         }
-        
+
         if (empty($data['birth_place'])) {
             $validation_errors[] = "Birth place is required.";
         }
-        
+
         if (empty($data['gender'])) {
             $validation_errors[] = "Gender is required.";
         }
-        
+
         if (empty($data['civil_status'])) {
             $validation_errors[] = "Civil status is required.";
         }
-        
+
         if (empty($data['household_id'])) {
             $validation_errors[] = "Household ID is required.";
         }
-        
+
         if (!empty($validation_errors)) {
             $add_error = implode("<br>", $validation_errors);
         } else {
             // Use the saveResident function to add the resident
             $result = saveResident($pdo, $data, $barangay_id);
-            
+
             if ($result['success']) {
                 $add_success = $result['message'];
                 // Clear form data on success
                 $form_data = [];
-                
+
                 // Refresh the residents list
                 $stmt = $pdo->prepare("
                     SELECT 
@@ -174,40 +174,84 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 // Helper function to get form value
-function getFormValue($key, $form_data, $default = '') {
+function getFormValue($key, $form_data, $default = '')
+{
     return isset($form_data[$key]) ? htmlspecialchars($form_data[$key]) : $default;
 }
 
 // Helper function to check if option is selected
-function isSelected($value, $form_data, $key) {
+function isSelected($value, $form_data, $key)
+{
     return (isset($form_data[$key]) && $form_data[$key] == $value) ? 'selected' : '';
 }
 
 // Helper function to check if radio is checked
-function isChecked($value, $form_data, $key) {
+function isChecked($value, $form_data, $key)
+{
     return (isset($form_data[$key]) && $form_data[$key] == $value) ? 'checked' : '';
 }
 
 // Helper function to check if checkbox is checked
-function isCheckboxChecked($form_data, $key) {
+function isCheckboxChecked($form_data, $key)
+{
     return (isset($form_data[$key]) && $form_data[$key]) ? 'checked' : '';
 }
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Manage Census Data</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+    <script>
+        // Function to calculate age
+        function calculateAge() {
+            const birthDateInput = document.getElementById('birth_date');
+            const ageInput = document.getElementById('age');
+            
+            if (!birthDateInput || !ageInput) return;
+            
+            const birthDate = birthDateInput.value;
+            if (birthDate) {
+                const today = new Date();
+                const birth = new Date(birthDate);
+                let age = today.getFullYear() - birth.getFullYear();
+                const monthDiff = today.getMonth() - birth.getMonth();
+                
+                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+                    age--;
+                }
+                
+                ageInput.value = age;
+            } else {
+                ageInput.value = '';
+            }
+        }
+
+        // Initialize when document is ready
+        document.addEventListener('DOMContentLoaded', function() {
+            const birthDateInput = document.getElementById('birth_date');
+            if (birthDateInput) {
+                birthDateInput.addEventListener('change', calculateAge);
+                // Calculate initial age if birth date exists
+                if (birthDateInput.value) {
+                    calculateAge();
+                }
+            }
+        });
+    </script>
     <style>
         .tab-content {
             display: none;
         }
+
         .tab-content.active {
             display: block;
         }
+
         .error-message {
             background-color: #fef2f2;
             border: 1px solid #fecaca;
@@ -216,6 +260,7 @@ function isCheckboxChecked($form_data, $key) {
             border-radius: 6px;
             margin-bottom: 16px;
         }
+
         .success-message {
             background-color: #f0fdf4;
             border: 1px solid #bbf7d0;
@@ -226,34 +271,35 @@ function isCheckboxChecked($form_data, $key) {
         }
     </style>
 </head>
+
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
         <div class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h1 class="text-3xl font-bold text-blue-800 mb-6">Resident Census Management</h1>
-            
+
             <!-- Navigation Buttons -->
             <div class="flex flex-wrap gap-4 mb-6">
                 <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
                     </svg>
                     Add Resident
                 </a>
                 <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
                     </svg>
                     Add Child
                 </a>
                 <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                     </svg>
                     Census Records
                 </a>
                 <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                     <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                     </svg>
                     Manage Households
                 </a>
@@ -267,8 +313,7 @@ function isCheckboxChecked($form_data, $key) {
                     <div class="flex">
                         <div class="flex-shrink-0">
                             <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd"/>
-                            </svg>
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
                         </div>
                         <div class="ml-3">
                             <p class="text-sm text-red-700"><?= $add_error ?></p>
@@ -282,7 +327,7 @@ function isCheckboxChecked($form_data, $key) {
                     <div class="flex">
                         <div class="flex-shrink-0">
                             <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd"/>
+                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
                             </svg>
                         </div>
                         <div class="ml-3">
@@ -298,282 +343,287 @@ function isCheckboxChecked($form_data, $key) {
             <h2 class="text-3xl font-bold text-blue-800">Add New Resident</h2>
             <div class="mb-6">
                 <label class="block text-sm font-medium mb-2">Resident Type</label>
-                <select id="residentTypeSelect" name="resident_type" class="border rounded p-2 w-full md:w-1/3" form="residentForm">
-                    <option value="regular" <?= isSelected('regular', $form_data, 'resident_type') ?: 'selected' ?>>Regular</option>
-                    <option value="senior" <?= isSelected('senior', $form_data, 'resident_type') ?>>Senior Citizen</option>
-                    <option value="pwd" <?= isSelected('pwd', $form_data, 'resident_type') ?>>Person with Disability (PWD)</option>
+                <select id="residentTypeSelect" name="resident_type" class="border rounded p-2 w-full md:w-1/3 uppercase" form="residentForm">
+                    <option value="REGULAR" <?= isSelected('REGULAR', $form_data, 'resident_type') ?: 'selected' ?>>REGULAR</option>
+                    <option value="SENIOR" <?= isSelected('SENIOR', $form_data, 'resident_type') ?>>SENIOR CITIZEN</option>
+                    <option value="PWD" <?= isSelected('PWD', $form_data, 'resident_type') ?>>PERSON WITH DISABILITY (PWD)</option>
                 </select>
             </div>
             <form method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4" id="residentForm" autocomplete="off">
+                <!-- Column 1: Basic Personal Information -->
                 <div class="space-y-4">
-                    <h3 class="font-semibold text-lg">Personal Information</h3>
+                    <h3 class="font-semibold text-lg">Basic Information</h3>
+
+                    <!-- Name Fields -->
                     <div>
                         <label class="block text-sm font-medium">First Name *</label>
                         <input type="text" name="first_name" required value="<?= getFormValue('first_name', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                     </div>
-                    
+
                     <div>
                         <label class="block text-sm font-medium">Middle Name</label>
                         <input type="text" name="middle_name" value="<?= getFormValue('middle_name', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                     </div>
-                    
+
                     <div>
                         <label class="block text-sm font-medium">Last Name *</label>
                         <input type="text" name="last_name" required value="<?= getFormValue('last_name', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium">Suffix</label>
                         <input type="text" name="suffix" placeholder="Jr, Sr, III, etc." value="<?= getFormValue('suffix', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                     </div>
-                    
+
+                    <!-- Citizenship -->
+                    <div>
+                        <label class="block text-sm font-medium">Citizenship</label>
+                        <input type="text" name="citizenship" value="<?= getFormValue('citizenship', $form_data) ?: 'FILIPINO' ?>"
+                            class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
+                    </div>
+                </div>
+
+                <!-- Column 2: Birth and Identity -->
+                <div class="space-y-4">
+                    <h3 class="font-semibold text-lg">Birth & Identity</h3>
+
+                    <!-- Birth Information -->
                     <div>
                         <label class="block text-sm font-medium">Date of Birth *</label>
-                        <input type="date" name="birth_date" required value="<?= getFormValue('birth_date', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
+                        <input type="date" name="birth_date" id="birth_date" required value="<?= getFormValue('birth_date', $form_data) ?>"
+                            class="mt-1 block w-full border rounded p-2" onchange="calculateAge()">
                     </div>
+
+                    <div>
+                        <label class="block text-sm font-medium">Age</label>
+                        <input type="number" name="age" id="age" readonly value="<?= getFormValue('age', $form_data) ?>"
+                            class="mt-1 block w-full border rounded p-2 bg-gray-100">
+                    </div>
+
                     <div>
                         <label class="block text-sm font-medium">Place of Birth *</label>
                         <input type="text" name="birth_place" required value="<?= getFormValue('birth_place', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                     </div>
 
+                    <!-- Gender -->
                     <div class="space-y-2">
                         <label class="block text-sm font-medium">Gender *</label>
                         <div class="flex gap-4">
                             <label class="inline-flex items-center">
-                                <input type="radio" name="gender" value="Male" required <?= isChecked('Male', $form_data, 'gender') ?>
-                                       class="form-radio">
-                                <span class="ml-2">Male</span>
+                                <input type="radio" name="gender" value="MALE" required <?= isChecked('MALE', $form_data, 'gender') ?>
+                                    class="form-radio">
+                                <span class="ml-2">MALE</span>
                             </label>
                             <label class="inline-flex items-center">
-                                <input type="radio" name="gender" value="Female" <?= isChecked('Female', $form_data, 'gender') ?>
-                                       class="form-radio">
-                                <span class="ml-2">Female</span>
+                                <input type="radio" name="gender" value="FEMALE" <?= isChecked('FEMALE', $form_data, 'gender') ?>
+                                    class="form-radio">
+                                <span class="ml-2">FEMALE</span>
                             </label>
-                            <label class="inline-flex items-center">
-                                <input type="radio" name="gender" value="Others" <?= isChecked('Others', $form_data, 'gender') ?>
-                                       class="form-radio">
-                                <span class="ml-2">Others</span>
-                            </label>
+                        </div>
+                    </div>
+
+                    <!-- Civil Status -->
+                    <div>
+                        <label class="block text-sm font-medium">Civil Status *</label>
+                        <select name="civil_status" required class="mt-1 block w-full border rounded p-2">
+                            <option value="">-- SELECT CIVIL STATUS --</option>
+                            <option value="SINGLE" <?= isSelected('SINGLE', $form_data, 'civil_status') ?>>SINGLE</option>
+                            <option value="MARRIED" <?= isSelected('MARRIED', $form_data, 'civil_status') ?>>MARRIED</option>
+                            <option value="WIDOW/WIDOWER" <?= isSelected('WIDOW/WIDOWER', $form_data, 'civil_status') ?>>WIDOW/WIDOWER</option>
+                            <option value="SEPARATED" <?= isSelected('SEPARATED', $form_data, 'civil_status') ?>>SEPARATED</option>
+                        </select>
+                    </div>
+
+                    <!-- Religion -->
+                    <div>
+                        <label class="block text-sm font-medium">Religion</label>
+                        <select name="religion" class="mt-1 block w-full border rounded p-2">
+                            <option value="">-- SELECT RELIGION --</option>
+                            <option value="ROMAN CATHOLIC" <?= isSelected('ROMAN CATHOLIC', $form_data, 'religion') ?>>ROMAN CATHOLIC</option>
+                            <option value="PROTESTANT" <?= isSelected('PROTESTANT', $form_data, 'religion') ?>>PROTESTANT</option>
+                            <option value="IGLESIA NI CRISTO" <?= isSelected('IGLESIA NI CRISTO', $form_data, 'religion') ?>>IGLESIA NI CRISTO</option>
+                            <option value="ISLAM" <?= isSelected('ISLAM', $form_data, 'religion') ?>>ISLAM</option>
+                            <option value="OTHERS" <?= isSelected('OTHERS', $form_data, 'religion') ?>>OTHERS</option>
+                        </select>
+                        <div id="other_religion_container" style="display: none;" class="mt-2">
+                            <input type="text" name="other_religion" placeholder="Specify Religion" 
+                                value="<?= getFormValue('other_religion', $form_data) ?>" 
+                                class="w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                         </div>
                     </div>
                 </div>
 
+                <!-- Column 3: Socio-Economic Information -->
                 <div class="space-y-4">
-                    <h3 class="font-semibold text-lg">Additional Information</h3>
-                    <div>
-                        <label class="block text-sm font-medium">Civil Status *</label>
-                        <select name="civil_status" required class="mt-1 block w-full border rounded p-2">
-                            <option value="">-- Select Civil Status --</option>
-                            <option value="Single" <?= isSelected('Single', $form_data, 'civil_status') ?>>Single</option>
-                            <option value="Married" <?= isSelected('Married', $form_data, 'civil_status') ?>>Married</option>
-                            <option value="Widowed" <?= isSelected('Widowed', $form_data, 'civil_status') ?>>Widowed</option>
-                            <option value="Separated" <?= isSelected('Separated', $form_data, 'civil_status') ?>>Separated</option>
-                            <option value="Widow/Widower" <?= isSelected('Widow/Widower', $form_data, 'civil_status') ?>>Widow/Widower</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Citizenship</label>
-                        <input type="text" name="citizenship" value="<?= getFormValue('citizenship', $form_data) ?: 'Filipino' ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
+                    <h3 class="font-semibold text-lg">Socio-Economic Profile</h3>
 
-                    <div>
-                        <label class="block text-sm font-medium">Religion</label>
-                        <select name="religion" class="mt-1 block w-full border rounded p-2">
-                            <option value="">-- Select Religion --</option>
-                            <option value="Roman Catholic" <?= isSelected('Roman Catholic', $form_data, 'religion') ?>>Roman Catholic</option>
-                            <option value="Protestant" <?= isSelected('Protestant', $form_data, 'religion') ?>>Protestant</option>
-                            <option value="Iglesia Ni Cristo" <?= isSelected('Iglesia Ni Cristo', $form_data, 'religion') ?>>Iglesia Ni Cristo</option>
-                            <option value="Islam" <?= isSelected('Islam', $form_data, 'religion') ?>>Islam</option>
-                            <option value="Other" <?= isSelected('Other', $form_data, 'religion') ?>>Other</option>
-                        </select>
-                    </div>
-
+                    <!-- Educational Attainment -->
                     <div>
                         <label class="block text-sm font-medium">Educational Attainment</label>
                         <select name="education_level" class="mt-1 block w-full border rounded p-2">
-                            <option value="">-- Select Education Level --</option>
-                            <option value="Not Attended Any School" <?= isSelected('Not Attended Any School', $form_data, 'education_level') ?>>Not Attended Any School</option>
-                            <option value="Elementary Level" <?= isSelected('Elementary Level', $form_data, 'education_level') ?>>Elementary Level</option>
-                            <option value="Elementary Graduate" <?= isSelected('Elementary Graduate', $form_data, 'education_level') ?>>Elementary Graduate</option>
-                            <option value="High School Level" <?= isSelected('High School Level', $form_data, 'education_level') ?>>High School Level</option>
-                            <option value="High School Graduate" <?= isSelected('High School Graduate', $form_data, 'education_level') ?>>High School Graduate</option>
-                            <option value="Vocational" <?= isSelected('Vocational', $form_data, 'education_level') ?>>Vocational</option>
-                            <option value="College Level" <?= isSelected('College Level', $form_data, 'education_level') ?>>College Level</option>
-                            <option value="College Graduate" <?= isSelected('College Graduate', $form_data, 'education_level') ?>>College Graduate</option>
-                            <option value="Post Graduate" <?= isSelected('Post Graduate', $form_data, 'education_level') ?>>Post Graduate</option>
+                            <option value="">-- SELECT EDUCATION LEVEL --</option>
+                            <option value="NOT ATTENDED ANY SCHOOL" <?= isSelected('NOT ATTENDED ANY SCHOOL', $form_data, 'education_level') ?>>NOT ATTENDED ANY SCHOOL</option>
+                            <option value="ELEMENTARY LEVEL" <?= isSelected('ELEMENTARY LEVEL', $form_data, 'education_level') ?>>ELEMENTARY LEVEL</option>
+                            <option value="ELEMENTARY GRADUATE" <?= isSelected('ELEMENTARY GRADUATE', $form_data, 'education_level') ?>>ELEMENTARY GRADUATE</option>
+                            <option value="HIGH SCHOOL LEVEL" <?= isSelected('HIGH SCHOOL LEVEL', $form_data, 'education_level') ?>>HIGH SCHOOL LEVEL</option>
+                            <option value="HIGH SCHOOL GRADUATE" <?= isSelected('HIGH SCHOOL GRADUATE', $form_data, 'education_level') ?>>HIGH SCHOOL GRADUATE</option>
+                            <option value="VOCATIONAL" <?= isSelected('VOCATIONAL', $form_data, 'education_level') ?>>VOCATIONAL</option>
+                            <option value="COLLEGE LEVEL" <?= isSelected('COLLEGE LEVEL', $form_data, 'education_level') ?>>COLLEGE LEVEL</option>
+                            <option value="COLLEGE GRADUATE" <?= isSelected('COLLEGE GRADUATE', $form_data, 'education_level') ?>>COLLEGE GRADUATE</option>
+                            <option value="POST GRADUATE" <?= isSelected('POST GRADUATE', $form_data, 'education_level') ?>>POST GRADUATE</option>
                         </select>
                     </div>
 
+                    <!-- Occupation and Income -->
                     <div>
                         <label class="block text-sm font-medium">Occupation</label>
                         <input type="text" name="occupation" value="<?= getFormValue('occupation', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium">Monthly Income</label>
                         <select name="monthly_income" class="mt-1 block w-full border rounded p-2">
-                            <option value="">-- Select Income Range --</option>
-                            <option value="0" <?= isSelected('0', $form_data, 'monthly_income') ?>>No Income</option>
-                            <option value="999" <?= isSelected('999', $form_data, 'monthly_income') ?>>999 & below</option>
-                            <option value="1500" <?= isSelected('1500', $form_data, 'monthly_income') ?>>1,000-1,999</option>
-                            <option value="2500" <?= isSelected('2500', $form_data, 'monthly_income') ?>>2,000-2,999</option>
-                            <option value="3500" <?= isSelected('3500', $form_data, 'monthly_income') ?>>3,000-3,999</option>
-                            <option value="4500" <?= isSelected('4500', $form_data, 'monthly_income') ?>>4,000-4,999</option>
-                            <option value="5500" <?= isSelected('5500', $form_data, 'monthly_income') ?>>5,000-5,999</option>
-                            <option value="6500" <?= isSelected('6500', $form_data, 'monthly_income') ?>>6,000-6,999</option>
-                            <option value="7500" <?= isSelected('7500', $form_data, 'monthly_income') ?>>7,000-7,999</option>
-                            <option value="8500" <?= isSelected('8500', $form_data, 'monthly_income') ?>>8,000-8,999</option>
-                            <option value="9500" <?= isSelected('9500', $form_data, 'monthly_income') ?>>9,000-9,999</option>
-                            <option value="10000" <?= isSelected('10000', $form_data, 'monthly_income') ?>>10,000 & above</option>
+                            <option value="">-- SELECT INCOME RANGE --</option>
+                            <option value="0" <?= isSelected('0', $form_data, 'monthly_income') ?>>NO INCOME</option>
+                            <option value="999" <?= isSelected('999', $form_data, 'monthly_income') ?>>₱999 & BELOW</option>
+                            <option value="1500" <?= isSelected('1500', $form_data, 'monthly_income') ?>>₱1,000-1,999</option>
+                            <option value="2500" <?= isSelected('2500', $form_data, 'monthly_income') ?>>₱2,000-2,999</option>
+                            <option value="3500" <?= isSelected('3500', $form_data, 'monthly_income') ?>>₱3,000-3,999</option>
+                            <option value="4500" <?= isSelected('4500', $form_data, 'monthly_income') ?>>₱4,000-4,999</option>
+                            <option value="5500" <?= isSelected('5500', $form_data, 'monthly_income') ?>>₱5,000-5,999</option>
+                            <option value="6500" <?= isSelected('6500', $form_data, 'monthly_income') ?>>₱6,000-6,999</option>
+                            <option value="7500" <?= isSelected('7500', $form_data, 'monthly_income') ?>>₱7,000-7,999</option>
+                            <option value="8500" <?= isSelected('8500', $form_data, 'monthly_income') ?>>₱8,000-8,999</option>
+                            <option value="9500" <?= isSelected('9500', $form_data, 'monthly_income') ?>>₱9,000-9,999</option>
+                            <option value="10000" <?= isSelected('10000', $form_data, 'monthly_income') ?>>₱10,000 & ABOVE</option>
                         </select>
                     </div>
 
-                    <div>
-                        <label class="block text-sm font-medium">Contact Number</label>
-                        <input type="text" name="contact_number" value="<?= getFormValue('contact_number', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
-                </div>                <div class="space-y-4">
+                    
+                </div>
+
+                <!-- Address Information - Full Width Section -->
+                <div class="space-y-4 md:col-span-3">
+                    <h3 class="font-semibold text-lg border-t border-gray-200 pt-4 mt-4">Address Information</h3>
+
+                    <!-- Present Address -->
                     <div class="border-b pb-4 mb-4">
-                        <h3 class="font-semibold text-lg mb-4">Present Address</h3>
+                        <h4 class="font-semibold text-md mb-4">Present Address</h4>
                         <p class="text-sm text-gray-600 mb-4">Where you currently reside</p>
-                        
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
                                 <input type="text" name="present_house_no" value="<?= getFormValue('present_house_no', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
                                 <input type="text" name="present_street" value="<?= getFormValue('present_street', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
+
                             
+
                             <div>
-                                <label class="block text-sm font-medium">Subdivision/Purok/Zone/Sitio</label>
-                                <input type="text" name="present_subdivision" value="<?= getFormValue('present_subdivision', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                <label class="block text-sm font-medium">Barangay</label>
+                                <input type="text" name="present_barangay" value="<?= htmlspecialchars($barangay['name']) ?>"
+                                    class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
+                                <input type="hidden" name="present_barangay_id" value="<?= htmlspecialchars($barangay['id']) ?>">
                             </div>
-                            
-                            <div>
-                                <label class="block text-sm font-medium">Block/Lot</label>
-                                <input type="text" name="present_block_lot" value="<?= getFormValue('present_block_lot', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
-                            </div>
-                            
-                            <div>
-                                <label class="block text-sm font-medium">Phase</label>
-                                <input type="text" name="present_phase" value="<?= getFormValue('present_phase', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
-                            </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
                                 <input type="text" name="present_municipality" value="<?= getFormValue('present_municipality', $form_data) ?: 'SAN RAFAEL' ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
                                 <input type="text" name="present_province" value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Region</label>
+                                <input type="text" name="present_region" value="<?= getFormValue('present_region', $form_data) ?: 'III' ?>"
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
                     </div>
 
-                    <div class="pt-4">
-                        <h3 class="font-semibold text-lg mb-4">Permanent Address</h3>
+                    <!-- Permanent Address -->
+                    <div class="pb-4 mb-4">
+                        <h4 class="font-semibold text-md mb-4">Permanent Address</h4>
                         <p class="text-sm text-gray-600 mb-4">Your long-term or official residence</p>
-                        
+
                         <div class="mb-4">
                             <label class="inline-flex items-center">
                                 <input type="checkbox" id="sameAsPresent" name="same_as_present" class="form-checkbox">
                                 <span class="ml-2 text-sm">Same as Present Address</span>
                             </label>
                         </div>
-                        
-                        <div id="permanentAddressFields" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+
+                        <div id="permanentAddressFields" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
                                 <input type="text" name="permanent_house_no" value="<?= getFormValue('permanent_house_no', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
                                 <input type="text" name="permanent_street" value="<?= getFormValue('permanent_street', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
+
                             
+
                             <div>
-                                <label class="block text-sm font-medium">Subdivision/Purok/Zone/Sitio</label>
-                                <input type="text" name="permanent_subdivision" value="<?= getFormValue('permanent_subdivision', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                <label class="block text-sm font-medium">Barangay</label>
+                                <input type="text" name="permanent_barangay"
+                                    value="<?= getFormValue('permanent_barangay', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
-                            <div>
-                                <label class="block text-sm font-medium">Block/Lot</label>
-                                <input type="text" name="permanent_block_lot" value="<?= getFormValue('permanent_block_lot', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
-                            </div>
-                            
-                            <div>
-                                <label class="block text-sm font-medium">Phase</label>
-                                <input type="text" name="permanent_phase" value="<?= getFormValue('permanent_phase', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
-                            </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
                                 <input type="text" name="permanent_municipality" value="<?= getFormValue('permanent_municipality', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
                                 <input type="text" name="permanent_province" value="<?= getFormValue('permanent_province', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            
+                            <div>
+                                <label class="block text-sm font-medium">Region</label>
+                                <input type="text" name="permanent_region" value="<?= getFormValue('permanent_region', $form_data) ?>"
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
                     </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Residency Type</label>
-                        <select name="residency_type" class="mt-1 block w-full border rounded p-2">
-                            <option value="">-- Select Residency Type --</option>                            <option value="Homeowner" <?= isSelected('Homeowner', $form_data, 'residency_type') ?>>Homeowner</option>
-                            <option value="Renter" <?= isSelected('Renter', $form_data, 'residency_type') ?>>Renter</option>
-                            <option value="Sharer" <?= isSelected('Sharer', $form_data, 'residency_type') ?>>Sharer</option>
-                            <option value="Caretaker" <?= isSelected('Caretaker', $form_data, 'residency_type') ?>>Caretaker</option>
-                        </select>
-                    </div>
-                    
-                    <div>
-                        <label class="block text-sm font-medium">Years in San Rafael</label>
-                        <input type="number" name="years_in_san_rafael" min="0" max="100" value="<?= getFormValue('years_in_san_rafael', $form_data) ?>"
-                               class="mt-1 block w-full border rounded p-2">
-                    </div>
                 </div>
 
+                <!-- Household Information - Full Width Section -->
                 <div class="space-y-4 md:col-span-3 border-t border-gray-200 pt-4 mt-6">
                     <h3 class="font-semibold text-lg">Household Information</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="block text-sm font-medium">Household ID *</label>
                             <select name="household_id" required class="mt-1 block w-full border rounded p-2">
-                                <option value="">-- Select Household --</option>
+                                <option value="">-- SELECT HOUSEHOLD --</option>
                                 <?php foreach ($households as $household): ?>
-                                    <option value="<?= htmlspecialchars($household['household_id']) ?>" 
+                                    <option value="<?= htmlspecialchars($household['household_id']) ?>"
                                         <?= isSelected($household['household_id'], $form_data, 'household_id') ?>>
                                         <?= htmlspecialchars($household['household_id']) ?>
                                     </option>
@@ -581,28 +631,803 @@ function isCheckboxChecked($form_data, $key) {
                             </select>
                             <div class="text-xs text-gray-500 mt-1">If household is not listed, create it in the Manage Households tab</div>
                         </div>
-                        
+
                         <div>
                             <label class="block text-sm font-medium">Relationship to Head</label>
                             <select name="relationship" class="mt-1 block w-full border rounded p-2">
-                                <option value="">-- Select Relationship --</option>
-                                <option value="Head" <?= isSelected('Head', $form_data, 'relationship') ?>>Head</option>
-                                <option value="Spouse" <?= isSelected('Spouse', $form_data, 'relationship') ?>>Spouse</option>
-                                <option value="Child" <?= isSelected('Child', $form_data, 'relationship') ?>>Child</option>
-                                <option value="Parent" <?= isSelected('Parent', $form_data, 'relationship') ?>>Parent</option>
-                                <option value="Sibling" <?= isSelected('Sibling', $form_data, 'relationship') ?>>Sibling</option>
-                                <option value="Grandchild" <?= isSelected('Grandchild', $form_data, 'relationship') ?>>Grandchild</option>
-                                <option value="Other Relative" <?= isSelected('Other Relative', $form_data, 'relationship') ?>>Other Relative</option>
-                                <option value="Non-relative" <?= isSelected('Non-relative', $form_data, 'relationship') ?>>Non-relative</option>
+                                <option value="">-- SELECT RELATIONSHIP --</option>
+                                <option value="HEAD" <?= isSelected('HEAD', $form_data, 'relationship') ?>>HEAD</option>
+                                <option value="SPOUSE" <?= isSelected('SPOUSE', $form_data, 'relationship') ?>>SPOUSE</option>
+                                <option value="CHILD" <?= isSelected('CHILD', $form_data, 'relationship') ?>>CHILD</option>
+                                <option value="PARENT" <?= isSelected('PARENT', $form_data, 'relationship') ?>>PARENT</option>
+                                <option value="SIBLING" <?= isSelected('SIBLING', $form_data, 'relationship') ?>>SIBLING</option>
+                                <option value="GRANDCHILD" <?= isSelected('GRANDCHILD', $form_data, 'relationship') ?>>GRANDCHILD</option>
+                                <option value="OTHER RELATIVE" <?= isSelected('OTHER RELATIVE', $form_data, 'relationship') ?>>OTHER RELATIVE</option>
+                                <option value="NON-RELATIVE" <?= isSelected('NON-RELATIVE', $form_data, 'relationship') ?>>NON-RELATIVE</option>
                             </select>
                         </div>
-                        
+
                         <div class="flex items-center">
                             <label class="inline-flex items-center">
-                                <input type="checkbox" name="is_household_head" value="1" 
+                                <input type="checkbox" name="is_household_head" value="1"
                                     <?= isCheckboxChecked($form_data, 'is_household_head') ?> class="form-checkbox">
                                 <span class="ml-2 text-sm font-medium">Is Household Head</span>
                             </label>
+                        </div>
+                    </div>
+                    
+                    <!-- Government Program Participation -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Government Program Participation</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="nhts_pr_listahanan" value="1" <?= isCheckboxChecked($form_data, 'nhts_pr_listahanan') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">NHTS-PR (Listahanan)</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="indigenous_people" value="1" <?= isCheckboxChecked($form_data, 'indigenous_people') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Indigenous People</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="pantawid_beneficiary" value="1" <?= isCheckboxChecked($form_data, 'pantawid_beneficiary') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Pantawid Beneficiary</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- ID Numbers -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">ID Information</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">OSCA ID Number</label>
+                                <input type="text" name="osca_id" value="<?= getFormValue('osca_id', $form_data) ?>" 
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">GSIS ID Number</label>
+                                <input type="text" name="gsis_id" value="<?= getFormValue('gsis_id', $form_data) ?>" 
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">SSS ID Number</label>
+                                <input type="text" name="sss_id" value="<?= getFormValue('sss_id', $form_data) ?>" 
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">TIN ID Number</label>
+                                <input type="text" name="tin_id" value="<?= getFormValue('tin_id', $form_data) ?>" 
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">PhilHealth ID Number</label>
+                                <input type="text" name="philhealth_id" value="<?= getFormValue('philhealth_id', $form_data) ?>" 
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-sm font-medium">Other ID Type</label>
+                                    <input type="text" name="other_id_type" value="<?= getFormValue('other_id_type', $form_data) ?>" 
+                                        class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium">Other ID Number</label>
+                                    <input type="text" name="other_id_number" value="<?= getFormValue('other_id_number', $form_data) ?>" 
+                                        class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Source of Income and Assistance -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Source of Income & Assistance (Check all applicable)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_own_earnings" value="1" <?= isCheckboxChecked($form_data, 'income_own_earnings') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Own Earnings, Salaries/Wages</span>
+                                </label>
+                            </div>
+                            
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="income_own_pension" value="1" <?= isCheckboxChecked($form_data, 'income_own_pension') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Own Pension</span>
+                                </label>
+                                <input type="text" name="income_own_pension_amount" placeholder="Amount" 
+                                    value="<?= getFormValue('income_own_pension_amount', $form_data) ?>" 
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_stocks_dividends" value="1" <?= isCheckboxChecked($form_data, 'income_stocks_dividends') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Stocks/Dividends</span>
+                                </label>
+                            </div>
+                            
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_dependent_on_children" value="1" <?= isCheckboxChecked($form_data, 'income_dependent_on_children') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Dependent on Children/Relatives</span>
+                                </label>
+                            </div>
+                            
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_spouse_salary" value="1" <?= isCheckboxChecked($form_data, 'income_spouse_salary') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Spouse's Salary</span>
+                                </label>
+                            </div>
+                            
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_insurances" value="1" <?= isCheckboxChecked($form_data, 'income_insurances') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Insurances</span>
+                                </label>
+                            </div>
+                            
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="income_spouse_pension" value="1" <?= isCheckboxChecked($form_data, 'income_spouse_pension') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Spouse's Pension</span>
+                                </label>
+                                <input type="text" name="income_spouse_pension_amount" placeholder="Amount" 
+                                    value="<?= getFormValue('income_spouse_pension_amount', $form_data) ?>" 
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="income_others" value="1" <?= isCheckboxChecked($form_data, 'income_others') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Others</span>
+                                </label>
+                                <input type="text" name="income_others_specify" placeholder="Specify" 
+                                    value="<?= getFormValue('income_others_specify', $form_data) ?>" 
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_rentals_sharecrops" value="1" <?= isCheckboxChecked($form_data, 'income_rentals_sharecrops') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Rentals/Sharecrops</span>
+                                </label>
+                            </div>
+                            
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_savings" value="1" <?= isCheckboxChecked($form_data, 'income_savings') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Savings</span>
+                                </label>
+                            </div>
+                            
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_livestock_orchards" value="1" <?= isCheckboxChecked($form_data, 'income_livestock_orchards') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Livestock/Orchards</span>
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Family Composition -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">II. Family Composition</h3>
+                        
+                        <div class="overflow-x-auto mb-4">
+                            <table class="min-w-full bg-white border border-gray-200">
+                                <thead>
+                                    <tr>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Name</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Relationship</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Age</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Civil Status</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Occupation</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Income</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="familyMembersTable">
+                                    <!-- Family member rows will be added here -->
+                                    <tr class="family-member-row">
+                                        <td class="border border-gray-200 px-2 py-2">
+                                            <input type="text" name="family_member_name[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        </td>
+                                        <td class="border border-gray-200 px-2 py-2">
+                                            <input type="text" name="family_member_relationship[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        </td>
+                                        <td class="border border-gray-200 px-2 py-2">
+                                            <input type="number" name="family_member_age[]" class="w-full border-0 p-0 text-sm" min="0" max="120">
+                                        </td>
+                                        <td class="border border-gray-200 px-2 py-2">
+                                            <select name="family_member_civil_status[]" class="w-full border-0 p-0 text-sm bg-transparent">
+                                                <option value="">-- SELECT --</option>
+                                                <option value="SINGLE">SINGLE</option>
+                                                <option value="MARRIED">MARRIED</option>
+                                                <option value="WIDOW/WIDOWER">WIDOW/WIDOWER</option>
+                                                <option value="SEPARATED">SEPARATED</option>
+                                            </select>
+                                        </td>
+                                        <td class="border border-gray-200 px-2 py-2">
+                                            <input type="text" name="family_member_occupation[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        </td>
+                                        <td class="border border-gray-200 px-2 py-2">
+                                            <input type="text" name="family_member_income[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        </td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        
+                        <button type="button" id="addFamilyMember" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded-md text-sm">
+                            Add Family Member
+                        </button>
+                    </div>
+                    
+                    <!-- Assets & Properties -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Assets & Properties (Check all applicable)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="asset_house" value="1" <?= isCheckboxChecked($form_data, 'asset_house') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">House</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="asset_house_lot" value="1" <?= isCheckboxChecked($form_data, 'asset_house_lot') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">House & Lot</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="asset_farmland" value="1" <?= isCheckboxChecked($form_data, 'asset_farmland') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Farmland</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="asset_fishponds_resorts" value="1" <?= isCheckboxChecked($form_data, 'asset_fishponds_resorts') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Fishponds/Resorts</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="asset_commercial_building" value="1" <?= isCheckboxChecked($form_data, 'asset_commercial_building') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Commercial Building</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="asset_lot" value="1" <?= isCheckboxChecked($form_data, 'asset_lot') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Lot</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="asset_others" value="1" <?= isCheckboxChecked($form_data, 'asset_others') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Others</span>
+                                </label>
+                                <input type="text" name="asset_others_specify" placeholder="Specify" 
+                                    value="<?= getFormValue('asset_others_specify', $form_data) ?>" 
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Living/Residing With -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Living/Residing With (Check all applicable)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_alone" value="1" <?= isCheckboxChecked($form_data, 'living_alone') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Alone</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_common_law_spouse" value="1" <?= isCheckboxChecked($form_data, 'living_common_law_spouse') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Common Law Spouse</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_in_laws" value="1" <?= isCheckboxChecked($form_data, 'living_in_laws') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">In-Laws</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_spouse" value="1" <?= isCheckboxChecked($form_data, 'living_spouse') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Spouse</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_care_institutions" value="1" <?= isCheckboxChecked($form_data, 'living_care_institutions') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Care Institutions</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_children" value="1" <?= isCheckboxChecked($form_data, 'living_children') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Children</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_grandchildren" value="1" <?= isCheckboxChecked($form_data, 'living_grandchildren') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Grandchildren</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_househelps" value="1" <?= isCheckboxChecked($form_data, 'living_househelps') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Househelps</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="living_relatives" value="1" <?= isCheckboxChecked($form_data, 'living_relatives') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Relatives</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="living_others" value="1" <?= isCheckboxChecked($form_data, 'living_others') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Others</span>
+                                </label>
+                                <input type="text" name="living_others_specify" placeholder="Specify" 
+                                    value="<?= getFormValue('living_others_specify', $form_data) ?>" 
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Areas of Specialization/Skills -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Areas of Specialization/Skills (Check all applicable)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_medical" value="1" <?= isCheckboxChecked($form_data, 'skill_medical') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Medical</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_teaching" value="1" <?= isCheckboxChecked($form_data, 'skill_teaching') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Teaching</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_legal_services" value="1" <?= isCheckboxChecked($form_data, 'skill_legal_services') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Legal Services</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_dental" value="1" <?= isCheckboxChecked($form_data, 'skill_dental') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Dental</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_counseling" value="1" <?= isCheckboxChecked($form_data, 'skill_counseling') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Counseling</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_evangelization" value="1" <?= isCheckboxChecked($form_data, 'skill_evangelization') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Evangelization</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_farming" value="1" <?= isCheckboxChecked($form_data, 'skill_farming') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Farming</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_fishing" value="1" <?= isCheckboxChecked($form_data, 'skill_fishing') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Fishing</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_cooking" value="1" <?= isCheckboxChecked($form_data, 'skill_cooking') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Cooking</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_vocational" value="1" <?= isCheckboxChecked($form_data, 'skill_vocational') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Vocational</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_arts" value="1" <?= isCheckboxChecked($form_data, 'skill_arts') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Arts</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="skill_engineering" value="1" <?= isCheckboxChecked($form_data, 'skill_engineering') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Engineering</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="skill_others" value="1" <?= isCheckboxChecked($form_data, 'skill_others') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Others</span>
+                                </label>
+                                <input type="text" name="skill_others_specify" placeholder="Specify" 
+                                    value="<?= getFormValue('skill_others_specify', $form_data) ?>" 
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Involvement in Community Activities -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Involvement in Community Activities (Check all applicable)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_medical" value="1" <?= isCheckboxChecked($form_data, 'involvement_medical') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Medical</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_resource_volunteer" value="1" <?= isCheckboxChecked($form_data, 'involvement_resource_volunteer') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Resource Volunteer</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_community_beautification" value="1" <?= isCheckboxChecked($form_data, 'involvement_community_beautification') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Community Beautification</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_community_leader" value="1" <?= isCheckboxChecked($form_data, 'involvement_community_leader') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Community/Organizational Leader</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_dental" value="1" <?= isCheckboxChecked($form_data, 'involvement_dental') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Dental</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_friendly_visits" value="1" <?= isCheckboxChecked($form_data, 'involvement_friendly_visits') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Friendly Visits</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_neighborhood_support" value="1" <?= isCheckboxChecked($form_data, 'involvement_neighborhood_support') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Neighborhood Support Services</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_religious" value="1" <?= isCheckboxChecked($form_data, 'involvement_religious') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Religious</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_counselling" value="1" <?= isCheckboxChecked($form_data, 'involvement_counselling') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Counselling/Referral</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_sponsorship" value="1" <?= isCheckboxChecked($form_data, 'involvement_sponsorship') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Sponsorship</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="involvement_legal_services" value="1" <?= isCheckboxChecked($form_data, 'involvement_legal_services') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Legal Services</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="involvement_others" value="1" <?= isCheckboxChecked($form_data, 'involvement_others') ?> class="form-checkbox">
+                                    <span class="ml-2 text-sm font-medium">Others</span>
+                                </label>
+                                <input type="text" name="involvement_others_specify" placeholder="Specify" 
+                                    value="<?= getFormValue('involvement_others_specify', $form_data) ?>" 
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Problems/Needs Commonly Encountered -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Problems/Needs Commonly Encountered (Check all applicable)</h3>
+                        
+                        <!-- Economic -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">A. Economic</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_lack_income" value="1" <?= isCheckboxChecked($form_data, 'problem_lack_income') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Lack of Income/Resources</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_loss_income" value="1" <?= isCheckboxChecked($form_data, 'problem_loss_income') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Loss of Income/Resources</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_skills_training" value="1" <?= isCheckboxChecked($form_data, 'problem_skills_training') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Skills/Capability Training</span>
+                                    </label>
+                                    <input type="text" name="problem_skills_training_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_skills_training_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_livelihood" value="1" <?= isCheckboxChecked($form_data, 'problem_livelihood') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Livelihood Opportunities</span>
+                                    </label>
+                                    <input type="text" name="problem_livelihood_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_livelihood_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_economic_others" value="1" <?= isCheckboxChecked($form_data, 'problem_economic_others') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_economic_others_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_economic_others_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Social/Emotional -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">B. Social/Emotional</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_neglect_rejection" value="1" <?= isCheckboxChecked($form_data, 'problem_neglect_rejection') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Feeling of Neglect & Rejection</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_helplessness" value="1" <?= isCheckboxChecked($form_data, 'problem_helplessness') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Feeling of Helplessness & Worthlessness</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_loneliness" value="1" <?= isCheckboxChecked($form_data, 'problem_loneliness') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Feeling of Loneliness & Isolation</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_recreational" value="1" <?= isCheckboxChecked($form_data, 'problem_recreational') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Inadequate Leisure/Recreational Activities</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_senior_friendly" value="1" <?= isCheckboxChecked($form_data, 'problem_senior_friendly') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Senior Citizen Friendly Environment</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_social_others" value="1" <?= isCheckboxChecked($form_data, 'problem_social_others') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_social_others_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_social_others_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Health -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">C. Health</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_condition_illness" value="1" <?= isCheckboxChecked($form_data, 'problem_condition_illness') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Condition/Illness</span>
+                                    </label>
+                                    <input type="text" name="problem_condition_illness_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_condition_illness_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                                
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <span class="text-sm font-medium">With Maintenance</span>
+                                    </label>
+                                    <label class="inline-flex items-center ml-2">
+                                        <input type="radio" name="problem_with_maintenance" value="YES" <?= isChecked('YES', $form_data, 'problem_with_maintenance') ?> class="form-radio">
+                                        <span class="ml-1 text-sm">YES</span>
+                                    </label>
+                                    <input type="text" name="problem_with_maintenance_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_with_maintenance_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    <label class="inline-flex items-center ml-2">
+                                        <input type="radio" name="problem_with_maintenance" value="NO" <?= isChecked('NO', $form_data, 'problem_with_maintenance') ?> class="form-radio">
+                                        <span class="ml-1 text-sm">NO</span>
+                                    </label>
+                                </div>
+                                
+                                <div class="md:col-span-2">
+                                    <label class="text-sm font-medium block mb-2">Concerns/Issues</label>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_high_cost_medicine" value="1" <?= isCheckboxChecked($form_data, 'problem_high_cost_medicine') ?> class="form-checkbox">
+                                                <span class="ml-2 text-sm font-medium">High Cost Medicines</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_medical_professionals" value="1" <?= isCheckboxChecked($form_data, 'problem_lack_medical_professionals') ?> class="form-checkbox">
+                                                <span class="ml-2 text-sm font-medium">Lack of Medical Professionals</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_sanitation" value="1" <?= isCheckboxChecked($form_data, 'problem_lack_sanitation') ?> class="form-checkbox">
+                                                <span class="ml-2 text-sm font-medium">Lack/No Access to Sanitation</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_health_insurance" value="1" <?= isCheckboxChecked($form_data, 'problem_lack_health_insurance') ?> class="form-checkbox">
+                                                <span class="ml-2 text-sm font-medium">Lack/No Health Insurance/s</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_inadequate_health_services" value="1" <?= isCheckboxChecked($form_data, 'problem_inadequate_health_services') ?> class="form-checkbox">
+                                                <span class="ml-2 text-sm font-medium">Inadequate Health Services</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_medical_facilities" value="1" <?= isCheckboxChecked($form_data, 'problem_lack_medical_facilities') ?> class="form-checkbox">
+                                                <span class="ml-2 text-sm font-medium">Lack of Hospitals/Medical Facilities</span>
+                                            </label>
+                                        </div>
+                                        <div class="flex items-center gap-2 md:col-span-2">
+                                            <label class="inline-flex items-center whitespace-nowrap">
+                                                <input type="checkbox" name="problem_health_others" value="1" <?= isCheckboxChecked($form_data, 'problem_health_others') ?> class="form-checkbox">
+                                                <span class="ml-2 text-sm font-medium">Others</span>
+                                            </label>
+                                            <input type="text" name="problem_health_others_specify" placeholder="Specify" 
+                                                value="<?= getFormValue('problem_health_others_specify', $form_data) ?>" 
+                                                class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Housing -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">D. Housing</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_overcrowding" value="1" <?= isCheckboxChecked($form_data, 'problem_overcrowding') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Overcrowding in the Family Home</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_no_permanent_housing" value="1" <?= isCheckboxChecked($form_data, 'problem_no_permanent_housing') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">No Permanent Housing</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_independent_living" value="1" <?= isCheckboxChecked($form_data, 'problem_independent_living') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Longing for Independent Living/Quiet Atmosphere</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_lost_privacy" value="1" <?= isCheckboxChecked($form_data, 'problem_lost_privacy') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Lost Privacy</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_squatters" value="1" <?= isCheckboxChecked($form_data, 'problem_squatters') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Living in Squatter's Areas</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_high_rent" value="1" <?= isCheckboxChecked($form_data, 'problem_high_rent') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">High Cost Rent</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_housing_others" value="1" <?= isCheckboxChecked($form_data, 'problem_housing_others') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_housing_others_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_housing_others_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Community Service -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">E. Community Service</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_desire_participate" value="1" <?= isCheckboxChecked($form_data, 'problem_desire_participate') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Desire to Participate</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_skills_to_share" value="1" <?= isCheckboxChecked($form_data, 'problem_skills_to_share') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Skills/Resources to Share</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_community_others" value="1" <?= isCheckboxChecked($form_data, 'problem_community_others') ?> class="form-checkbox">
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_community_others_specify" placeholder="Specify" 
+                                        value="<?= getFormValue('problem_community_others_specify', $form_data) ?>" 
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Other Specific Needs -->
+                        <div>
+                            <h4 class="font-semibold text-md mb-3">F. Identify Other Specific Needs</h4>
+                            <div class="pl-4">
+                                <textarea name="other_specific_needs" rows="4" class="w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()"><?= getFormValue('other_specific_needs', $form_data) ?></textarea>
+                            </div>
                         </div>
                     </div>
 
@@ -617,243 +1442,338 @@ function isCheckboxChecked($form_data, $key) {
         </div>
 
         <script>
-        // Show/hide extra fields for Senior/PWD
-        document.addEventListener('DOMContentLoaded', function() {
-            const select = document.getElementById('residentTypeSelect');
-            const form = document.getElementById('residentForm');
-            
-            // Handle "Same as Present Address" checkbox
-            const sameAsPresent = document.getElementById('sameAsPresent');
-            const permanentFields = document.getElementById('permanentAddressFields');
-            
-            function copyPresentToPermanent() {
-                if (sameAsPresent.checked) {
-                    // Copy values from present to permanent address fields
-                    const fieldMappings = [
-                        ['house_no', 'permanent_house_no'],
-                        ['street', 'permanent_street'],
-                        ['subdivision', 'permanent_subdivision'],
-                        ['block_lot', 'permanent_block_lot'],
-                        ['phase', 'permanent_phase'],
-                        ['municipality', 'permanent_municipality'],
-                        ['province', 'permanent_province']
-                    ];
+            // Show/hide extra fields for Senior/PWD
+            document.addEventListener('DOMContentLoaded', function() {
+                const select = document.getElementById('residentTypeSelect');
+                const form = document.getElementById('residentForm');
+
+                // Handle "Same as Present Address" checkbox
+                const sameAsPresent = document.getElementById('sameAsPresent');
+                const permanentFields = document.getElementById('permanentAddressFields');
+
+                function copyPresentToPermanent() {
+                    if (sameAsPresent.checked) {
+                        // Copy values from present to permanent address fields
+                        const fieldMappings = [
+                            ['house_no', 'permanent_house_no'],
+                            ['street', 'permanent_street'],
+                            ['subdivision', 'permanent_subdivision'],
+                            ['block_lot', 'permanent_block_lot'],
+                            ['phase', 'permanent_phase'],
+                            ['municipality', 'permanent_municipality'],
+                            ['province', 'permanent_province'],
+                            ['region', 'permanent_region']
+                        ];
+
+                        fieldMappings.forEach(([presentField, permanentField]) => {
+                            const presentValue = document.querySelector(`[name="present_${presentField}"]`).value;
+                            const permanentInput = document.querySelector(`[name="${permanentField}"]`);
+                            permanentInput.value = presentValue;
+                            permanentInput.disabled = true;
+                        });
+                    } else {
+                        // Enable permanent address fields
+                        permanentFields.querySelectorAll('input').forEach(input => {
+                            input.disabled = false;
+                        });
+                    }
+                }
+
+                sameAsPresent.addEventListener('change', copyPresentToPermanent);
+                
+                // Handle Family Members table
+                const addFamilyMemberBtn = document.getElementById('addFamilyMember');
+                const familyMembersTable = document.getElementById('familyMembersTable');
+                
+                addFamilyMemberBtn.addEventListener('click', function() {
+                    const newRow = familyMembersTable.querySelector('.family-member-row').cloneNode(true);
                     
-                    fieldMappings.forEach(([presentField, permanentField]) => {
-                        const presentValue = document.querySelector(`[name="present_${presentField}"]`).value;
-                        const permanentInput = document.querySelector(`[name="${permanentField}"]`);
-                        permanentInput.value = presentValue;
-                        permanentInput.disabled = true;
+                    // Clear the values in the cloned row
+                    newRow.querySelectorAll('input').forEach(input => {
+                        input.value = '';
                     });
-                } else {
-                    // Enable permanent address fields
-                    permanentFields.querySelectorAll('input').forEach(input => {
-                        input.disabled = false;
+                    
+                    newRow.querySelectorAll('select').forEach(select => {
+                        select.selectedIndex = 0;
                     });
+                    
+                    // Add a remove button
+                    const lastCell = document.createElement('td');
+                    lastCell.className = 'border border-gray-200 px-2 py-2';
+                    
+                    const removeBtn = document.createElement('button');
+                    removeBtn.type = 'button';
+                    removeBtn.className = 'text-red-500 hover:text-red-700';
+                    removeBtn.innerHTML = '&times;';
+                    removeBtn.addEventListener('click', function() {
+                        newRow.remove();
+                    });
+                    
+                    lastCell.appendChild(removeBtn);
+                    newRow.appendChild(lastCell);
+                    
+                    familyMembersTable.appendChild(newRow);
+                });
+                
+                // Handle "Others" option for religion
+                const religionSelect = document.querySelector('select[name="religion"]');
+                const otherReligionContainer = document.getElementById('other_religion_container');
+                
+                function toggleOtherReligionField() {
+                    if (religionSelect.value === 'OTHERS') {
+                        otherReligionContainer.style.display = 'block';
+                    } else {
+                        otherReligionContainer.style.display = 'none';
+                    }
                 }
-            }
-            
-            sameAsPresent.addEventListener('change', copyPresentToPermanent);
-            
-            function updateResidentType() {
-                let existing = form.querySelector('input[name="resident_type"]');
-                if (!existing) {
-                    existing = document.createElement('input');
-                    existing.type = 'hidden';
-                    existing.name = 'resident_type';
-                    form.appendChild(existing);
+                
+                // Initialize on page load
+                toggleOtherReligionField();
+                religionSelect.addEventListener('change', toggleOtherReligionField);
+
+                function updateResidentType() {
+                    let existing = form.querySelector('input[name="resident_type"]');
+                    if (!existing) {
+                        existing = document.createElement('input');
+                        existing.type = 'hidden';
+                        existing.name = 'resident_type';
+                        form.appendChild(existing);
+                    }
+                    existing.value = select.value;
                 }
-                existing.value = select.value;
-            }
-            
-            select.addEventListener('change', updateResidentType);
-            updateResidentType(); // Initialize on page load
-            
-            // Show SweetAlert for success/error messages
-            <?php if ($add_error): ?>
-            Swal.fire({
-                icon: 'error',
-                title: 'Error!',
-                html: '<?= addslashes($add_error) ?>',
-                confirmButtonText: 'OK',
-                confirmButtonColor: '#dc2626'
-            });
-            <?php elseif ($add_success): ?>
-            Swal.fire({
-                icon: 'success',
-                title: 'Success!',
-                text: '<?= addslashes($add_success) ?>',
-                confirmButtonText: 'OK',
-                confirmButtonColor: '#16a34a',
-                timer: 5000,
-                timerProgressBar: true
-            });
-            <?php endif; ?>
-            
-            // Auto-hide success/error messages after 5 seconds (fallback)
-            const errorMsg = document.querySelector('.error-message');
-            const successMsg = document.querySelector('.success-message');
-            
-            if (errorMsg) {
-                setTimeout(() => {
-                    errorMsg.style.transition = 'opacity 0.5s';
-                    errorMsg.style.opacity = '0';
-                    setTimeout(() => errorMsg.remove(), 500);
-                }, 5000);
-            }
-            
-            if (successMsg) {
-                setTimeout(() => {
-                    successMsg.style.transition = 'opacity 0.5s';
-                    successMsg.style.opacity = '0';
-                    setTimeout(() => successMsg.remove(), 500);
-                }, 5000);
-            }
-        });
-        
-        // Form submission with loading state
-        document.getElementById('residentForm').addEventListener('submit', function(e) {
-            const submitBtn = this.querySelector('button[type="submit"]');
-            const originalText = submitBtn.innerHTML;
-            
-            // Show loading state
-            submitBtn.disabled = true;
-            submitBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Saving...';
-            
-            // Reset button after a delay (in case form doesn't redirect)
-            setTimeout(() => {
-                submitBtn.disabled = false;
-                submitBtn.innerHTML = originalText;
-            }, 10000);
-        });
-        
-        // Confirm delete function
-        function confirmDelete(personId) {
-            Swal.fire({
-                title: 'Are you sure?',
-                text: "This action cannot be undone. All related records will also be deleted.",
-                icon: 'warning',
-                showCancelButton: true,
-                confirmButtonColor: '#dc2626',
-                cancelButtonColor: '#6b7280',
-                confirmButtonText: 'Yes, delete it!',
-                cancelButtonText: 'Cancel'
-            }).then((result) => {
-                if (result.isConfirmed) {
-                    // Show loading
+
+                select.addEventListener('change', updateResidentType);
+                updateResidentType(); // Initialize on page load
+
+                // Show SweetAlert for success/error messages
+                <?php if ($add_error): ?>
                     Swal.fire({
-                        title: 'Deleting...',
-                        text: 'Please wait while we delete the resident record.',
-                        allowOutsideClick: false,
-                        allowEscapeKey: false,
-                        showConfirmButton: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
+                        icon: 'error',
+                        title: 'Error!',
+                        html: '<?= addslashes($add_error) ?>',
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#dc2626'
                     });
+                <?php elseif ($add_success): ?>
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: '<?= addslashes($add_success) ?>',
+                        confirmButtonText: 'OK',
+                        confirmButtonColor: '#16a34a',
+                        timer: 5000,
+                        timerProgressBar: true
+                    });
+                <?php endif; ?>
+
+                // Auto-hide success/error messages after 5 seconds (fallback)
+                const errorMsg = document.querySelector('.error-message');
+                const successMsg = document.querySelector('.success-message');
+
+                if (errorMsg) {
+                    setTimeout(() => {
+                        errorMsg.style.transition = 'opacity 0.5s';
+                        errorMsg.style.opacity = '0';
+                        setTimeout(() => errorMsg.remove(), 500);
+                    }, 5000);
+                }
+
+                if (successMsg) {
+                    setTimeout(() => {
+                        successMsg.style.transition = 'opacity 0.5s';
+                        successMsg.style.opacity = '0';
+                        setTimeout(() => successMsg.remove(), 500);
+                    }, 5000);
+                }
+                
+                // Auto-capitalize all inputs
+                document.querySelectorAll('input[type="text"]').forEach(input => {
+                    input.addEventListener('input', function() {
+                        this.value = this.value.toUpperCase();
+                    });
+                });
+
+                            // Initialize event handlers
+            document.addEventListener('DOMContentLoaded', function() {
+                // Initialize birth date handler
+                const birthDateInput = document.getElementById('birth_date');
+                if (birthDateInput) {
+                    birthDateInput.addEventListener('change', calculateAge);
+                    // Calculate initial age if birth date exists
+                    if (birthDateInput.value) {
+                        calculateAge();
+                    }
+                }
+
+                // Function to calculate age
+                function calculateAge() {
+                    const birthDateInput = document.getElementById('birth_date');
+                    const ageInput = document.getElementById('age');
                     
-                    // Redirect to delete script
-                    window.location.href = `delete_resident.php?id=${personId}`;
+                    if (!birthDateInput || !ageInput) return;
+                    
+                    const birthDate = birthDateInput.value;
+                    if (birthDate) {
+                        const today = new Date();
+                        const birth = new Date(birthDate);
+                        let age = today.getFullYear() - birth.getFullYear();
+                        const monthDiff = today.getMonth() - birth.getMonth();
+                        
+                        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
+                            age--;
+                        }
+                        
+                        ageInput.value = age;
+                    } else {
+                        ageInput.value = '';
+                    }
                 }
             });
-        }
-        
-        // Search functionality
-        document.getElementById('search-resident').addEventListener('input', function() {
-            const searchTerm = this.value.toLowerCase();
-            const rows = document.querySelectorAll('#census-list tbody tr');
-            
-            rows.forEach(row => {
-                const name = row.querySelector('td:first-child').textContent.toLowerCase();
-                if (name.includes(searchTerm)) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
             });
-        });
-        
-        // Category filter functionality
-        document.getElementById('btn-all').addEventListener('click', function() {
-            filterByCategory('all');
-            updateActiveButton(this);
-        });
-        
-        document.getElementById('btn-seniors').addEventListener('click', function() {
-            filterByCategory('Senior');
-            updateActiveButton(this);
-        });
-        
-        document.getElementById('btn-children').addEventListener('click', function() {
-            filterByCategory('Child');
-            updateActiveButton(this);
-        });
-        
-        function filterByCategory(category) {
-            const rows = document.querySelectorAll('#census-list tbody tr');
-            
-            rows.forEach(row => {
-                if (category === 'all' || row.dataset.category === category) {
-                    row.style.display = '';
-                } else {
-                    row.style.display = 'none';
-                }
+
+            // Form submission with loading state
+            document.getElementById('residentForm').addEventListener('submit', function(e) {
+                const submitBtn = this.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
+
+                // Show loading state
+                submitBtn.disabled = true;
+                submitBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Saving...';
+
+                // Reset button after a delay (in case form doesn't redirect)
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }, 10000);
             });
-        }
-        
-        function updateActiveButton(activeBtn) {
-            // Remove active class from all buttons
-            document.querySelectorAll('#census-list .flex button').forEach(btn => {
-                btn.classList.remove('bg-blue-600', 'text-white');
-                btn.classList.add('bg-gray-200');
-            });
-            
-            // Add active class to clicked button
-            activeBtn.classList.remove('bg-gray-200');
-            activeBtn.classList.add('bg-blue-600', 'text-white');
-        }
-        
-        // Form validation
-        function validateForm() {
-            const form = document.getElementById('residentForm');
-            const requiredFields = form.querySelectorAll('[required]');
-            let isValid = true;
-            
-            requiredFields.forEach(field => {
-                if (!field.value.trim()) {
-                    field.classList.add('border-red-500');
-                    isValid = false;
-                } else {
-                    field.classList.remove('border-red-500');
-                }
-            });
-            
-            return isValid;
-        }
-        
-        // Add validation on form submission
-        document.getElementById('residentForm').addEventListener('submit', function(e) {
-            if (!validateForm()) {
-                e.preventDefault();
+
+            // Confirm delete function
+            function confirmDelete(personId) {
                 Swal.fire({
-                    icon: 'error',
-                    title: 'Validation Error',
-                    text: 'Please fill in all required fields.',
-                    confirmButtonColor: '#dc2626'
+                    title: 'Are you sure?',
+                    text: "This action cannot be undone. All related records will also be deleted.",
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#dc2626',
+                    cancelButtonColor: '#6b7280',
+                    confirmButtonText: 'Yes, delete it!',
+                    cancelButtonText: 'Cancel'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Show loading
+                        Swal.fire({
+                            title: 'Deleting...',
+                            text: 'Please wait while we delete the resident record.',
+                            allowOutsideClick: false,
+                            allowEscapeKey: false,
+                            showConfirmButton: false,
+                            didOpen: () => {
+                                Swal.showLoading();
+                            }
+                        });
+
+                        // Redirect to delete script
+                        window.location.href = `delete_resident.php?id=${personId}`;
+                    }
                 });
             }
-        });
-        
-        // Real-time validation
-        document.querySelectorAll('#residentForm [required]').forEach(field => {
-            field.addEventListener('blur', function() {
-                if (!this.value.trim()) {
-                    this.classList.add('border-red-500');
-                } else {
-                    this.classList.remove('border-red-500');
+
+            // Search functionality
+            document.getElementById('search-resident').addEventListener('input', function() {
+                const searchTerm = this.value.toLowerCase();
+                const rows = document.querySelectorAll('#census-list tbody tr');
+
+                rows.forEach(row => {
+                    const name = row.querySelector('td:first-child').textContent.toLowerCase();
+                    if (name.includes(searchTerm)) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            });
+
+            // Category filter functionality
+            document.getElementById('btn-all').addEventListener('click', function() {
+                filterByCategory('all');
+                updateActiveButton(this);
+            });
+
+            document.getElementById('btn-seniors').addEventListener('click', function() {
+                filterByCategory('Senior');
+                updateActiveButton(this);
+            });
+
+            document.getElementById('btn-children').addEventListener('click', function() {
+                filterByCategory('Child');
+                updateActiveButton(this);
+            });
+
+            function filterByCategory(category) {
+                const rows = document.querySelectorAll('#census-list tbody tr');
+
+                rows.forEach(row => {
+                    if (category === 'all' || row.dataset.category === category) {
+                        row.style.display = '';
+                    } else {
+                        row.style.display = 'none';
+                    }
+                });
+            }
+
+            function updateActiveButton(activeBtn) {
+                // Remove active class from all buttons
+                document.querySelectorAll('#census-list .flex button').forEach(btn => {
+                    btn.classList.remove('bg-blue-600', 'text-white');
+                    btn.classList.add('bg-gray-200');
+                });
+
+                // Add active class to clicked button
+                activeBtn.classList.remove('bg-gray-200');
+                activeBtn.classList.add('bg-blue-600', 'text-white');
+            }
+
+            // Form validation
+            function validateForm() {
+                const form = document.getElementById('residentForm');
+                const requiredFields = form.querySelectorAll('[required]');
+                let isValid = true;
+
+                requiredFields.forEach(field => {
+                    if (!field.value.trim()) {
+                        field.classList.add('border-red-500');
+                        isValid = false;
+                    } else {
+                        field.classList.remove('border-red-500');
+                    }
+                });
+
+                return isValid;
+            }
+
+            // Add validation on form submission
+            document.getElementById('residentForm').addEventListener('submit', function(e) {
+                if (!validateForm()) {
+                    e.preventDefault();
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Validation Error',
+                        text: 'Please fill in all required fields.',
+                        confirmButtonColor: '#dc2626'
+                    });
                 }
             });
-        });
+
+            // Real-time validation
+            document.querySelectorAll('#residentForm [required]').forEach(field => {
+                field.addEventListener('blur', function() {
+                    if (!this.value.trim()) {
+                        this.classList.add('border-red-500');
+                    } else {
+                        this.classList.remove('border-red-500');
+                    }
+                });
+            });
         </script>
 
         <!-- Census List -->
@@ -866,8 +1786,8 @@ function isCheckboxChecked($form_data, $key) {
                     <button id="btn-children" class="px-4 py-2 bg-gray-200 rounded">Children</button>
                 </div>
                 <div>
-                    <input type="text" id="search-resident" placeholder="Search by name..." 
-                           class="px-4 py-2 border rounded w-64">
+                    <input type="text" id="search-resident" placeholder="Search by name..."
+                        class="px-4 py-2 border rounded w-64">
                 </div>
             </div>
             <div class="overflow-x-auto">
@@ -886,8 +1806,8 @@ function isCheckboxChecked($form_data, $key) {
                         </tr>
                     </thead>
                     <tbody class="bg-white divide-y divide-gray-200">
-                        <?php foreach ($residents as $resident): 
-                            $age = $resident['age'] ?? (function($birth_date) {
+                        <?php foreach ($residents as $resident):
+                            $age = $resident['age'] ?? (function ($birth_date) {
                                 return floor((time() - strtotime($birth_date)) / 31556926);
                             })($resident['birth_date']);
                             $category = '';
@@ -899,37 +1819,36 @@ function isCheckboxChecked($form_data, $key) {
                                 $category = 'Adult';
                             }
                         ?>
-                        <tr data-category="<?= $category ?>">
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " . 
-                                    ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') . 
-                                    ($resident['suffix'] ? " {$resident['suffix']}" : '')) 
-                                ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap"><?= $age ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap"><?= $resident['gender'] ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap"><?= $resident['civil_status'] ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap"><?= $resident['household_id'] ?></td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <?= $resident['relationship_to_head'] ?>
-                                <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <?= $resident['address'] ?? 'No address provided' ?>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap">
-                                <span class="<?= $category === 'Senior' ? 'bg-purple-100 text-purple-800' : 
-                                    ($category === 'Child' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800') ?> 
+                            <tr data-category="<?= $category ?>">
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
+                                        ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
+                                        ($resident['suffix'] ? " {$resident['suffix']}" : ''))
+                                    ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap"><?= $age ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap"><?= $resident['gender'] ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap"><?= $resident['civil_status'] ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap"><?= $resident['household_id'] ?></td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <?= $resident['relationship_to_head'] ?>
+                                    <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <?= $resident['address'] ?? 'No address provided' ?>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap">
+                                    <span class="<?= $category === 'Senior' ? 'bg-purple-100 text-purple-800' : ($category === 'Child' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800') ?> 
                                     px-2 py-1 rounded text-xs">
-                                    <?= $category ?>
-                                </span>
-                            </td>
-                            <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
-                                <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
-                                <a href="javascript:void(0)" onclick="confirmDelete(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</a>
-                            </td>
-                        </tr>
+                                        <?= $category ?>
+                                    </span>
+                                </td>
+                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                    <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+                                    <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
+                                    <a href="javascript:void(0)" onclick="confirmDelete(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</a>
+                                </td>
+                            </tr>
                         <?php endforeach; ?>
                     </tbody>
                 </table>
@@ -937,4 +1856,5 @@ function isCheckboxChecked($form_data, $key) {
         </div>
     </div>
 </body>
+
 </html>

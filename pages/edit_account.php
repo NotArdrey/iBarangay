@@ -162,14 +162,13 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       </a>
       <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
         <i class="fas fa-bars"></i>
-      </button>
-      <div class="nav-links">
+      </button>      <div class="nav-links">
         <a href="../pages/user_dashboard.php#home">Home</a>
         <a href="../pages/user_dashboard.php#about">About</a>
         <a href="../pages/user_dashboard.php#services">Services</a>
         <a href="../pages/user_dashboard.php#contact">Contact</a>
 
-        <a href="../functions/logout.php" style="color: red;"><i class="fas fa-sign-out-alt"></i> Logout</a>
+        <a href="javascript:void(0)" onclick="confirmLogout()" style="color: red;"><i class="fas fa-sign-out-alt"></i> Logout</a>
       </div>
     </nav>
   </header>
@@ -345,14 +344,31 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
   <!-- Footer -->
   <footer class="footer">
     <p>&copy; 2025 iBarangay. All rights reserved.</p>
-  </footer>
-  <script>
+  </footer>  <script>
     // Mobile menu toggle functionality
     const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
     const navLinks = document.querySelector('.nav-links');
     mobileMenuBtn.addEventListener('click', () => {
       navLinks.classList.toggle('active');
     });
+
+    // Logout confirmation function
+    function confirmLogout() {
+      Swal.fire({
+        title: 'Logout Confirmation',
+        text: 'Are you sure you want to logout?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, logout',
+        cancelButtonText: 'Cancel'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          window.location.href = '../functions/logout.php';
+        }
+      });
+    }
 
     // Image modal functionality
     function openImageModal(src) {
