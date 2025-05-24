@@ -20,75 +20,67 @@ $error_message = '';
 $success_message = '';
 
 // Process form submission (for editable fields and password change)
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-
-    // Retrieve and trim values for the editable fields (email is not editable here)
-    $first_name                = trim($_POST['first_name']);
-    $middle_name               = trim($_POST['middle_name']);
-    $last_name                 = trim($_POST['last_name']);
-    $birth_date                = $_POST['birth_date'];
-    $gender                    = $_POST['gender'];
-    $contact_number            = trim($_POST['contact_number']);
-    $marital_status            = $_POST['marital_status'];
-    $emergency_contact_name    = trim($_POST['emergency_contact_name']);
-    $emergency_contact_number  = trim($_POST['emergency_contact_number']);
-    $emergency_contact_address = trim($_POST['emergency_contact_address']);
-    $barangay_id               = $_POST['barangay_id'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account'])) {
+    // Retrieve and trim values for the editable fields
+    $first_name = trim($_POST['first_name']);
+    $last_name = trim($_POST['last_name']);
+    $gender = $_POST['gender'];
+    $contact_number = trim($_POST['contact_number']);
+    $barangay_id = $_POST['barangay_id'];
     
     // Retrieve password change fields (if any)
-    $old_password      = trim($_POST['old_password'] ?? '');
-    $new_password      = trim($_POST['new_password'] ?? '');
-    $confirm_password  = trim($_POST['confirm_password'] ?? '');
+    $old_password = trim($_POST['old_password'] ?? '');
+    $new_password = trim($_POST['new_password'] ?? '');
+    $confirm_password = trim($_POST['confirm_password'] ?? '');
 
     // Validate required fields for personal details
     $errors = [];
     if (empty($first_name)) { $errors[] = "First name is required."; }
     if (empty($last_name)) { $errors[] = "Last name is required."; }
     
-    // If any of the password change fields are provided, process password update
-    if ($old_password !== '' || $new_password !== '' || $confirm_password !== '') {
-        // Ensure all password fields are filled
+    // Only validate password if any password field is filled
+    if (!empty($old_password) || !empty($new_password) || !empty($confirm_password)) {
         if (empty($old_password)) { $errors[] = "Old password is required for password change."; }
         if (empty($new_password)) { $errors[] = "New password is required."; }
         if (empty($confirm_password)) { $errors[] = "Confirm password is required."; }
         
-        // Check new password and confirmation match
         if ($new_password !== $confirm_password) {
             $errors[] = "New password and confirm password do not match.";
         }
         
-        // Verify old password (using SHA-256 as in your existing logic)
-        $old_password_hash = hash('sha256', $old_password);
-        if ($old_password_hash !== $user['password']) {  // Changed from password_hash to password
-            $errors[] = "Old password is incorrect.";
+        if (!empty($old_password)) {
+            $old_password_hash = hash('sha256', $old_password);
+            if ($old_password_hash !== $user['password']) {
+                $errors[] = "Old password is incorrect.";
+            }
         }
     }
 
     // If there are no errors, update the personal details and possibly the password
     if (empty($errors)) {
-        // Update personal details (note: email is omitted)
+        // Update personal details
         $updateQuery = "UPDATE users SET 
                             first_name = ?, 
                             last_name = ?, 
                             gender = ?, 
                             phone = ?, 
                             barangay_id = ?
-                        WHERE id = ?";  // Changed from user_id to id
+                        WHERE id = ?";
         $updateStmt = $pdo->prepare($updateQuery);
         $params = [
             $first_name,
             $last_name,
             $gender,
-            $contact_number,  // Maps to phone column
+            $contact_number,
             $barangay_id,
             $user_id
         ];
         $updateStmt->execute($params);
 
         // Update password if requested
-        if ($old_password !== '' && $new_password !== '' && $confirm_password !== '') {
+        if (!empty($old_password) && !empty($new_password) && !empty($confirm_password)) {
             $new_password_hash = hash('sha256', $new_password);
-            $updatePassQuery = "UPDATE users SET password = ? WHERE id = ?";  // Changed from password_hash to password and user_id to id
+            $updatePassQuery = "UPDATE users SET password = ? WHERE id = ?";
             $stmt_pass = $pdo->prepare($updatePassQuery);
             $stmt_pass->execute([$new_password_hash, $user_id]);
             $success_message .= " Your password has been changed successfully.";
@@ -125,14 +117,198 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
     .form-section { border: 1px solid #ccc; padding: 1em; margin-bottom: 1em; }
     .form-section h3 { margin-top: 0; }
     .btn { padding: 0.5em 1em; text-decoration: none; border: 1px solid #ccc; background: #f5f5f5; }
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.5);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+
+    .modal.show {
+      opacity: 1;
+    }
+
+    .modal-content {
+      background-color: #fff;
+      margin: 5% auto;
+      width: 90%;
+      max-width: 600px;
+      border-radius: 8px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+      transform: translateY(-20px);
+      opacity: 0;
+      transition: all 0.2s ease;
+    }
+
+    .modal.show .modal-content {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .modal-header {
+      padding: 1rem;
+      border-bottom: 1px solid #eee;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-header h2 {
+      margin: 0;
+      font-size: 1.2rem;
+      color: #333;
+    }
+
+    .close {
+      color: #666;
+      font-size: 24px;
+      cursor: pointer;
+      border: none;
+      background: none;
+      padding: 0;
+    }
+
+    .close:hover {
+      color: #333;
+    }
+
+    .modal-body {
+      padding: 1rem;
+      max-height: 60vh;
+      overflow-y: auto;
+    }
+
+    /* Simplified Tab Styles */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid #eee;
+      margin-bottom: 1rem;
+    }
+
+    .tab-btn {
+      padding: 0.75rem 1rem;
+      border: none;
+      background: none;
+      color: #666;
+      cursor: pointer;
+      font-size: 0.9rem;
+      position: relative;
+      transition: color 0.2s;
+    }
+
+    .tab-btn:hover {
+      color: #333;
+    }
+
+    .tab-btn.active {
+      color: #0a2240;
+      font-weight: 500;
+    }
+
+    .tab-btn.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px;
+      left: 0;
+      width: 100%;
+      height: 2px;
+      background: #0a2240;
+    }
+
+    .tab-content {
+      display: none;
+      padding: 0.5rem 0;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* Simplified Document List Styles */
+    .document-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .document-item {
+      padding: 0.75rem;
+      border: 1px solid #eee;
+      border-radius: 4px;
+      background: #fafafa;
+    }
+
+    .document-info h4 {
+      margin: 0 0 0.5rem 0;
+      font-size: 0.95rem;
+      color: #333;
+    }
+
+    .document-info p {
+      margin: 0.25rem 0;
+      font-size: 0.85rem;
+      color: #666;
+    }
+
+    /* Status Colors */
+    .status-pending { color: #f0ad4e; }
+    .status-processing { color: #5bc0de; }
+    .status-for_payment { color: #5cb85c; }
+    .status-completed { color: #28a745; }
+    .status-cancelled { color: #d9534f; }
+    .status-rejected { color: #d9534f; }
+    .status-for_pickup { color: #17a2b8; }
+
+    /* View Documents Button */
+    .view-docs-btn {
+      padding: 0.5rem 1rem;
+      background: #f8f9fa;
+      color: #333;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+
+    .view-docs-btn:hover {
+      background: #e9ecef;
+      border-color: #ccc;
+    }
+
+    @media (max-width: 768px) {
+      .modal-content {
+        width: 95%;
+        margin: 10% auto;
+      }
+      
+      .tabs {
+        flex-wrap: wrap;
+      }
+      
+      .tab-btn {
+        flex: 1;
+        text-align: center;
+        padding: 0.5rem;
+      }
+    }
   </style>
 </head>
 <body>
   <!-- Navigation Header -->
- <!-- Navigation Bar -->
-<header> 
+  <header> 
   <nav class="navbar">
-    <a href="#" class="logo">
+    <a href="../index.php" class="logo">
       <img src="../photo/logo.png" alt="iBarangay Logo" />
       <h2>iBarangay</h2>
     </a>
@@ -140,27 +316,16 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       <i class="fas fa-bars"></i>
     </button>
     <div class="nav-links">
-      <a href="#home">Home</a>
-      <a href="#about">About</a>
-      <a href="#services">Services</a>
-      <a href="#contact">Contact</a>
-      
-      <!-- User Info Section -->
-      <?php if (!empty($userName)): ?>
-      <div class="user-info" onclick="window.location.href='../pages/edit_account.php'" style="cursor: pointer;">
-        <div class="user-avatar">
-          <i class="fas fa-user-circle"></i>
-        </div>
-        <div class="user-details">
-          <div class="user-name"><?php echo htmlspecialchars($userName); ?></div>
-          <div class="user-barangay"><?php echo htmlspecialchars($barangayName); ?></div>
-        </div>
-      </div>
-      <?php endif; ?>
+          <a href="../pages/user_dashboard.php#home">Home</a>
+          <a href="../pages/user_dashboard.php#about">About</a>
+          <a href="../pages/user_dashboard.php#services">Services</a>
+          <a href="../pages/user_dashboard.php#contact">Contact</a>
+      <a href="../functions/logout.php" class="logout-btn" onclick="return confirmLogout()">
+        <i class="fas fa-sign-out-alt"></i> Logout
+      </a>
     </div>
   </nav>
 </header>
-
   <!-- Add CSS for User Info in Navbar -->
   <style>
   /* User Info Styles - Minimalist Version */
@@ -230,6 +395,122 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
     <?php endif; ?>
 
     <form class="account-form" action="" method="POST">
+        <!-- Add a hidden input to identify form submission -->
+        <input type="hidden" name="update_account" value="1">
+
+      <!-- View Documents History Section -->
+      <div class="form-section">
+        <h3>View Documents History</h3>
+        <div class="form-group">
+          <button type="button" class="view-docs-btn" onclick="openDocumentModal()">
+            <i class="fas fa-file-alt"></i> View Document History
+          </button>
+        </div>
+      </div>
+
+      <!-- Document History Modal -->
+      <div id="documentModal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Document History</h2>
+            <button type="button" class="close" onclick="closeDocumentModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="tabs">
+              <button class="tab-btn active" onclick="openTab(event, 'document-history')">Recent</button>
+              <button class="tab-btn" onclick="openTab(event, 'pending-requests')">Pending</button>
+              <button class="tab-btn" onclick="openTab(event, 'completed-history')">Completed</button>
+            </div>
+
+            <div id="document-history" class="tab-content active">
+              <?php
+              $docHistoryQuery = "SELECT dr.*, dt.name as document_name 
+                                 FROM document_requests dr 
+                                 JOIN document_types dt ON dr.document_type_id = dt.id 
+                                 WHERE dr.user_id = ? 
+                                 ORDER BY dr.created_at DESC 
+                                 LIMIT 5";
+              $docHistoryStmt = $pdo->prepare($docHistoryQuery);
+              $docHistoryStmt->execute([$user_id]);
+              $documentHistory = $docHistoryStmt->fetchAll(PDO::FETCH_ASSOC);
+              
+              if (count($documentHistory) > 0): ?>
+                <div class="document-list">
+                  <?php foreach ($documentHistory as $doc): ?>
+                    <div class="document-item">
+                      <div class="document-info">
+                        <h4><?php echo htmlspecialchars($doc['document_name']); ?></h4>
+                        <p>Status: <span class="status-<?php echo $doc['status']; ?>"><?php echo ucfirst($doc['status']); ?></span></p>
+                        <p>Requested: <?php echo date('M d, Y', strtotime($doc['created_at'])); ?></p>
+                      </div>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+              <?php else: ?>
+                <p>No document history found.</p>
+              <?php endif; ?>
+            </div>
+
+            <div id="pending-requests" class="tab-content">
+              <?php
+              $pendingQuery = "SELECT dr.*, dt.name as document_name 
+                              FROM document_requests dr 
+                              JOIN document_types dt ON dr.document_type_id = dt.id 
+                              WHERE dr.user_id = ? AND dr.status IN ('pending', 'processing', 'for_payment') 
+                              ORDER BY dr.created_at DESC";
+              $pendingStmt = $pdo->prepare($pendingQuery);
+              $pendingStmt->execute([$user_id]);
+              $pendingRequests = $pendingStmt->fetchAll(PDO::FETCH_ASSOC);
+              
+              if (count($pendingRequests) > 0): ?>
+                <div class="document-list">
+                  <?php foreach ($pendingRequests as $request): ?>
+                    <div class="document-item">
+                      <div class="document-info">
+                        <h4><?php echo htmlspecialchars($request['document_name']); ?></h4>
+                        <p>Status: <span class="status-<?php echo $request['status']; ?>"><?php echo ucfirst($request['status']); ?></span></p>
+                        <p>Requested: <?php echo date('M d, Y', strtotime($request['created_at'])); ?></p>
+                      </div>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+              <?php else: ?>
+                <p>No pending requests found.</p>
+              <?php endif; ?>
+            </div>
+
+            <div id="completed-history" class="tab-content">
+              <?php
+              $completedQuery = "SELECT dr.*, dt.name as document_name 
+                                FROM document_requests dr 
+                                JOIN document_types dt ON dr.document_type_id = dt.id 
+                                WHERE dr.user_id = ? AND dr.status = 'completed' 
+                                ORDER BY dr.completed_at DESC 
+                                LIMIT 5";
+              $completedStmt = $pdo->prepare($completedQuery);
+              $completedStmt->execute([$user_id]);
+              $completedRequests = $completedStmt->fetchAll(PDO::FETCH_ASSOC);
+              
+              if (count($completedRequests) > 0): ?>
+                <div class="document-list">
+                  <?php foreach ($completedRequests as $request): ?>
+                    <div class="document-item">
+                      <div class="document-info">
+                        <h4><?php echo htmlspecialchars($request['document_name']); ?></h4>
+                        <p>Status: <span class="status-<?php echo $request['status']; ?>"><?php echo ucfirst($request['status']); ?></span></p>
+                        <p>Completed: <?php echo date('M d, Y', strtotime($request['completed_at'])); ?></p>
+                      </div>
+                    </div>
+                  <?php endforeach; ?>
+                </div>
+              <?php else: ?>
+                <p>No completed requests found.</p>
+              <?php endif; ?>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Non-Editable Section -->
       <div class="form-section">
         <h3>Account Information (Read-Only)</h3>
@@ -240,6 +521,9 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
           <a href="change_email.php" class="btn" style="margin-top: 0.5em; display: inline-block; color:black;">Change Email</a>
         </div>
       </div>
+
+
+      
 
       <!-- Editable Section: Personal Details -->
       <div class="form-section">
@@ -310,12 +594,58 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
   </footer>
 
   <script>
-    // Mobile menu toggle functionality
+    // Modal Functions
+    function openDocumentModal() {
+      const modal = document.getElementById('documentModal');
+      modal.style.display = 'block';
+      modal.offsetHeight; // Trigger reflow
+      modal.classList.add('show');
+    }
+
+    function closeDocumentModal() {
+      const modal = document.getElementById('documentModal');
+      modal.classList.remove('show');
+      setTimeout(() => {
+        modal.style.display = 'none';
+      }, 200);
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+      const modal = document.getElementById('documentModal');
+      if (event.target == modal) {
+        closeDocumentModal();
+      }
+    }
+
+    // Tab Functions
+    function openTab(evt, tabName) {
+      evt.preventDefault(); // Prevent form submission
+      const tabcontent = document.getElementsByClassName("tab-content");
+      for (let i = 0; i < tabcontent.length; i++) {
+        tabcontent[i].classList.remove("active");
+      }
+
+      const tablinks = document.getElementsByClassName("tab-btn");
+      for (let i = 0; i < tablinks.length; i++) {
+        tablinks[i].classList.remove("active");
+      }
+
+      document.getElementById(tabName).classList.add("active");
+      evt.currentTarget.classList.add("active");
+    }
+
+    // Logout Confirmation
+    function confirmLogout() {
+      return confirm('Are you sure you want to logout?');
+    }
+
+    // Mobile menu toggle
     const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
     const navLinks = document.querySelector('.nav-links');
     mobileMenuBtn.addEventListener('click', () => {
       navLinks.classList.toggle('active');
     });
-  </script>
+    </script>
 </body>
 </html>

@@ -1,35 +1,28 @@
 <?php
 session_start();
-// doc_request.php
 require "../vendor/autoload.php";
 require "../config/dbconn.php";
 use Dompdf\Dompdf;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception; 
 
-
-//..pages/doc_request.php
-
-// 3) Make sure the user is actually logged in
+// Make sure the user is actually logged in
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
     header("Location: ../pages/login.php");
     exit;
 }
 
-// 4) Safe to read these now
+// Safe to read these now
 $current_admin_id = $_SESSION['user_id'];
-$bid              = $_SESSION['barangay_id'];
+$bid              = 32; // Force to Tambubong for testing purposes
 $role             = $_SESSION['role_id'];
-
 
 /**
  * Helper function to insert into AuditTrail
- * Adjust or refine as desired.
  */
-
 function logAuditTrail($pdo, $adminId, $action, $tableName, $recordId, $description) {
     $stmtAudit = $pdo->prepare("
-        INSERT INTO AuditTrail (admin_user_id, action, table_name, record_id, description)
+        INSERT INTO audit_trails (user_id, action, table_name, record_id, description)
         VALUES (:admin_id, :action, :tbl, :rid, :desc)
     ");
     $stmtAudit->execute([
@@ -41,356 +34,396 @@ function logAuditTrail($pdo, $adminId, $action, $tableName, $recordId, $descript
     ]);
 }
 
-// ------------------------------------------------------
-// 2. Check if we have an AJAX or direct action; if so, return JSON or process
-// ------------------------------------------------------
+// Handle AJAX actions
 if (isset($_GET['action'])) {
-  header('Content-Type: application/json');
-  $action   = $_GET['action'];
-  $reqId    = isset($_GET['id']) ? intval($_GET['id']) : 0;
-  $response = ['success' => false, 'message' => ''];
+    header('Content-Type: application/json');
+    $action   = $_GET['action'];
+    $reqId    = isset($_GET['id']) ? intval($_GET['id']) : 0;
+    $response = ['success' => false, 'message' => ''];
 
-  try {
-      if ($action === 'view_doc_request') {
-          $stmt = $pdo->prepare("
-              SELECT 
-                  dr.id AS document_request_id, 
-                  dr.request_date,
-                  dr.status,
-                  '' AS delivery_method,
-                  dr.proof_image_path,
-                  dr.remarks AS request_remarks,
-                  dt.name AS document_name,
-                  u.id AS user_id,
-                  u.email,
-                  u.contact_number,
-                  u.birth_date,
-                  u.gender,
-                  u.marital_status,
-                  u.emergency_contact_name,
-                  u.emergency_contact_number,
-                  u.emergency_contact_address,
-                  u.id_image_path,
-                  CONCAT(u.first_name,' ',COALESCE(u.middle_name,''),' ',u.last_name) AS full_name,
-                  MAX(CASE WHEN a.attr_key='clearance_purpose'  THEN a.attr_value END) AS clearance_purpose,
-                  MAX(CASE WHEN a.attr_key='residency_duration' THEN a.attr_value END) AS residency_duration,
-                  MAX(CASE WHEN a.attr_key='residency_purpose'  THEN a.attr_value END) AS residency_purpose,
-                  MAX(CASE WHEN a.attr_key='gmc_purpose'        THEN a.attr_value END) AS gmc_purpose,
-                  MAX(CASE WHEN a.attr_key='nic_reason'         THEN a.attr_value END) AS nic_reason,
-                  MAX(CASE WHEN a.attr_key='indigency_income'   THEN a.attr_value END) AS indigency_income,
-                  MAX(CASE WHEN a.attr_key='indigency_reason'   THEN a.attr_value END) AS indigency_reason
-              FROM document_requests dr
-              JOIN document_types dt ON dr.document_type_id = dt.id
-              JOIN users u ON dr.requested_by_user_id = u.id
-              LEFT JOIN document_request_attributes a ON dr.id = a.request_id
-              WHERE dr.barangay_id = :bid
-                AND dr.id = :id
-                AND LOWER(dr.status) = 'pending'
-              GROUP BY dr.id
-          ");
-          $stmt->execute([':bid'=>$bid, ':id'=>$reqId]);
-          $result = $stmt->fetch();
-          if ($result) {
-              $response['success'] = true;
-              $response['request'] = $result;
-              logAuditTrail($pdo, $current_admin_id, 'VIEW', 'document_requests', $reqId, 'Viewed document request details.');
-          } else {
-              $response['message'] = 'Record not found.';
-          }
-
-      }elseif ($action === 'ban_user') {
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $remarks = $_POST['remarks'] ?? '';
-    
-            // 1) Ban in DB
-            $stmtBan = $pdo->prepare("
-                UPDATE users
-                   SET is_active = 'no'
-                 WHERE id         = :id
-                   AND barangay_id = :bid
+    try {
+        if ($action === 'view_doc_request') {
+            $stmt = $pdo->prepare("
+                SELECT 
+                    dr.id AS document_request_id, 
+                    dr.request_date,
+                    dr.status,
+                    dr.proof_image_path,
+                    dr.remarks AS request_remarks,
+                    dr.price,
+                    dt.name AS document_name,
+                    dt.code AS document_code,
+                    -- Person information
+                    p.id AS person_id,
+                    CONCAT(p.first_name, ' ', COALESCE(p.middle_name, ''), ' ', p.last_name) AS full_name,
+                    p.contact_number,
+                    p.birth_date,
+                    p.gender,
+                    p.civil_status,
+                    -- Address information
+                    a.house_no,
+                    a.street,
+                    a.subdivision,
+                    b.name AS barangay_name,
+                    -- Emergency contact
+                    ec.contact_name AS emergency_contact_name,
+                    ec.contact_number AS emergency_contact_number,
+                    ec.contact_address AS emergency_contact_address,
+                    -- ID image
+                    pi.id_image_path,
+                    -- User information (if linked)
+                    u.email,
+                    u.id AS user_id
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                JOIN persons p ON dr.person_id = p.id
+                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+                LEFT JOIN barangay b ON dr.barangay_id = b.id
+                LEFT JOIN emergency_contacts ec ON p.id = ec.person_id
+                LEFT JOIN person_identification pi ON p.id = pi.person_id
+                WHERE dr.barangay_id = :bid
+                  AND dr.id = :id
+                  AND LOWER(dr.status) = 'pending'
             ");
-            if ($stmtBan->execute([':id'=>$reqId, ':bid'=>$bid])) {
-    
-                // 2) Fetch user email & name
-                $u = $pdo->prepare("
-                    SELECT email, CONCAT(first_name,' ',last_name) AS name
-                      FROM users
+            $stmt->execute([':bid'=>$bid, ':id'=>$reqId]);
+            $result = $stmt->fetch();
+            
+            if ($result) {
+                $response['success'] = true;
+                $response['request'] = $result;
+                logAuditTrail($pdo, $current_admin_id, 'VIEW', 'document_requests', $reqId, 'Viewed document request details.');
+            } else {
+                $response['message'] = 'Record not found.';
+            }
+
+        } elseif ($action === 'get_requests') {
+            // Get pending requests
+            $stmtPending = $pdo->prepare("
+                SELECT 
+                    dr.id AS document_request_id,
+                    dr.request_date,
+                    dr.status,
+                    dr.price,
+                    dr.proof_image_path,
+                    dt.name AS document_name,
+                    dt.code AS document_code,
+                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+                    p.contact_number,
+                    p.birth_date,
+                    p.gender,
+                    p.civil_status,
+                    COALESCE(u.id, 0) AS user_id,
+                    COALESCE(u.is_active, TRUE) AS is_active
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                JOIN persons p ON dr.person_id = p.id
+                LEFT JOIN users u ON p.user_id = u.id
+                WHERE dr.barangay_id = :bid
+                  AND LOWER(dr.status) = 'pending'
+                  AND (u.is_active IS NULL OR u.is_active = TRUE)
+                ORDER BY dr.request_date ASC
+            ");
+            $stmtPending->execute([':bid'=>$bid]);
+            $pending = $stmtPending->fetchAll(PDO::FETCH_ASSOC);
+
+            // Get completed requests
+            $stmtCompleted = $pdo->prepare("
+                SELECT 
+                    dr.id AS document_request_id,
+                    dr.request_date,
+                    dr.status,
+                    dr.completed_at,
+                    dt.name AS document_name,
+                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                JOIN persons p ON dr.person_id = p.id
+                WHERE dr.barangay_id = :bid
+                  AND LOWER(dr.status) IN ('completed', 'complete')
+                ORDER BY dr.request_date DESC
+            ");
+            $stmtCompleted->execute([':bid'=>$bid]);
+            $completed = $stmtCompleted->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode(['pending'=>$pending,'completed'=>$completed]);
+            exit;
+
+        } elseif ($action === 'ban_user') {
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                $remarks = $_POST['remarks'] ?? '';
+        
+                // 1) Ban in DB
+                $stmtBan = $pdo->prepare("
+                    UPDATE users
+                       SET is_active = FALSE
                      WHERE id = :id
                 ");
-                $u->execute([':id'=>$reqId]);
-                $userInfo = $u->fetch();
-    
-                // 3) Send notification email
-                if (!empty($userInfo['email'])) {
-                    try {
-                        $mail = new PHPMailer(true);
-                        $mail->isSMTP();
-                        $mail->Host       = 'smtp.gmail.com';
-                        $mail->SMTPAuth   = true;
-                        $mail->Username   = 'barangayhub2@gmail.com';
-                        $mail->Password   = 'eisy hpjz rdnt bwrp';
-                        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                        $mail->Port       = 587;
-                        $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
-                        $mail->addAddress($userInfo['email'], $userInfo['name']);
-                        $mail->Subject = 'Your account has been banned';
-                        // properly terminate the string and remove the stray backslash
-                        $mail->Body    = "Hello {$userInfo['name']},\n\nYour account has been suspended for the following reason: {$remarks}";
-                        $mail->send();
-                    
-                      } catch (Exception $e) {
-                        // optionally log the error:
-                        error_log('Mailer Error: ' . $mail->ErrorInfo);
+                
+                // First get the user ID from the person_id if needed
+                $getUserStmt = $pdo->prepare("
+                    SELECT u.id, u.email, CONCAT(p.first_name, ' ', p.last_name) AS name
+                    FROM users u
+                    JOIN persons p ON u.id = p.user_id
+                    WHERE u.id = :id OR p.id = :id
+                    LIMIT 1
+                ");
+                $getUserStmt->execute([':id'=>$reqId]);
+                $userInfo = $getUserStmt->fetch();
+                
+                if ($userInfo && $stmtBan->execute([':id'=>$userInfo['id']])) {
+                    // Send notification email
+                    if (!empty($userInfo['email'])) {
+                        try {
+                            $mail = new PHPMailer(true);
+                            $mail->isSMTP();
+                            $mail->Host       = 'smtp.gmail.com';
+                            $mail->SMTPAuth   = true;
+                            $mail->Username   = 'barangayhub2@gmail.com';
+                            $mail->Password   = 'eisy hpjz rdnt bwrp';
+                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                            $mail->Port       = 587;
+                            $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
+                            $mail->addAddress($userInfo['email'], $userInfo['name']);
+                            $mail->Subject = 'Your account has been suspended';
+                            $mail->Body    = "Hello {$userInfo['name']},\n\nYour account has been suspended for the following reason: {$remarks}";
+                            $mail->send();
+                        } catch (Exception $e) {
+                            error_log('Mailer Error: ' . $mail->ErrorInfo);
+                        }
                     }
-                }
-    
          
-                logAuditTrail(
-                  $pdo, $current_admin_id,
-                  'UPDATE','users',$reqId,
-                  'Banned user: '.$remarks
-                );
-                $response['success'] = true;
-                $response['message'] = 'User banned and notified.';
+                    logAuditTrail(
+                      $pdo, $current_admin_id,
+                      'UPDATE','users',$userInfo['id'],
+                      'Banned user: '.$remarks
+                    );
+                    $response['success'] = true;
+                    $response['message'] = 'User banned and notified.';
+                } else {
+                    $response['message'] = 'Unable to ban user or user not found.';
+                }
             } else {
-                $response['message'] = 'Unable to ban user.';
+                $response['message'] = 'Invalid request method.';
             }
-        } else {
-            $response['message'] = 'Invalid request method.';
+
+        } elseif ($action === 'complete') {
+            $stmt = $pdo->prepare("
+                UPDATE document_requests
+                SET status = 'completed', completed_at = NOW()
+                WHERE id = :id AND barangay_id = :bid
+            ");
+            if ($stmt->execute([':id'=>$reqId,':bid'=>$bid])) {
+                logAuditTrail($pdo,$current_admin_id,'UPDATE','document_requests',$reqId,'Marked complete manually.');
+                $response['success'] = true;
+                $response['message'] = 'Marked complete.';
+            } else {
+                $response['message'] = 'Unable to mark complete.';
+            }
+
+        } elseif ($action === 'delete') {
+            $remarks = $_POST['remarks'] ?? '';
+            
+            // Get request info first
+            $stmt = $pdo->prepare("
+                SELECT 
+                    dr.id AS document_request_id,
+                    dt.name AS document_name,
+                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+                    u.email
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                JOIN persons p ON dr.person_id = p.id
+                LEFT JOIN users u ON p.user_id = u.id
+                WHERE dr.id = :id
+                  AND dr.barangay_id = :bid
+            ");
+            $stmt->execute([':id'=>$reqId,':bid'=>$bid]);
+            $requestInfo = $stmt->fetch();
+            
+            if (!$requestInfo) {
+                $response['message'] = 'Request not found; cannot delete.';
+                echo json_encode($response);
+                exit;
+            }
+            
+            // Send notification email if user has email
+            if (!empty($requestInfo['email'])) {
+                $mail = new PHPMailer(true);
+                try {
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'barangayhub2@gmail.com';
+                    $mail->Password   = 'eisy hpjz rdnt bwrp';
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
+                    $mail->setFrom('noreply@barangayhub.com','iBarangay');
+                    $mail->addAddress($requestInfo['email'], $requestInfo['requester_name']);
+                    $mail->Subject = 'Document Request Not Processed';
+                    $mail->Body    = "Hello {$requestInfo['requester_name']},\n\nYour request for '{$requestInfo['document_name']}' has been declined.\n\nReason: {$remarks}";
+                    $mail->send();
+                } catch (Exception $e) {
+                    error_log('Email send failed: ' . $e->getMessage());
+                }
+            }
+            
+            // Delete the request
+            $stmtDel = $pdo->prepare("
+                DELETE FROM document_requests
+                WHERE id = :id AND barangay_id = :bid
+            ");
+            if ($stmtDel->execute([':id'=>$reqId,':bid'=>$bid])) {
+                logAuditTrail($pdo,$current_admin_id,'DELETE','document_requests',$reqId,'Deleted request with remarks: '.$remarks);
+                $response['success'] = true;
+                $response['message'] = 'Request deleted.';
+            } else {
+                $response['message'] = 'Unable to delete request.';
+            }
+
+        } elseif ($action === 'print') {
+            ob_start();
+            $docRequestId = $reqId;
+            require __DIR__ . '/../functions/document_template.php';
+            $html = ob_get_clean();
+            $dompdf = new Dompdf();
+            $dompdf->loadHtml($html);
+            $dompdf->setPaper('A4','portrait');
+            $dompdf->render();
+            header('Content-Type: application/pdf');
+            header("Content-Disposition: inline; filename=\"document_request_{$reqId}.pdf\"");
+            echo $dompdf->output();
+            exit;
+
+        } elseif ($action === 'send_email') {
+            // Get request info
+            $stmt = $pdo->prepare("
+                SELECT 
+                    dr.id AS document_request_id,
+                    dt.name AS document_name,
+                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+                    u.email
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                JOIN persons p ON dr.person_id = p.id
+                LEFT JOIN users u ON p.user_id = u.id
+                WHERE dr.id = :id
+                  AND dr.barangay_id = :bid
+            ");
+            $stmt->execute([':id'=>$reqId, ':bid'=>$bid]);
+            $info = $stmt->fetch();
+            
+            if ($info && !empty($info['email'])) {
+                // Generate PDF
+                ob_start();
+                $docRequestId = $reqId;
+                require __DIR__ . '/../functions/document_template.php';
+                $html = ob_get_clean();
+                $dompdf = new Dompdf();
+                $dompdf->loadHtml($html);
+                $dompdf->setPaper('A4','portrait');
+                $dompdf->render();
+                $pdfOutput = $dompdf->output();
+                $pdfName   = "document_request_{$reqId}.pdf";
+                
+                // Send email
+                $mail = new PHPMailer(true);
+                try {
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'barangayhub2@gmail.com';
+                    $mail->Password   = 'eisy hpjz rdnt bwrp';
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
+                    $mail->setFrom('noreply@barangayhub.com','iBarangay');
+                    $mail->addAddress($info['email'], $info['requester_name']);
+                    $mail->Subject = 'Your Document Request: ' . $info['document_name'];
+                    $mail->Body    = "Hello {$info['requester_name']},\n\nPlease find attached your requested document.";
+                    $mail->addStringAttachment($pdfOutput, $pdfName, 'base64', 'application/pdf');
+                    $mail->send();
+                    
+                    // Update status
+                    $upd = $pdo->prepare("
+                        UPDATE document_requests
+                        SET status = 'completed', completed_at = NOW()
+                        WHERE id = :id AND barangay_id = :bid
+                    ");
+                    $upd->execute([':id'=>$reqId,':bid'=>$bid]);
+                    
+                    logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,'Sent PDF and marked complete.');
+                    $response['success'] = true;
+                    $response['message'] = 'Email sent & marked complete.';
+                } catch (Exception $e) {
+                    $response['message'] = 'Mailer error: '.$mail->ErrorInfo;
+                }
+            } else {
+                $response['message'] = 'Request/email info not found.';
+            }
         }
-    }elseif ($action === 'send_email') {
-          $stmt = $pdo->prepare("
-              SELECT 
-                  dr.id AS document_request_id,
-                  dt.name AS document_name,
-                  u.email,
-                  CONCAT(u.first_name,' ',u.last_name) AS requester_name
-              FROM document_requests dr
-              JOIN document_types dt ON dr.document_type_id = dt.id
-              JOIN users u ON dr.requested_by_user_id = u.id
-              WHERE dr.id = :id
-                AND dr.barangay_id = :bid
-          ");
-          $stmt->execute([':id'=>$reqId, ':bid'=>$bid]);
-          $info = $stmt->fetch();
-          if ($info && !empty($info['email'])) {
-              ob_start();
-              $docRequestId = $reqId;
-              require __DIR__ . '/../functions/document_template.php';
-              $html = ob_get_clean();
-              $dompdf = new Dompdf();
-              $dompdf->loadHtml($html);
-              $dompdf->setPaper('A4','portrait');
-              $dompdf->render();
-              $pdfOutput = $dompdf->output();
-              $pdfName   = "document_request_{$reqId}.pdf";
-              $mail = new PHPMailer(true);
-              try {
-                  $mail->isSMTP();
-                  $mail->Host       = 'smtp.gmail.com';
-                  $mail->SMTPAuth   = true;
-                  $mail->Username   = 'barangayhub2@gmail.com';
-                  $mail->Password   = 'eisy hpjz rdnt bwrp';
-                  $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                  $mail->Port       = 587;
-                  $mail->setFrom('noreply@barangayhub.com','iBarangay');
-                  $mail->addAddress($info['email'], $info['requester_name']);
-                  $mail->Subject = 'Your Document Request: ' . $info['document_name'];
-                  $mail->Body    = "Hello {$info['requester_name']},\n\nPlease find attached your requested document.";
-                  $mail->addStringAttachment($pdfOutput, $pdfName, 'base64', 'application/pdf');
-                  $mail->send();
-                  $upd = $pdo->prepare("
-                      UPDATE document_requests
-                      SET status = 'Complete'
-                      WHERE id = :id AND barangay_id = :bid
-                  ");
-                  $upd->execute([':id'=>$reqId,':bid'=>$bid]);
-                  logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,'Sent PDF and marked complete.');
-                  $response['success'] = true;
-                  $response['message'] = 'Email sent & marked complete.';
-              } catch (Exception $e) {
-                  $response['message'] = 'Mailer error: '.$mail->ErrorInfo;
-              }
-          } else {
-              $response['message'] = 'Request/email info not found.';
-          }
+        
+    } catch (Exception $ex) {
+        $response['message'] = 'Server Error: '.$ex->getMessage();
+    }
 
-      } elseif ($action === 'print') {
-          ob_start();
-          $docRequestId = $reqId;
-          require __DIR__ . '/../functions/document_template.php';
-          $html = ob_get_clean();
-          $dompdf = new Dompdf();
-          $dompdf->loadHtml($html);
-          $dompdf->setPaper('A4','portrait');
-          $dompdf->render();
-          header('Content-Type: application/pdf');
-          header("Content-Disposition: inline; filename=\"document_request_{$reqId}.pdf\"");
-          echo $dompdf->output();
-          exit;
-
-      } elseif ($action === 'complete') {
-          $stmt = $pdo->prepare("
-              UPDATE document_requests
-              SET status = 'Complete'
-              WHERE id = :id AND barangay_id = :bid
-          ");
-          if ($stmt->execute([':id'=>$reqId,':bid'=>$bid])) {
-              logAuditTrail($pdo,$current_admin_id,'UPDATE','document_requests',$reqId,'Marked complete manually.');
-              $response['success'] = true;
-              $response['message'] = 'Marked complete.';
-          } else {
-              $response['message'] = 'Unable to mark complete.';
-          }
-
-      } elseif ($action === 'delete') {
-          $remarks = $_POST['remarks'] ?? '';
-          $stmt = $pdo->prepare("
-              SELECT 
-                  dr.id AS document_request_id,
-                  dt.name AS document_name,
-                  u.email,
-                  CONCAT(u.first_name,' ',u.last_name) AS requester_name
-              FROM document_requests dr
-              JOIN document_types dt ON dr.document_type_id = dt.id
-              JOIN users u ON dr.requested_by_user_id = u.id
-              WHERE dr.id = :id
-                AND dr.barangay_id = :bid
-          ");
-          $stmt->execute([':id'=>$reqId,':bid'=>$bid]);
-          $requestInfo = $stmt->fetch();
-          if (!$requestInfo) {
-              $response['message'] = 'Request not found; cannot delete.';
-              echo json_encode($response);
-              exit;
-          }
-          if (!empty($requestInfo['email'])) {
-              $mail = new PHPMailer(true);
-              try {
-                  $mail->isSMTP();
-                  $mail->Host       = 'smtp.gmail.com';
-                  $mail->SMTPAuth   = true;
-                  $mail->Username   = 'barangayhub2@gmail.com';
-                  $mail->Password   = 'eisy hpjz rdnt bwrp';
-                  $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                  $mail->Port       = 587;
-                  $mail->setFrom('noreply@barangayhub.com','iBarangay');
-                  $mail->addAddress($requestInfo['email'], $requestInfo['requester_name']);
-                  $mail->Subject = 'Document Request Not Processed';
-                  $mail->Body    = "Hello {$requestInfo['requester_name']},\n\nYour request for '{$requestInfo['document_name']}' has been declined.\n\nReason: {$remarks}";
-                  $mail->send();
-              } catch (Exception $e) {}
-          }
-          $stmtDel = $pdo->prepare("
-              DELETE FROM document_requests
-              WHERE id = :id AND barangay_id = :bid
-          ");
-          if ($stmtDel->execute([':id'=>$reqId,':bid'=>$bid])) {
-              logAuditTrail($pdo,$current_admin_id,'DELETE','document_requests',$reqId,'Deleted request with remarks: '.$remarks);
-              $response['success'] = true;
-              $response['message'] = 'Request deleted.';
-          } else {
-              $response['message'] = 'Unable to delete request.';
-          }
-
-      } elseif ($action === 'get_requests') {
-        $stmtPending = $pdo->prepare("
-        SELECT 
-            dr.id AS document_request_id,
-            dr.request_date,
-            dr.status,
-            '' AS delivery_method,
-            dt.name AS document_name,
-            CONCAT(u.first_name,' ',u.last_name) AS requester_name
-        FROM document_requests dr
-        JOIN document_types dt ON dr.document_type_id = dt.id
-        JOIN users u ON dr.requested_by_user_id = u.id
-        WHERE dr.barangay_id = :bid
-          AND LOWER(dr.status) = 'pending'
-        ORDER BY dr.request_date ASC
-    ");
-    $stmtPending->execute([':bid'=>$bid]);
-    $pending = $stmtPending->fetchAll(PDO::FETCH_ASSOC);
-
-    $stmtCompleted = $pdo->prepare("
-        SELECT 
-            dr.id AS document_request_id,
-            dr.request_date,
-            dr.status,
-            '' AS delivery_method,
-            dt.name AS document_name,
-            CONCAT(u.first_name,' ',u.last_name) AS requester_name
-        FROM document_requests dr
-        JOIN document_types dt ON dr.document_type_id = dt.id
-        JOIN users u ON dr.requested_by_user_id = u.id
-        WHERE dr.barangay_id = :bid
-          AND LOWER(dr.status) = 'complete'
-        ORDER BY dr.request_date ASC
-    ");
-    $stmtCompleted->execute([':bid'=>$bid]);
-    $completed = $stmtCompleted->fetchAll(PDO::FETCH_ASSOC);
-
-    echo json_encode(['pending'=>$pending,'completed'=>$completed]);
+    echo json_encode($response);
     exit;
-      }
-  } catch (Exception $ex) {
-      $response['message'] = 'Server Error: '.$ex->getMessage();
-  }
-
-  echo json_encode($response);
-  exit;
 }
 
-
-// ----------------------------------------------------
-// 3. Only include header + HTML if no specific action
-// ----------------------------------------------------
+// Only include header + HTML if no specific action
 require_once "../pages/header.php";
-
-// EXAMPLE: Hard-coded barangay_id=1 to filter requests
-
 
 // 1) Fetch all "Pending" doc requests (FIFO => earliest date first)
 $stmt = $pdo->prepare("
-  SELECT 
+    SELECT 
         dr.id AS document_request_id,
         dr.request_date,
         dr.status,
-        '' AS delivery_method,
+        dr.proof_image_path,
+        dr.price,
         dt.name AS document_name,
-        u.id AS user_id,
-        u.is_active,
-        CONCAT(u.first_name, ' ', u.last_name) AS requester_name
+        dt.code AS document_code,
+        CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+        p.contact_number,
+        p.birth_date,
+        p.gender,
+        p.civil_status,
+        b.name AS barangay_name,
+        COALESCE(u.id, 0) AS user_id,
+        COALESCE(u.is_active, TRUE) AS is_active
     FROM document_requests dr
     JOIN document_types dt ON dr.document_type_id = dt.id
-    JOIN users u          ON dr.requested_by_user_id           = u.id
-    WHERE dr.barangay_id   = :bid
-      AND u.is_active     = 'yes'
-      AND LOWER(dr.status)= 'pending'
+    JOIN persons p ON dr.person_id = p.id
+    LEFT JOIN users u ON p.user_id = u.id
+    JOIN barangay b ON dr.barangay_id = b.id
+    WHERE dr.barangay_id = :bid
+      AND LOWER(dr.status) = 'pending'
+      AND (u.is_active IS NULL OR u.is_active = TRUE)
     ORDER BY dr.request_date ASC
 ");
-$stmt->execute([':bid' =>$bid]);
+$stmt->execute([':bid' => $bid]);
 $docRequests = $stmt->fetchAll();
 
-// 2) Fetch all "Complete" doc requests (History), also FIFO => earliest date first
+// 2) Fetch all "Complete" doc requests (History)
 $stmtHist = $pdo->prepare("
-     SELECT 
+    SELECT 
         dr.id AS document_request_id,
         dr.request_date,
         dr.status,
-        '' AS delivery_method,
+        dr.completed_at,
         dt.name AS document_name,
-        CONCAT(u.first_name, ' ', u.last_name) AS requester_name
+        CONCAT(p.first_name, ' ', p.last_name) AS requester_name
     FROM document_requests dr
     JOIN document_types dt ON dr.document_type_id = dt.id
-    JOIN users u ON dr.requested_by_user_id = u.id
+    JOIN persons p ON dr.person_id = p.id
     WHERE dr.barangay_id = :bid
-      AND LOWER(dr.status) = 'complete'
-    ORDER BY dr.request_date ASC
+      AND LOWER(dr.status) IN ('completed', 'complete')
+    ORDER BY dr.request_date DESC
 ");
 $stmtHist->execute([':bid'=>$bid]);
 $completedRequests = $stmtHist->fetchAll();
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -402,181 +435,224 @@ $completedRequests = $stmtHist->fetchAll();
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
   <!-- Font Awesome -->
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+  <style>
+    .downloadPhotoBtn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        transition: all 0.2s;
+    }
+
+    .downloadPhotoBtn:hover {
+        background-color: #f0fdf4;
+    }
+
+    .downloadPhotoBtn i {
+        font-size: 0.875rem;
+    }
+
+    .action-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        border-radius: 0.375rem;
+        transition: all 0.2s;
+    }
+
+    .action-btn:hover {
+        background-color: #f3f4f6;
+    }
+
+    .action-btn i {
+        font-size: 0.875rem;
+    }
+  </style>
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
     <!-- Pending Requests Section -->
     <section id="docRequests" class="mb-10">
-  <header class="mb-6">
-    <h1 class="text-3xl font-bold text-blue-800">Pending Document Requests</h1>
-  </header>
+      <header class="mb-6">
+        <h1 class="text-3xl font-bold text-blue-800">Pending Document Requests</h1>
+        <p class="text-gray-600 mt-2">Total pending requests: <span class="font-semibold"><?= count($docRequests) ?></span></p>
+      </header>
 
-  <input type="text" id="pendingSearch" 
-         class="p-2 border rounded mb-4" 
-         placeholder="Search pending requests...">
+      <input type="text" id="pendingSearch" 
+             class="p-2 border rounded mb-4" 
+             placeholder="Search pending requests...">
 
-  <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="min-w-full divide-y divide-gray-200" id="docRequestsTable">
-        <thead class="bg-gray-50">
-          <tr>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Requested By
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Document Type
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Request Date
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Delivery Method
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Status
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-              Actions
-            </th>
-          </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-          <?php if (!empty($docRequests)): ?>
-            <?php foreach ($docRequests as $req): ?>
-            <tr class="hover:bg-gray-50 transition-colors">
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['requester_name']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['document_name']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['request_date']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['delivery_method']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm border-b">
-                <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">
-                  <?= htmlspecialchars($req['status']) ?>
-                </span>
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <div class="flex items-center space-x-2">
-                  <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="<?= $req['document_request_id'] ?>">
-                    View
-                  </button>
-                  <?php if (strtolower($req['delivery_method'])==='softcopy'): ?>
-                  <button class="sendDocEmailBtn bg-green-600 text-white px-3 py-1 rounded hover:bg-green-700" data-id="<?= $req['document_request_id'] ?>">
-                    Send Email
-                  </button>
-                  <?php else: ?>
-                  <button class="printDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
-                    Print
-                  </button>
-                  <button class="completeDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
-                    Complete
-                  </button>
-                  <?php endif; ?>
-                  <button class="deleteDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
-                    Delete
-                  </button>
-                  <?php if ($req['is_active'] === 'yes'): ?>
-                    <button
-                      class="banUserBtn text-red-600 hover:text-red-900"
-                      data-id="<?= $req['user_id'] ?>"
-                    >
-                      Ban User
-                    </button>
-                  <?php endif; ?>
-                </div>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-          <?php else: ?>
-            <tr>
-              <td colspan="6" class="px-4 py-4 text-center text-gray-500">No pending document requests found.</td>
-            </tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
-  </div>
-</section>
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200" id="docRequestsTable">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Requester Name
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Document Type
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Contact Number
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Request Date
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Price
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Status
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <?php if (!empty($docRequests)): ?>
+                <?php foreach ($docRequests as $req): ?>
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= htmlspecialchars($req['requester_name']) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= htmlspecialchars($req['document_name']) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= htmlspecialchars($req['contact_number'] ?? 'N/A') ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= date('M d, Y h:i A', strtotime($req['request_date'])) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    ₱<?= number_format($req['price'] ?? 0, 2) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm border-b">
+                    <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">
+                      <?= ucfirst(htmlspecialchars($req['status'])) ?>
+                    </span>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <div class="flex items-center space-x-2">
+                      <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="<?= $req['document_request_id'] ?>">
+                        <i class="fas fa-eye"></i> View
+                      </button>
+                      <?php if ($req['document_code'] === 'barangay_indigency' && $req['proof_image_path']): ?>
+                      <a href="../<?= $req['proof_image_path'] ?>" download class="downloadPhotoBtn text-green-600 hover:text-green-900">
+                        <i class="fas fa-download"></i> Photo
+                      </a>
+                      <?php endif; ?>
+                      <button class="printDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
+                        <i class="fas fa-print"></i> Print
+                      </button>
+                      <button class="sendDocEmailBtn p-2 text-green-600 hover:text-green-900 rounded-lg hover:bg-green-50" data-id="<?= $req['document_request_id'] ?>">
+                        <i class="fas fa-envelope"></i> Email
+                      </button>
+                      <button class="completeDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
+                        <i class="fas fa-check"></i> Complete
+                      </button>
+                      <button class="deleteDocRequestBtn p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50" data-id="<?= $req['document_request_id'] ?>">
+                        <i class="fas fa-trash"></i> Delete
+                      </button>
+                      <?php if ($req['user_id'] > 0 && $req['is_active']): ?>
+                        <button
+                          class="banUserBtn text-red-600 hover:text-red-900"
+                          data-id="<?= $req['user_id'] ?>"
+                        >
+                          <i class="fas fa-ban"></i> Ban
+                        </button>
+                      <?php endif; ?>
+                    </div>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <tr>
+                  <td colspan="7" class="px-4 py-4 text-center text-gray-500">No pending document requests found.</td>
+                </tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
 
     <!-- Completed (History) Section -->
     <section id="docRequestsHistory">
-  <header class="mb-6">
-    <h1 class="text-3xl font-bold text-green-800">Document Requests History (Completed)</h1>
-  </header>
+      <header class="mb-6">
+        <h1 class="text-3xl font-bold text-green-800">Document Requests History (Completed)</h1>
+        <p class="text-gray-600 mt-2">Total completed requests: <span class="font-semibold"><?= count($completedRequests) ?></span></p>
+      </header>
 
-  <input type="text" id="completedSearch" 
-         class="p-2 border rounded mb-4" 
-         placeholder="Search completed requests...">
+      <input type="text" id="completedSearch" 
+             class="p-2 border rounded mb-4" 
+             placeholder="Search completed requests...">
 
-  <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-    <div class="overflow-x-auto">
-      <table class="min-w-full divide-y divide-gray-200" id="docRequestsHistoryTable">
-        <thead class="bg-gray-50">
-          <tr>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Requested By
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Document Type
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Request Date
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Delivery Method
-            </th>
-            <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-              Status
-            </th>
-          </tr>
-        </thead>
-        <tbody class="bg-white divide-y divide-gray-200">
-          <?php if (!empty($completedRequests)): ?>
-            <?php foreach ($completedRequests as $req): ?>
-            <tr class="hover:bg-gray-50 transition-colors">
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['requester_name']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['document_name']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['request_date']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                <?= htmlspecialchars($req['delivery_method']) ?>
-              </td>
-              <td class="px-4 py-3 text-sm border-b">
-                <span class="px-3 py-1 bg-green-100 text-green-800 rounded">
-                  <?= htmlspecialchars($req['status']) ?>
-                </span>
-              </td>
-            </tr>
-            <?php endforeach; ?>
-          <?php else: ?>
-            <tr>
-              <td colspan="5" class="px-4 py-4 text-center text-gray-500">No completed document requests found.</td>
-            </tr>
-          <?php endif; ?>
-        </tbody>
-      </table>
-    </div>
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200" id="docRequestsHistoryTable">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Requested By
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Document Type
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Request Date
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Completed Date
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Status
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <?php if (!empty($completedRequests)): ?>
+                <?php foreach ($completedRequests as $req): ?>
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= htmlspecialchars($req['requester_name']) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= htmlspecialchars($req['document_name']) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= date('M d, Y h:i A', strtotime($req['request_date'])) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= $req['completed_at'] ? date('M d, Y h:i A', strtotime($req['completed_at'])) : 'N/A' ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm border-b">
+                    <span class="px-3 py-1 bg-green-100 text-green-800 rounded">
+                      <?= ucfirst(htmlspecialchars($req['status'])) ?>
+                    </span>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <tr>
+                  <td colspan="5" class="px-4 py-4 text-center text-gray-500">No completed document requests found.</td>
+                </tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
   </div>
-</section>
-  </div>
 
-  <!-- Inline JavaScript to handle doc request actions -->
+  <!-- Include the JavaScript and modal code here -->
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      // ======================================
-      // Searching & Sorting: common function
-      // ======================================
+      // Search functionality
       function tableSearch(inputElem, tableElem) {
         inputElem.addEventListener('keyup', function() {
           const term = this.value.toLowerCase();
@@ -590,13 +666,10 @@ $completedRequests = $stmtHist->fetchAll();
       function sortTableByColumn(table, columnIndex) {
         const tBody = table.querySelector('tbody');
         const rows = Array.from(tBody.querySelectorAll('tr'));
-        // Check if we have a current sort direction
         const currentHeader = table.querySelectorAll('th')[columnIndex];
         const isAsc = currentHeader.getAttribute('data-sort-dir') === 'asc';
-        // Toggle
         currentHeader.setAttribute('data-sort-dir', isAsc ? 'desc' : 'asc');
 
-        // Remove from other THs
         table.querySelectorAll('th').forEach((th, idx) => {
           if (idx !== columnIndex) {
             th.removeAttribute('data-sort-dir');
@@ -615,7 +688,7 @@ $completedRequests = $stmtHist->fetchAll();
         sortedRows.forEach(row => tBody.appendChild(row));
       }
 
-      // Attach searching
+      // Initialize search and sort
       const pendingSearch = document.getElementById('pendingSearch');
       const docRequestsTable = document.getElementById('docRequestsTable');
       tableSearch(pendingSearch, docRequestsTable);
@@ -624,7 +697,7 @@ $completedRequests = $stmtHist->fetchAll();
       const docRequestsHistoryTable = document.getElementById('docRequestsHistoryTable');
       tableSearch(completedSearch, docRequestsHistoryTable);
 
-      // Attach sorting
+      // Add sorting to tables
       docRequestsTable.querySelectorAll('thead th.sortable').forEach((th, idx) => {
         th.addEventListener('click', () => {
           sortTableByColumn(docRequestsTable, idx);
@@ -636,7 +709,7 @@ $completedRequests = $stmtHist->fetchAll();
         });
       });
 
-      // Helper: show loading spinner (SweetAlert2)
+      // Helper functions
       function showLoading() {
         Swal.fire({
           title: 'Please wait...',
@@ -647,12 +720,11 @@ $completedRequests = $stmtHist->fetchAll();
           }
         });
       }
-      // Helper: hide loading spinner
+
       function hideLoading() {
         Swal.close();
       }
 
-      // Helper function to do a GET and parse JSON
       function fetchJSON(url) {
         showLoading();
         return fetch(url)
@@ -666,22 +738,17 @@ $completedRequests = $stmtHist->fetchAll();
           .finally(() => hideLoading());
       }
 
-      // (1) VIEW Document Request (show all user details + ID image)
-     
+      // Event handlers for buttons
       document.querySelectorAll('.printDocRequestBtn').forEach(btn => {
-  btn.addEventListener('click', function() {
-    const requestId = this.getAttribute('data-id');
+        btn.addEventListener('click', function() {
+          const requestId = this.getAttribute('data-id');
+          window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
+        });
+      });
 
-    // open generated PDF inline in new tab
-    window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
-  });
-});
-
-      // (3) SEND EMAIL (Softcopy) => Confirm => Send => Auto-complete
       document.querySelectorAll('.sendDocEmailBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           let requestId = this.getAttribute('data-id');
-
           Swal.fire({
             title: 'Send Email?',
             text: 'Are you sure you want to send the requested document via email? This will automatically mark it as Complete.',
@@ -693,7 +760,6 @@ $completedRequests = $stmtHist->fetchAll();
             cancelButtonText: 'Cancel'
           }).then((result) => {
             if (result.isConfirmed) {
-              // Proceed with sending
               fetchJSON(`doc_request.php?action=send_email&id=${requestId}`)
                 .then(data => {
                   if (data.success) {
@@ -712,7 +778,6 @@ $completedRequests = $stmtHist->fetchAll();
         });
       });
 
-      // (4) COMPLETE Document Request (Hardcopy)
       document.querySelectorAll('.completeDocRequestBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           let requestId = this.getAttribute('data-id');
@@ -744,12 +809,9 @@ $completedRequests = $stmtHist->fetchAll();
         });
       });
 
-      // (5) DELETE Document Request => Ask for remarks => Email => Delete
       document.querySelectorAll('.deleteDocRequestBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           let requestId = this.getAttribute('data-id');
-
-          // Ask user for remarks
           Swal.fire({
             title: 'Delete Document Request?',
             text: 'Please provide remarks/reason for not processing this request. It will be emailed to the user.',
@@ -769,10 +831,8 @@ $completedRequests = $stmtHist->fetchAll();
             }
           }).then((result) => {
             if (result.isConfirmed && result.value) {
-              // Remarks from the input
               const userRemarks = result.value;
               showLoading();
-              // We'll do a normal fetch with POST to pass remarks
               const formData = new FormData();
               formData.append('remarks', userRemarks);
 
@@ -804,195 +864,75 @@ $completedRequests = $stmtHist->fetchAll();
           });
         });
       });
-    });
- // Toggle View Modal
 
-
-    function toggleViewDocModal() {
-  document.getElementById('viewDocModal').classList.toggle('hidden');
-}document.querySelectorAll('.viewDocRequestBtn').forEach(btn => {
-  btn.addEventListener('click', function() {
-    const requestId = this.dataset.id;
-    fetch(`doc_request.php?action=view_doc_request&id=${requestId}`)
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          const r = data.request;
-          // Populate modal fields
-          document.getElementById('viewReqName').textContent = r.full_name;
-          document.getElementById('viewDocType').textContent = r.document_name;
-          document.getElementById('viewReqDate').textContent = r.request_date;
-          document.getElementById('viewStatus').textContent = r.status;
-          document.getElementById('viewDelivery').textContent = r.delivery_method;
-          document.getElementById('viewRemarks').textContent = r.request_remarks || 'N/A';
-          document.getElementById('viewReqEmail').textContent = r.email || 'N/A';
-          document.getElementById('viewReqContact').textContent = r.contact_number || 'N/A';
-          document.getElementById('viewReqBirth').textContent = r.birth_date || 'N/A';
-          document.getElementById('viewReqGender').textContent = r.gender || 'N/A';
-          document.getElementById('viewReqMarital').textContent = r.marital_status || 'N/A';
-          document.getElementById('viewEmergencyName').textContent = r.emergency_contact_name || 'N/A';
-          document.getElementById('viewEmergencyContact').textContent = r.emergency_contact_number || 'N/A';
-          document.getElementById('viewEmergencyAddress').textContent = r.emergency_contact_address || 'N/A';
-          
-          // Handle ID Image
-          const idImageContainer = document.getElementById('viewIdImage');
-        idImageContainer.innerHTML = '';                    // clear it first
-        if (r.id_image_path) {
-          const img = document.createElement('img');
-          img.src = `../${r.id_image_path}`;                // <-- prepend "../"
-          img.alt = 'ID Image';
-          img.className = 'max-w-[300px] h-auto border rounded cursor-zoom-in';
-          img.addEventListener('click', () => {
-            Swal.fire({
-              imageUrl: `../${r.id_image_path}`,
-              imageAlt: 'ID Image',
-              showConfirmButton: false,
-              showCloseButton: true,
-              background: 'transparent',
-              backdrop: 'rgba(0,0,0,0.8)'
+      document.querySelectorAll('.viewDocRequestBtn').forEach(btn => {
+        btn.addEventListener('click', function() {
+          const requestId = this.dataset.id;
+          fetch(`doc_request.php?action=view_doc_request&id=${requestId}`)
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                const r = data.request;
+                // Show modal with request details
+                Swal.fire({
+                  title: 'Document Request Details',
+                  html: `
+                    <div class="text-left">
+                      <p><strong>Name:</strong> ${r.full_name}</p>
+                      <p><strong>Document:</strong> ${r.document_name}</p>
+                      <p><strong>Contact:</strong> ${r.contact_number || 'N/A'}</p>
+                      <p><strong>Email:</strong> ${r.email || 'N/A'}</p>
+                      <p><strong>Request Date:</strong> ${r.request_date}</p>
+                      <p><strong>Status:</strong> ${r.status}</p>
+                      <p><strong>Price:</strong> ₱${parseFloat(r.price || 0).toFixed(2)}</p>
+                    </div>
+                  `,
+                  showCloseButton: true,
+                  showConfirmButton: false,
+                  width: '600px'
+                });
+              } else {
+                Swal.fire('Error', data.message || 'Unable to load details.', 'error');
+              }
             });
-          });
-          idImageContainer.appendChild(img);
-        } else {
-          idImageContainer.textContent = 'No ID image available';
-        }
-
-        // 2) Proof of Payment
-        const proofContainer = document.getElementById('viewProofImage');
-        proofContainer.innerHTML = '';
-        if (r.proof_image_path) {
-          // Check if this is a PayMongo reference
-          if (r.proof_image_path.startsWith('paymongo:')) {
-            const paymongoRef = r.proof_image_path.substr(9); // Remove 'paymongo:' prefix
-            proofContainer.innerHTML = `
-              <div class="bg-blue-50 p-3 rounded-md">
-                <p class="text-blue-700"><i class="fas fa-check-circle text-blue-500"></i> Payment completed via PayMongo</p>
-                <p class="text-sm text-blue-600 mt-1">Reference: ${paymongoRef}</p>
-              </div>
-            `;
-          } else {
-            const img2 = document.createElement('img');
-            img2.src = `../${r.proof_image_path}`;
-            img2.alt = 'Proof of Payment';
-            img2.className = 'max-w-[300px] h-auto border rounded cursor-zoom-in';
-            img2.addEventListener('click', () => {
-              Swal.fire({
-                imageUrl: `../${r.proof_image_path}`,
-                imageAlt: 'Proof of Payment',
-                showConfirmButton: false,
-                showCloseButton: true,
-                background: 'transparent',
-                backdrop: 'rgba(0,0,0,0.8)'
-              });
-            });
-            proofContainer.appendChild(img2);
-          }
-        } else {
-          proofContainer.textContent = 'No proof of payment available';
-        }
-
-          toggleViewDocModal();
-        } else {
-          Swal.fire('Error', data.message || 'Unable to load details.', 'error');
-        }
-      });
-  });
-});
-
-
-document.querySelectorAll('.banUserBtn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const userId = btn.dataset.id;
-    Swal.fire({
-      title: 'Ban this user?',
-      input: 'textarea',
-      inputPlaceholder: 'Reason for ban...',
-      showCancelButton: true,
-      confirmButtonText: 'Ban',
-      preConfirm: reason => {
-        if (!reason) Swal.showValidationMessage('You need to provide a reason');
-        return reason;
-      }
-    }).then(result => {
-      if (result.isConfirmed) {
-        Swal.showLoading();
-        fetch(`doc_request.php?action=ban_user&id=${userId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `remarks=${encodeURIComponent(result.value)}`
-        })
-        .then(r => r.json())
-        .then(data => {
-          Swal.close();
-          Swal.fire(
-            data.success ? 'Banned!' : 'Error',
-            data.message,
-            data.success ? 'success' : 'error'
-          ).then(() => data.success && location.reload());
         });
-      }
+      });
+
+      document.querySelectorAll('.banUserBtn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const userId = btn.dataset.id;
+          Swal.fire({
+            title: 'Ban this user?',
+            input: 'textarea',
+            inputPlaceholder: 'Reason for ban...',
+            showCancelButton: true,
+            confirmButtonText: 'Ban',
+            preConfirm: reason => {
+              if (!reason) Swal.showValidationMessage('You need to provide a reason');
+              return reason;
+            }
+          }).then(result => {
+            if (result.isConfirmed) {
+              Swal.showLoading();
+              fetch(`doc_request.php?action=ban_user&id=${userId}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: `remarks=${encodeURIComponent(result.value)}`
+              })
+              .then(r => r.json())
+              .then(data => {
+                Swal.close();
+                Swal.fire(
+                  data.success ? 'Banned!' : 'Error',
+                  data.message,
+                  data.success ? 'success' : 'error'
+                ).then(() => data.success && location.reload());
+              });
+            }
+          });
+        });
+      });
     });
-  });
-});
   </script>
-
-  <!-- View Document Request Modal -->
-<div id="viewDocModal" tabindex="-1" 
-     class="hidden fixed top-0 left-0 right-0 z-50 w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
-  <div class="relative w-full max-w-2xl max-h-full mx-auto">
-    <div class="relative bg-white rounded-lg shadow">
-      <!-- Header -->
-      <div class="flex items-start justify-between p-5 border-b rounded-t">
-        <h3 class="text-xl font-semibold text-gray-900">Document Request Details</h3>
-        <button type="button" onclick="toggleViewDocModal()"
-                class="text-gray-400 hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center">
-          <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14">
-            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
-          </svg>
-        </button>
-      </div>
-      <!-- Body -->
-      <div class="p-6 space-y-4 overflow-y-auto max-h-[calc(100%-6rem)] text-sm text-gray-800">
-        <div class="grid grid-cols-2 gap-4">
-          <div><strong>Requested By:</strong> <span id="viewReqName">—</span></div>
-          <div><strong>Document Type:</strong> <span id="viewDocType">—</span></div>
-          <div><strong>Request Date:</strong> <span id="viewReqDate">—</span></div>
-          <div><strong>Status:</strong> <span id="viewStatus">—</span></div>
-          <div><strong>Delivery Method:</strong> <span id="viewDelivery">—</span></div>
-          <div><strong>Remarks:</strong> <span id="viewRemarks">—</span></div>
-        </div>
-        
-        <h4 class="text-lg font-medium pt-4 border-t">Requester Information</h4>
-        <div class="grid grid-cols-2 gap-4">
-          <div><strong>Email:</strong> <span id="viewReqEmail">—</span></div>
-          <div><strong>Contact #:</strong> <span id="viewReqContact">—</span></div>
-          <div><strong>Birth Date:</strong> <span id="viewReqBirth">—</span></div>
-          <div><strong>Gender:</strong> <span id="viewReqGender">—</span></div>
-          <div><strong>Marital Status:</strong> <span id="viewReqMarital">—</span></div>
-        </div>
-
-        <h4 class="text-lg font-medium pt-4 border-t">Emergency Contact</h4>
-        <div class="grid grid-cols-2 gap-4">
-          <div><strong>Name:</strong> <span id="viewEmergencyName">—</span></div>
-          <div><strong>Contact #:</strong> <span id="viewEmergencyContact">—</span></div>
-          <div><strong>Address:</strong> <span id="viewEmergencyAddress">—</span></div>
-        </div>
-
-        <h4 class="text-lg font-medium pt-4 border-t">ID Image</h4>
-        <div id="viewIdImage" class="mt-2"></div>
-
-        <h4 class="text-lg font-medium pt-4 border-t">Proof of Payment</h4>
-        <div id="viewProofImage" class="mt-2">—</div>
-      </div>
-      <!-- Footer -->
-      <div class="flex items-center justify-end p-5 border-t border-gray-200">
-        <button type="button" onclick="toggleViewDocModal()"
-                class="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 border border-gray-200">
-          Close
-        </button>
-      </div>
-    </div>
-  </div>
-</div>
 </body>
 </html>
