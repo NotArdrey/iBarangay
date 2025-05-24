@@ -1,455 +1,532 @@
 <?php
-// functions/services.php  – full rewrite with PayMongo integration
 session_start();
-require __DIR__ . '/../config/dbconn.php';
-require __DIR__ . '/../vendor/autoload.php';
+require_once "../config/dbconn.php";
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
-
-// PayMongo integration helper function
-function createPaymongoPaymentLink($amount, $description, $paymongoConfig, $userId, $docTypeId, $successUrl = '', $cancelUrl = '') {
-    // Decode stored config if needed
-    if (is_string($paymongoConfig)) {
-        $config = json_decode($paymongoConfig, true);
-    } else {
-        $config = $paymongoConfig;
-    }
-    
-    if (!isset($config['secret_key']) || empty($config['secret_key'])) {
-        return [
-            'success' => false,
-            'message' => 'Invalid PayMongo configuration: Missing secret key'
-        ];
-    }
-    
-    $secretKey = $config['secret_key'];
-    
-    // Set default URLs if not provided
-    $host = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http") . "://$_SERVER[HTTP_HOST]";
-    $successUrl = $successUrl ?: "$host/pages/services.php?payment_success=true&doc_id=$docTypeId";
-    $cancelUrl = $cancelUrl ?: "$host/pages/services.php?payment_canceled=true";
-    
-    // Create unique reference
-    $reference = 'DOC_' . $docTypeId . '_' . time();
-    
-    // Create a PayMongo checkout session
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, 'https://api.paymongo.com/v1/checkout_sessions');
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
-    curl_setopt($ch, CURLOPT_POST, 1);
-    curl_setopt($ch, CURLOPT_TIMEOUT, 30);
-    
-    // Format amount correctly - PayMongo requires amount in cents
-    $amountInCents = round($amount * 100);
-    
-    $data = [
-        'data' => [
-            'attributes' => [
-                'line_items' => [
-                    [
-                        'name' => $description,
-                        'amount' => $amountInCents,
-                        'quantity' => 1
-                    ]
-                ],
-                'payment_method_types' => ['card', 'gcash', 'grab_pay'],
-                'success_url' => $successUrl . '&session_id={CHECKOUT_SESSION_ID}',
-                'cancel_url' => $cancelUrl,
-                'reference_number' => $reference,
-                'description' => $description
-            ]
-        ]
-    ];
-    
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
-    curl_setopt($ch, CURLOPT_HTTPHEADER, [
-        'Content-Type: application/json',
-        'Authorization: Basic ' . base64_encode($secretKey . ':')
-    ]);
-    
-    $response = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    $error = curl_error($ch);
-    curl_close($ch);
-    
-    // Handle errors
-    if ($error) {
-        return [
-            'success' => false,
-            'message' => 'cURL Error: ' . $error
-        ];
-    }
-    
-    $result = json_decode($response, true);
-    
-    // Check if request was successful
-    if ($httpCode >= 200 && $httpCode < 300 && isset($result['data']['attributes']['checkout_url'])) {
-        return [
-            'success' => true,
-            'checkout_url' => $result['data']['attributes']['checkout_url'],
-            'session_id' => $result['data']['id'],
-            'reference' => $reference
-        ];
-    } else {
-        $errorMessage = isset($result['errors'][0]['detail']) 
-            ? $result['errors'][0]['detail'] 
-            : 'Unknown error occurred';
-        
-        return [
-            'success' => false,
-            'message' => 'PayMongo API Error: ' . $errorMessage,
-            'http_code' => $httpCode
-        ];
+// Fetch user info for navbar (copy from user_dashboard.php)
+$userName = '';
+$barangayName = '';
+if (isset($_SESSION['user_id'])) {
+    $user_id = $_SESSION['user_id'];
+    $sql = "SELECT u.first_name, u.last_name, b.name as barangay_name
+            FROM users u
+            LEFT JOIN barangay b ON u.barangay_id = b.id
+            WHERE u.id = ?";
+    $stmtUser = $pdo->prepare($sql);
+    $stmtUser->execute([$user_id]);
+    $user = $stmtUser->fetch();
+    if ($user) {
+        $userName = trim($user['first_name'] . ' ' . $user['last_name']);
+        $barangayName = $user['barangay_name'] ?? '';
     }
 }
 
-// Handle payment creation ajax request
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_GET['action']) && $_GET['action'] === 'create_payment') {
-    // This is the API endpoint for AJAX payment creation
-    header('Content-Type: application/json');
-    
-    // Make sure user is logged in
-    if (!isset($_SESSION['user_id'])) {
-        echo json_encode(['success' => false, 'message' => 'User not authenticated']);
-        exit;
-    }
-    
-    // Get request data from POST or JSON body
-    $requestData = [];
-    if (isset($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
-        $requestData = json_decode(file_get_contents('php://input'), true);
-    } else {
-        $requestData = $_POST;
-    }
-    
-    // Validate required fields
-    if (!isset($requestData['amount'], $requestData['document_id'])) {
-        echo json_encode(['success' => false, 'message' => 'Missing required parameters']);
-        exit;
-    }
-    
-    $amount = floatval($requestData['amount']);
-    $docTypeId = intval($requestData['document_id']);
-    $userId = $_SESSION['user_id'];
-    $description = $requestData['description'] ?? 'Document Request Payment';
-    $successUrl = $requestData['success_url'] ?? '';
-    $cancelUrl = $requestData['cancel_url'] ?? '';
-    
-    try {
-        // Get user's barangay
-        $stmt = $pdo->prepare("SELECT barangay_id FROM Users WHERE user_id = ?");
-        $stmt->execute([$userId]);
-        $barangayId = $stmt->fetchColumn();
-        
-        if (!$barangayId) {
-            echo json_encode(['success' => false, 'message' => 'User has no associated barangay']);
-            exit;
-        }
-        
-        // Get PayMongo credentials
-        $stmt = $pdo->prepare("
-            SELECT account_details 
-            FROM BarangayPaymentMethod 
-            WHERE barangay_id = ? AND method = 'PayMongo' AND is_active = 'yes'
-        ");
-        $stmt->execute([$barangayId]);
-        $paymongoConfig = $stmt->fetchColumn();
-        
-        if (!$paymongoConfig) {
-            echo json_encode(['success' => false, 'message' => 'PayMongo not available for your barangay']);
-            exit;
-        }
-        
-        // Create payment link
-        $result = createPaymongoPaymentLink(
-            $amount, 
-            $description, 
-            $paymongoConfig, 
-            $userId, 
-            $docTypeId, 
-            $successUrl, 
-            $cancelUrl
-        );
-        
-        if ($result['success']) {
-            // Check if we have the PaymentSessions table, if not, create it
-            $tableExists = $pdo->query("SHOW TABLES LIKE 'PaymentSessions'")->rowCount() > 0;
-            if (!$tableExists) {
-                $pdo->exec("
-                    CREATE TABLE PaymentSessions (
-                        id INT AUTO_INCREMENT PRIMARY KEY,
-                        user_id INT NOT NULL,
-                        document_id INT NOT NULL,
-                        session_id VARCHAR(100) NOT NULL,
-                        amount DECIMAL(10,2) NOT NULL,
-                        reference VARCHAR(100) NOT NULL,
-                        status ENUM('pending', 'completed', 'cancelled', 'failed') DEFAULT 'pending',
-                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                        FOREIGN KEY (user_id) REFERENCES Users(user_id) ON DELETE CASCADE
-                    )
-                ");
-            }
-            
-            // Store payment session in database
-            $stmt = $pdo->prepare("
-                INSERT INTO PaymentSessions (
-                    user_id, document_id, session_id, amount, reference, status
-                ) VALUES (?, ?, ?, ?, ?, 'pending')
-            ");
-            $stmt->execute([
-                $userId,
-                $docTypeId,
-                $result['session_id'],
-                $amount,
-                $result['reference']
-            ]);
-            
-            echo json_encode([
-                'success' => true,
-                'checkout_url' => $result['checkout_url'],
-                'session_id' => $result['session_id']
-            ]);
-        } else {
-            echo json_encode($result); // Return error message
-        }
-        
-    } catch (Exception $e) {
-        echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
-    }
-    exit;
+// Get all document types from database
+$stmt = $pdo->query("
+SELECT dt.id, dt.name, dt.code, dt.description, dt.default_fee
+FROM document_types dt
+WHERE dt.is_active = 1
+ORDER BY dt.name
+");
+$dbDocumentTypes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Create a map for quick lookup
+$docMap = [];
+foreach ($dbDocumentTypes as $doc) {
+    $docMap[$doc['code']] = $doc;
 }
 
-// Handle payment callback
-if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['payment_success'], $_GET['session_id'])) {
-    // This handles the callback from PayMongo after payment
-    $sessionId = $_GET['session_id'];
-    $success = $_GET['payment_success'] === 'true';
-    
-    try {
-        // Check if PaymentSessions table exists
-        $tableExists = $pdo->query("SHOW TABLES LIKE 'PaymentSessions'")->rowCount() > 0;
-        if ($tableExists) {
-            // Update payment status
-            $status = $success ? 'completed' : 'cancelled';
-            $stmt = $pdo->prepare("
-                UPDATE PaymentSessions 
-                SET status = ? 
-                WHERE session_id = ?
-            ");
-            $stmt->execute([$status, $sessionId]);
-        }
-        
-        if ($success) {
-            $_SESSION['payment_reference'] = $sessionId;
-            $_SESSION['payment_success'] = true;
-        } else {
-            $_SESSION['payment_cancelled'] = true;
-        }
-        
-        // Redirect to services page
-        header('Location: ../pages/services.php');
-        exit;
-        
-    } catch (Exception $e) {
-        $_SESSION['error'] = 'Error processing payment: ' . $e->getMessage();
-        header('Location: ../pages/services.php');
-        exit;
+// Define the correct order with Barangay Clearance first
+$requiredDocs = [
+    'barangay_clearance',           // Most common - should be first
+    'barangay_indigency', 
+    'proof_of_residency',
+    'cedula',
+    'business_permit_clearance',
+    'community_tax_certificate'
+];
+
+// Build ordered document types array
+$documentTypes = [];
+foreach ($requiredDocs as $code) {
+    if (isset($docMap[$code])) {
+        $documentTypes[] = $docMap[$code];
     }
 }
 
-/* ─────── regular form submission handling ─────── */
-if ($_SERVER['REQUEST_METHOD'] !== 'POST' || isset($_GET['action'])) {
-    $_SESSION['error'] = 'Use the form to submit a request.';
-    header('Location: ../pages/services.php');
-    exit;
-}
+$selectedDocumentType = $_GET['documentType'] ?? '';
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>iBarangay - Document Request</title>
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="../styles/services.css">
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+</head>
+<body>
+    <?php if (isset($_SESSION['success'])): ?>
+    <script>
+        Swal.fire({
+            title: '<?= $_SESSION['success']['title'] ?>',
+            html: `<b><?= $_SESSION['success']['message'] ?></b><br><br><?= $_SESSION['success']['processing'] ?>`,
+            icon: 'success'
+        }).then(() => {
+            window.location.href = 'user_dashboard.php';
+        });
+    </script>
+    <?php unset($_SESSION['success']); endif; ?>
 
-if (empty($_SESSION['user_id'])) {
-    $_SESSION['error'] = 'Please log in first.';
-    header('Location: ../pages/index.php');
-    exit;
-}
+    <?php if (isset($_SESSION['error'])): ?>
+    <script>
+        Swal.fire({
+            title: 'Error',
+            text: '<?= $_SESSION['error'] ?>',
+            icon: 'error'
+        });
+    </script>
+    <?php unset($_SESSION['error']); endif; ?>
 
-$userId    = (int) $_SESSION['user_id'];
-$userEmail = $_SESSION['user_email'] ?? '';
-$userName  = $_SESSION['user_name']  ?? 'User';
+    <!-- Navigation Bar -->
+    <header> 
+      <nav class="navbar">
+        <a href="#" class="logo">
+          <img src="../photo/logo.png" alt="iBarangay Logo" />
+          <h2>iBarangay</h2>
+        </a>
+        <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
+          <i class="fas fa-bars"></i>
+        </button>
+        <div class="nav-links">
+          <a href="../pages/user_dashboard.php#home">Home</a>
+          <a href="../pages/user_dashboard.php#about">About</a>
+          <a href="../pages/user_dashboard.php#services">Services</a>
+          <a href="../pages/user_dashboard.php#contact">Contact</a>
+          <?php if (!empty($userName)): ?>
+          <div class="user-info" onclick="window.location.href='../pages/edit_account.php'" style="cursor: pointer;">
+            <div class="user-avatar">
+              <i class="fas fa-user-circle"></i>
+            </div>
+            <div class="user-details">
+              <div class="user-name"><?php echo htmlspecialchars($userName); ?></div>
+              <div class="user-barangay"><?php echo htmlspecialchars($barangayName); ?></div>
+            </div>
+          </div>
+          <?php endif; ?>
+        </div>
+      </nav>
+    </header>
 
-try {
-    $pdo->beginTransaction();
-
-    /* ──────── ID upload ──────── */
-    if (!isset($_FILES['uploadId']) || $_FILES['uploadId']['error'] !== UPLOAD_ERR_OK) {
-        throw new Exception('Valid ID is required.');
+    <style>
+    /* User Info Styles */
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        padding: 0.5rem 1rem;
+        background: #ffffff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        color: #333333;
+        margin-left: 1rem;
+        transition: all 0.2s ease;
     }
-    $allowedExt = ['jpg','jpeg','png','pdf'];
-    $ext = strtolower(pathinfo($_FILES['uploadId']['name'], PATHINFO_EXTENSION));
-    if (!in_array($ext, $allowedExt)) {
-        throw new Exception('Invalid ID format; only JPG, PNG, PDF allowed.');
-    }
-    if ($_FILES['uploadId']['size'] > 2 * 1024 * 1024) {
-        throw new Exception('ID file too large; max 2 MB.');
-    }
-    $uploadDir = __DIR__ . '/../uploads/';
-    if (!is_dir($uploadDir)) mkdir($uploadDir, 0755, true);
 
-    $idFilename = sprintf('id_user_%d_%d.%s', $userId, time(), $ext);
-    $idTarget   = $uploadDir . $idFilename;
-    if (!move_uploaded_file($_FILES['uploadId']['tmp_name'], $idTarget)) {
-        throw new Exception('Failed to save uploaded ID.');
+    .user-info:hover {
+        background: #f8f8f8;
+        border-color: #d0d0d0;
     }
-    $idPath = 'uploads/' . $idFilename;
-    $pdo->prepare("UPDATE Users SET id_image_path = ? WHERE user_id = ?")
-        ->execute([$idPath, $userId]);
 
-    /* ─────── payment / proof ─────── */
-    $delivery      = $_POST['deliveryMethod'] ?? 'Hardcopy';
-    $paymentAmount = (float) ($_POST['paymentAmount'] ?? 0);
-    $paymentMethod = $_POST['paymentMethod'] ?? '';
-    $proofPath     = null;
+    .user-avatar {
+        font-size: 1.5rem;
+        color: #666666;
+        display: flex;
+        align-items: center;
+    }
 
-    if ($paymentAmount > 0) {
-        if ($paymentMethod === 'GCash') {
-            // For GCash, process payment proof upload
-            if (!isset($_FILES['uploadProof']) || $_FILES['uploadProof']['error'] !== UPLOAD_ERR_OK) {
-                throw new Exception('Payment receipt is required for documents with a fee.');
-            }
-            $ext2 = strtolower(pathinfo($_FILES['uploadProof']['name'], PATHINFO_EXTENSION));
-            if (!in_array($ext2, $allowedExt)) {
-                throw new Exception('Invalid receipt format; only JPG, PNG, PDF allowed.');
-            }
-            if ($_FILES['uploadProof']['size'] > 2 * 1024 * 1024) {
-                throw new Exception('Receipt file too large; max 2 MB.');
-            }
-            $proofFilename = sprintf('proof_user_%d_%d.%s', $userId, time(), $ext2);
-            $proofTarget   = $uploadDir . $proofFilename;
-            if (!move_uploaded_file($_FILES['uploadProof']['tmp_name'], $proofTarget)) {
-                throw new Exception('Failed to save payment receipt.');
-            }
-            $proofPath = 'uploads/' . $proofFilename;
-        } elseif ($paymentMethod === 'PayMongo') {
-            // For PayMongo, verify payment reference
-            $paymongoReference = $_POST['paymongoReference'] ?? '';
-            if (empty($paymongoReference)) {
-                throw new Exception('Payment reference is required. Please complete payment first.');
-            }
-            
-            // Check if PaymentSessions table exists
-            $tableExists = $pdo->query("SHOW TABLES LIKE 'PaymentSessions'")->rowCount() > 0;
-            
-            if ($tableExists) {
-                // Verify the payment session exists
-                $stmt = $pdo->prepare("
-                    SELECT id, status FROM PaymentSessions 
-                    WHERE session_id = ? AND user_id = ? 
-                    LIMIT 1
-                ");
-                $stmt->execute([$paymongoReference, $userId]);
-                $payment = $stmt->fetch(PDO::FETCH_ASSOC);
+    .user-details {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.2;
+    }
+
+    .user-name {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #0a2240;
+    }
+
+    .user-barangay {
+        font-size: 0.75rem;
+        color: #0a2240;
+    }
+
+    /* Document Info Styles */
+    .document-info {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .document-info h4 {
+        margin: 0 0 0.5rem 0;
+        color: #0a2240;
+        font-size: 1rem;
+    }
+
+    .document-info p {
+        margin: 0;
+        color: #6c757d;
+        line-height: 1.4;
+    }
+
+    .fee-highlight {
+        background: #e8f5e8;
+        border: 1px solid #d4edda;
+        border-radius: 4px;
+        padding: 0.5rem;
+        margin-top: 0.5rem;
+        color: #155724;
+        font-weight: 500;
+    }
+
+    .fee-highlight.paid {
+        background: #fff3cd;
+        border-color: #ffeaa7;
+        color: #856404;
+    }
+    </style>
+
+    <main>
+        <section class="wizard-section">
+            <div class="wizard-container">
+                <h2 class="form-header">Document Request</h2>
                 
-                if (!$payment) {
-                    throw new Exception('Invalid payment reference. Please complete payment first.');
-                }
+                <!-- Document Information Display -->
+                <div id="documentInfo" class="document-info" style="display: none;">
+                    <h4 id="docInfoTitle">Document Information</h4>
+                    <p id="docInfoDescription">Select a document to see details</p>
+                    <div id="docInfoFee" class="fee-highlight">Fee: ₱0.00</div>
+                </div>
+
+                <form method="POST" action="../functions/services.php" enctype="multipart/form-data" id="docRequestForm">
+                    <div class="form-row">
+                        <label for="documentType">Document Type *</label>
+                        <select id="documentType" name="document_type_id" required>
+                            <option value="">Select Document Type</option>
+                            <?php foreach ($documentTypes as $doc): ?>
+                                <option value="<?= $doc['id'] ?>" 
+                                        data-code="<?= $doc['code'] ?>"
+                                        data-fee="<?= $doc['default_fee'] ?>"
+                                        data-description="<?= htmlspecialchars($doc['description'] ?? '') ?>">
+                                    <?= htmlspecialchars($doc['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+
+                    <div class="form-row">
+                        <label for="deliveryMethod">Delivery Method *</label>
+                        <select id="deliveryMethod" name="deliveryMethod" required>
+                            <option value="">Select Delivery Method</option>
+                            <option value="Softcopy">Softcopy (Digital)</option>
+                            <option value="Hardcopy">Hardcopy (Physical)</option>
+                        </select>
+                    </div>
+
+                    <!-- Document-specific fields -->
+                    <div id="clearanceFields" class="document-fields" style="display: none;">
+                        <div class="form-row">
+                            <label for="purposeClearance">Purpose of Clearance *</label>
+                            <input type="text" id="purposeClearance" name="purposeClearance" 
+                                   placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" required>
+                        </div>
+                    </div>
+
+                    <div id="residencyFields" class="document-fields" style="display: none;">
+                        <div class="form-row">
+                            <label for="residencyDuration">Duration of Residency *</label>
+                            <input type="text" id="residencyDuration" name="residencyDuration" 
+                                   placeholder="e.g., 5 years" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="residencyPurpose">Purpose *</label>
+                            <input type="text" id="residencyPurpose" name="residencyPurpose" 
+                                   placeholder="Enter purpose (e.g., School enrollment, Scholarship, etc.)" required>
+                        </div>
+                    </div>
+
+                    <div id="indigencyFields" class="document-fields" style="display: none;">
+                        <div class="form-row">
+                            <label for="indigencyReason">Reason for Requesting *</label>
+                            <input type="text" id="indigencyReason" name="indigencyReason" 
+                                   placeholder="Enter reason (e.g., Medical assistance, Educational assistance, etc.)" required>
+                        </div>
+                    </div>
+
+                    <div id="cedulaFields" class="document-fields" style="display: none;">
+                        <div class="form-row">
+                            <label for="cedulaOccupation">Occupation *</label>
+                            <input type="text" id="cedulaOccupation" name="cedulaOccupation" 
+                                   placeholder="Enter your occupation" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="cedulaIncome">Annual Income *</label>
+                            <input type="number" id="cedulaIncome" name="cedulaIncome" 
+                                   placeholder="Enter annual income in PHP" min="0" step="0.01" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="cedulaBirthplace">Place of Birth</label>
+                            <input type="text" id="cedulaBirthplace" name="cedulaBirthplace" 
+                                   placeholder="Enter place of birth">
+                        </div>
+                    </div>
+
+                    <div id="businessPermitFields" class="document-fields" style="display: none;">
+                        <div class="form-row">
+                            <label for="businessName">Business Name *</label>
+                            <input type="text" id="businessName" name="businessName" 
+                                   placeholder="Enter business name" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="businessType">Business Type *</label>
+                            <input type="text" id="businessType" name="businessType" 
+                                   placeholder="Enter type/nature of business (e.g., Retail, Restaurant, etc.)" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="businessAddress">Business Address *</label>
+                            <input type="text" id="businessAddress" name="businessAddress" 
+                                   placeholder="Enter complete business address" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="businessPurpose">Purpose *</label>
+                            <input type="text" id="businessPurpose" name="businessPurpose" 
+                                   placeholder="Purpose for business clearance (e.g., New business permit, Renewal, etc.)" required>
+                        </div>
+                    </div>
+
+                    <div id="communityTaxFields" class="document-fields" style="display: none;">
+                        <div class="form-row">
+                            <label for="ctcOccupation">Occupation *</label>
+                            <input type="text" id="ctcOccupation" name="ctcOccupation" 
+                                   placeholder="Enter your occupation" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="ctcIncome">Annual Income *</label>
+                            <input type="number" id="ctcIncome" name="ctcIncome" 
+                                   placeholder="Enter annual income in PHP" min="0" step="0.01" required>
+                        </div>
+                        <div class="form-row">
+                            <label for="ctcPropertyValue">Real Property Value</label>
+                            <input type="number" id="ctcPropertyValue" name="ctcPropertyValue" 
+                                   placeholder="Enter total value of real property owned" min="0" step="0.01">
+                        </div>
+                        <div class="form-row">
+                            <label for="ctcBirthplace">Place of Birth</label>
+                            <input type="text" id="ctcBirthplace" name="ctcBirthplace" 
+                                   placeholder="Enter place of birth">
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn cta-button" id="submitBtn">
+                        <i class="fas fa-paper-plane"></i> Submit Request
+                    </button>
+                </form>
+            </div>
+        </section>
+    </main>
+
+    <footer class="footer">
+        <p>&copy; 2025 iBarangay. All rights reserved.</p>
+    </footer>
+
+    <script>
+    // Document information
+    const documentInfo = {
+        'barangay_clearance': {
+            title: 'Barangay Clearance',
+            description: 'Required for employment, business permits, and various transactions. This document certifies that you are a resident of good standing in the barangay.',
+            fee: 30.00
+        },
+        'barangay_indigency': {
+            title: 'Certificate of Indigency',
+            description: 'For accessing social welfare programs and financial assistance. This document certifies your financial status for assistance programs.',
+            fee: 0.00
+        },
+        'proof_of_residency': {
+            title: 'Certificate of Residency',
+            description: 'Official proof of residence in the barangay. Required for school enrollment, scholarship applications, and other official purposes.',
+            fee: 0.00
+        },
+        'cedula': {
+            title: 'Community Tax Certificate (Sedula)',
+            description: 'Annual tax certificate required for government transactions. Valid for one calendar year from date of issuance.',
+            fee: 55.00
+        },
+        'business_permit_clearance': {
+            title: 'Business Permit Clearance',
+            description: 'Barangay clearance required for business license applications. Certifies compliance with local regulations.',
+            fee: 500.00
+        },
+        'community_tax_certificate': {
+            title: 'Community Tax Certificate',
+            description: 'Annual tax certificate for residents and corporations. Required for various legal and business transactions.',
+            fee: 6000.00
+        }
+    };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const documentTypeSelect = document.getElementById('documentType');
+        const documentInfoDiv = document.getElementById('documentInfo');
+        const docInfoTitle = document.getElementById('docInfoTitle');
+        const docInfoDescription = document.getElementById('docInfoDescription');
+        const docInfoFee = document.getElementById('docInfoFee');
+        const form = document.getElementById('docRequestForm');
+        const submitBtn = document.getElementById('submitBtn');
+
+        if (documentTypeSelect) {
+            documentTypeSelect.addEventListener('change', function() {
+                const selectedOption = this.options[this.selectedIndex];
+                const documentCode = selectedOption.dataset.code || '';
                 
-                // Update payment status to completed if it's not already
-                if ($payment['status'] !== 'completed') {
-                    $stmt = $pdo->prepare("
-                        UPDATE PaymentSessions 
-                        SET status = 'completed' 
-                        WHERE id = ?
-                    ");
-                    $stmt->execute([$payment['id']]);
+                // Update document information display
+                if (documentCode && documentInfo[documentCode]) {
+                    const info = documentInfo[documentCode];
+                    docInfoTitle.textContent = info.title;
+                    docInfoDescription.textContent = info.description;
+                    
+                    if (info.fee > 0) {
+                        docInfoFee.textContent = `Fee: ₱${parseFloat(info.fee).toFixed(2)}`;
+                        docInfoFee.className = 'fee-highlight paid';
+                    } else {
+                        docInfoFee.textContent = 'Fee: Free';
+                        docInfoFee.className = 'fee-highlight';
+                    }
+                    
+                    documentInfoDiv.style.display = 'block';
+                } else {
+                    documentInfoDiv.style.display = 'none';
+                }
+
+                // Show/hide document-specific fields
+                hideAllDocumentFields();
+                updateRequiredFields(documentCode, false); // Remove required first
+                
+                switch(documentCode) {
+                    case 'barangay_clearance':
+                        document.getElementById('clearanceFields').style.display = 'block';
+                        updateRequiredFields('clearance', true);
+                        break;
+                    case 'proof_of_residency':
+                        document.getElementById('residencyFields').style.display = 'block';
+                        updateRequiredFields('residency', true);
+                        break;
+                    case 'barangay_indigency':
+                        document.getElementById('indigencyFields').style.display = 'block';
+                        updateRequiredFields('indigency', true);
+                        break;
+                    case 'cedula':
+                        document.getElementById('cedulaFields').style.display = 'block';
+                        updateRequiredFields('cedula', true);
+                        break;
+                    case 'business_permit_clearance':
+                        document.getElementById('businessPermitFields').style.display = 'block';
+                        updateRequiredFields('business', true);
+                        break;
+                    case 'community_tax_certificate':
+                        document.getElementById('communityTaxFields').style.display = 'block';
+                        updateRequiredFields('ctc', true);
+                        break;
+                }
+            });
+        }
+
+        function hideAllDocumentFields() {
+            const allFields = document.querySelectorAll('.document-fields');
+            allFields.forEach(field => {
+                field.style.display = 'none';
+            });
+        }
+
+        function updateRequiredFields(type, required) {
+            const fieldMap = {
+                'clearance': ['purposeClearance'],
+                'residency': ['residencyDuration', 'residencyPurpose'],
+                'indigency': ['indigencyReason'],
+                'cedula': ['cedulaOccupation', 'cedulaIncome'],
+                'business': ['businessName', 'businessType', 'businessAddress', 'businessPurpose'],
+                'ctc': ['ctcOccupation', 'ctcIncome']
+            };
+
+            if (type === false) {
+                // Remove required from all fields
+                Object.values(fieldMap).flat().forEach(fieldId => {
+                    const field = document.getElementById(fieldId);
+                    if (field) {
+                        field.required = false;
+                    }
+                });
+            } else if (fieldMap[type]) {
+                fieldMap[type].forEach(fieldId => {
+                    const field = document.getElementById(fieldId);
+                    if (field) {
+                        field.required = required;
+                    }
+                });
+            }
+        }
+
+        // Form submission handling
+        if (form && submitBtn) {
+            form.addEventListener('submit', function(e) {
+                if (!form.checkValidity()) {
+                    return;
+                }
+
+                e.preventDefault();
+
+                Swal.fire({
+                    title: 'Confirm Submission',
+                    text: 'Are you sure you want to submit this document request?',
+                    icon: 'question',
+                    showCancelButton: true,
+                    confirmButtonText: 'Yes, submit',
+                    cancelButtonText: 'Cancel'
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
+                        form.submit();
+
+                        setTimeout(function() {
+                            if (submitBtn.disabled) {
+                                submitBtn.disabled = false;
+                                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Request';
+                            }
+                        }, 15000);
+                    }
+                });
+            });
+        }
+
+        // Auto-select document type from URL parameter
+        const urlParams = new URLSearchParams(window.location.search);
+        const docTypeParam = urlParams.get('documentType');
+        if (docTypeParam && documentTypeSelect) {
+            for (let i = 0; i < documentTypeSelect.options.length; i++) {
+                if (documentTypeSelect.options[i].dataset.code === docTypeParam) {
+                    documentTypeSelect.selectedIndex = i;
+                    documentTypeSelect.dispatchEvent(new Event('change'));
+                    break;
                 }
             }
-            
-            // Store payment reference in proof_image_path
-            $proofPath = 'paymongo:' . $paymongoReference;
         }
-    }
-
-    /* ─────── validate doc & barangay ─────── */
-    $docTypeId  = filter_input(INPUT_POST, 'document_type_id', FILTER_VALIDATE_INT);
-    $barangayId = filter_input(INPUT_POST, 'barangay_id',     FILTER_VALIDATE_INT);
-    if (!$docTypeId || !$barangayId) {
-        throw new Exception('Please select document type and barangay.');
-    }
-
-    $chk = $pdo->prepare("SELECT COUNT(*) FROM DocumentType WHERE document_type_id = ?");
-    $chk->execute([$docTypeId]);
-    if (!$chk->fetchColumn()) {
-        throw new Exception('Document type not found.');
-    }
-
-    $chk = $pdo->prepare("SELECT COUNT(*) FROM Barangay WHERE barangay_id = ?");
-    $chk->execute([$barangayId]);
-    if (!$chk->fetchColumn()) {
-        throw new Exception('Barangay not found.');
-    }
-
-    /* ─────── insert request ─────── */
-    $pdo->prepare("
-        INSERT INTO DocumentRequest
-            (user_id, document_type_id, barangay_id, delivery_method, proof_image_path)
-        VALUES (?,?,?,?,?)
-    ")->execute([$userId, $docTypeId, $barangayId, $delivery, $proofPath]);
-    $requestId = $pdo->lastInsertId();
-
-    /* ─────── extra attributes ─────── */
-    $attrs = [
-        'clearance_purpose'  => $_POST['purposeClearance']  ?? null,
-        'residency_duration' => $_POST['residencyDuration'] ?? null,
-        'residency_purpose'  => $_POST['residencyPurpose']  ?? null,
-        'gmc_purpose'        => $_POST['gmcPurpose']        ?? null,
-        'nic_reason'         => $_POST['nicReason']         ?? null,
-        'indigency_income'   => $_POST['indigencyIncome']   ?? null,
-        'indigency_reason'   => $_POST['indigencyReason']   ?? null,
-    ];
-    $ins = $pdo->prepare("
-        INSERT INTO DocumentRequestAttribute (request_id, attr_key, attr_value)
-        VALUES (?,?,?)
-    ");
-    foreach ($attrs as $k => $v) {
-        if ($v !== null && trim($v) !== '') {
-            $ins->execute([$requestId, $k, trim($v)]);
-        }
-    }
-
-    /* ─────── audit trail ─────── */
-    $paymentInfo = '';
-    if ($paymentAmount > 0) {
-        $paymentInfo = ' with ' . $paymentMethod . ' payment';
-        if ($paymentMethod === 'PayMongo') {
-            $paymentInfo .= ' (ref: ' . substr($proofPath, 9) . ')';  // Extract ref from 'paymongo:ref'
-        }
-    }
-    
-    $pdo->prepare("
-        INSERT INTO AuditTrail
-            (admin_user_id, action, table_name, record_id, description)
-        VALUES (?,?,?,?,?)
-    ")->execute([
-        $userId,
-        'INSERT',
-        'DocumentRequest',
-        $requestId,
-        'Submitted document request' . $paymentInfo
-    ]);
-
-    $pdo->commit();
-
-    $_SESSION['success'] = [
-        'title'      => 'Success!',
-        'message'    => 'Your document request was submitted.',
-        'processing' => 'We will process it shortly and email you updates on your request.'
-    ];
-    header('Location: ../pages/services.php');
-    exit;
-
-} catch (Exception $e) {
-    if ($pdo->inTransaction()) {
-        $pdo->rollBack();
-    }
-    $_SESSION['error'] = $e->getMessage();
-    header('Location: ../pages/services.php');
-    exit;
-}
+    });
+    </script>
+</body>
+</html>

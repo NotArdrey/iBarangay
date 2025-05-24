@@ -56,7 +56,7 @@ if (isset($_GET['email'])) {
             }
             
             // Create new verification link.
-            $verificationLink = "https://localhost/barangayhub/pages/verify.php?token=" . $token;
+            $verificationLink = "https://localhost/iBarangay/pages/verify.php?token=" . $token;
             $mail = new PHPMailer(true);
             try {
                 $mail->isSMTP();

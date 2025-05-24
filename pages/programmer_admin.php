@@ -18,7 +18,7 @@ $success = '';
 
 // Fetch all Super Admins
 try {
-    $stmt = $pdo->prepare("SELECT * FROM Users WHERE role_id = ?");
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE role_id = ?");
     $stmt->execute([$superadmin_role_id]);
     $superadmins = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (PDOException $e) {
@@ -29,7 +29,7 @@ try {
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get'])) {
     $userId = $_GET['get'];
     try {
-        $stmt = $pdo->prepare("SELECT * FROM Users WHERE user_id = ? AND role_id = ?");
+        $stmt = $pdo->prepare("SELECT * FROM users WHERE user_id = ? AND role_id = ?");
         $stmt->execute([$userId, $superadmin_role_id]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
         if ($user) {
@@ -54,7 +54,7 @@ if ($userId) {
         $pdo->beginTransaction();
 
         // Check if user is a Super Admin
-        $stmt = $pdo->prepare("SELECT role_id FROM Users WHERE user_id = ?");
+        $stmt = $pdo->prepare("SELECT role_id FROM users WHERE user_id = ?");
         $stmt->execute([$userId]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -74,7 +74,7 @@ if ($userId) {
         }
 
         // Delete the user
-        $stmt = $pdo->prepare("DELETE FROM Users WHERE user_id = ?");
+        $stmt = $pdo->prepare("DELETE FROM users WHERE user_id = ?");
         $stmt->execute([$userId]);
 
         $pdo->commit();
@@ -127,7 +127,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Create new Super Admin
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
                 $stmt = $pdo->prepare("
-                INSERT INTO Users 
+                INSERT INTO users 
                 (first_name, last_name, email, password_hash, role_id, end_term_date, id_image_path, isverify) 
                 VALUES (?, ?, ?, ?, ?, ?, ?, 'yes')
                 ");
@@ -155,7 +155,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 $updateFields['id_image_path'] = $idImage;
 
-                $sql = "UPDATE Users SET ";
+                $sql = "UPDATE users SET ";
                 $params = [];
                 $sets = [];
                 foreach ($updateFields as $field => $value) {

@@ -47,7 +47,7 @@ function sendPasswordReset($email, $pdo) {
     $stmt->execute([$token, $email]);
     
     // Create the password reset link.
-    $resetLink = "https://localhost/barangayhub/pages/change_pass.php?email=" . urlencode($email) . "&token=" . $token;
+    $resetLink = "https://localhost/iBarangay/pages/change_pass.php?email=" . urlencode($email) . "&token=" . $token;
     
     // Set up PHPMailer to send the password reset email.
     $mail = new PHPMailer(true);

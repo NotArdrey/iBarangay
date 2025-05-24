@@ -7,34 +7,42 @@ session_start();
 require __DIR__ . '/../config/dbconn.php'; // $pdo
 
 /**
- * Insert an entry into AuditTrail.
+ * Insert an entry into audit_trails.
  */
-function logAuditTrail(PDO $pdo, int $user_id, string $action, string $table_name = null, $record_id = null, string $description = '')
+function logAuditTrail(PDO $pdo, int $user_id, string $action, string $table_name = null, $record_id = null, string $description = '') 
 {
     $stmt = $pdo->prepare("
-        INSERT INTO AuditTrail 
-          (admin_user_id, action, table_name, record_id, description)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO audit_trails 
+          (user_id, action, table_name, record_id, new_values, ip_address, user_agent)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
     ");
+    
     $stmt->execute([
         $user_id,
         $action,
         $table_name,
         $record_id,
-        $description
+        $description,
+        $_SERVER['REMOTE_ADDR'] ?? null,
+        $_SERVER['HTTP_USER_AGENT'] ?? null
     ]);
 }
 
 if (!empty($_SESSION['user_id'])) {
     $user_id = (int) $_SESSION['user_id'];
-    logAuditTrail(
-        $pdo,
-        $user_id,
-        "LOGOUT",
-        "Users",
-        $user_id,
-        "User clicked logout"
-    );
+    try {
+        logAuditTrail(
+            $pdo,
+            $user_id,
+            "LOGOUT",
+            "users",
+            $user_id,
+            "User logged out of the system"
+        );
+    } catch (PDOException $e) {
+        // Log error but continue with logout
+        error_log("Failed to log audit trail: " . $e->getMessage());
+    }
 }
 
 // Destroy everything
@@ -54,5 +62,5 @@ if (ini_get("session.use_cookies")) {
 session_destroy();
 
 // Redirect back to public index
-header("Location: ../pages/index.php");
+header("Location: ../pages/login.php");
 exit;

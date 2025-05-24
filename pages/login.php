@@ -12,7 +12,7 @@ session_regenerate_id(true);
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Barangay Hub Login</title>
+  <title>iBarangay Login</title>
   <link rel="stylesheet" href="../styles/login.css">
   <!-- Include SweetAlert2 CSS and JS from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
@@ -22,7 +22,7 @@ session_regenerate_id(true);
   <div class="login-container">
     <div class="header">
       <img src="../photo/logo.png" alt="Government Logo">
-      <h1>Barangay Hub</h1>
+      <h1>iBarangay</h1>
     </div>
 
     <!-- Login Form -->
@@ -78,7 +78,7 @@ session_regenerate_id(true);
     <!-- Footer -->
     <div class="footer">
       <div class="footer-info">
-        <p>&copy; 2025 Barangay Hub. All Rights Reserved.</p>
+        <p>&copy; 2025 iBarangay. All Rights Reserved.</p>
       </div>
       <div class="security-note">
         <svg viewBox="0 0 24 24">
