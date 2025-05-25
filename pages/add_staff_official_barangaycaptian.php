@@ -1,5 +1,5 @@
 <?php
-/* add_staff_official_barangaycaptian.php – full page */
+/* add_staff_official_barangaycaptian.php – fixed version */
 session_start();
 $isAjax = isset($_SERVER['HTTP_X_REQUESTED_WITH']) &&
           strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
@@ -29,7 +29,7 @@ function overlapCount(PDO $pdo, int $roleId, int $barangayId, string $start, str
         SELECT COUNT(*) FROM users
         WHERE role_id = :role
           AND barangay_id = :bid
-          AND user_id <> :uid
+          AND id <> :uid
           AND (
                (start_term_date <= :end AND (end_term_date IS NULL OR end_term_date >= :start))
           )
@@ -51,7 +51,7 @@ function maxCouncilorsReached(PDO $pdo, int $barangayId, string $start, string $
         SELECT COUNT(*) FROM users
         WHERE role_id = :councilor
           AND barangay_id = :bid
-          AND user_id <> :uid
+          AND id <> :uid
           AND (
                (start_term_date <= :end AND (end_term_date IS NULL OR end_term_date >= :start))
           )
@@ -73,7 +73,7 @@ if (!$user_id) {
     header('Location: ../pages/login.php');
     exit;
 }
-$stmt = $pdo->prepare('SELECT role_id, barangay_id FROM users WHERE user_id = ?');
+$stmt = $pdo->prepare('SELECT role_id, barangay_id FROM users WHERE id = ?');
 $stmt->execute([$user_id]);
 $userInfo = $stmt->fetch(PDO::FETCH_ASSOC);
 if (!$userInfo || (int)$userInfo['role_id'] !== ROLE_CAPTAIN) { // Only Barangay Captain allowed
@@ -98,7 +98,7 @@ if (isset($_GET['toggle_status'])) {
     }
 
     // Verify user belongs to captain's barangay
-    $checkStmt = $pdo->prepare("SELECT barangay_id FROM users WHERE user_id = ?");
+    $checkStmt = $pdo->prepare("SELECT barangay_id FROM users WHERE id = ?");
     $checkStmt->execute([$userId]);
     $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -107,23 +107,23 @@ if (isset($_GET['toggle_status'])) {
         exit;
     }
 
-    $newStatus = $action === 'activate' ? 'yes' : 'no';
+    $newStatus = $action === 'activate' ? 1 : 0;
 
-    $stmt = $pdo->prepare("UPDATE users SET is_active = ? WHERE user_id = ?");
+    $stmt = $pdo->prepare("UPDATE users SET is_active = ? WHERE id = ?");
     if ($stmt->execute([$newStatus, $userId])) {
-        echo json_encode(['success' => true, 'newStatus' => $newStatus]);
+        echo json_encode(['success' => true, 'newStatus' => $newStatus ? 'yes' : 'no']);
     } else {
         echo json_encode(['success' => false, 'message' => 'Failed to update status']);
     }
     exit;
 }
 
-/* ────────────── Delete user ────── */
+/* ────────────── Delete user (FIXED) ────── */
 if (isset($_GET['delete_id'])) {
     $userId = (int)$_GET['delete_id'];
     
     // Verify user belongs to captain's barangay
-    $checkStmt = $pdo->prepare("SELECT barangay_id FROM users WHERE user_id = ?");
+    $checkStmt = $pdo->prepare("SELECT barangay_id FROM users WHERE id = ?");
     $checkStmt->execute([$userId]);
     $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -135,48 +135,68 @@ if (isset($_GET['delete_id'])) {
     try {
         $pdo->beginTransaction();
 
-        /* 1. child rows that must disappear */
-        // document requests + their attributes
+        // FIXED: Delete related records one by one to avoid complex DELETE syntax
+        
+        // 1. Delete document request attributes first (child records)
         $pdo->prepare("
-            DELETE dr, dra
-              FROM DocumentRequest dr
-         LEFT JOIN DocumentRequestAttribute dra
-                ON dra.request_id = dr.document_request_id
-             WHERE dr.user_id = ?
+            DELETE FROM document_request_attributes 
+            WHERE request_id IN (
+                SELECT dr.id FROM document_requests dr 
+                JOIN persons p ON dr.person_id = p.id 
+                WHERE p.user_id = ?
+            )
         ")->execute([$userId]);
 
-        // addresses
-        $pdo->prepare("DELETE FROM Address WHERE user_id = ?")
-            ->execute([$userId]);
-
-        // blotter participants – keep record, detach user
+        // 2. Delete document requests
         $pdo->prepare("
-            UPDATE BlotterParticipant
-               SET user_id = NULL
-             WHERE user_id = ?
+            DELETE FROM document_requests 
+            WHERE person_id IN (
+                SELECT id FROM persons WHERE user_id = ?
+            )
         ")->execute([$userId]);
 
-        // monthly reports
+        // 3. Delete addresses
         $pdo->prepare("
-            UPDATE MonthlyReport
-               SET prepared_by = NULL
-             WHERE prepared_by = ?
+            DELETE FROM addresses 
+            WHERE person_id IN (
+                SELECT id FROM persons WHERE user_id = ?
+            )
         ")->execute([$userId]);
 
-        // audit-trail
+        // 4. Update blotter participants – keep record, detach user
         $pdo->prepare("
-            DELETE FROM AuditTrail
-                  WHERE admin_user_id = ?
+            UPDATE blotter_participants
+            SET person_id = NULL
+            WHERE person_id IN (
+                SELECT id FROM persons WHERE user_id = ?
+            )
         ")->execute([$userId]);
 
-        // events created by this user
+        // 5. Update monthly reports
+        $pdo->prepare("
+            UPDATE monthly_reports
+            SET prepared_by_user_id = NULL
+            WHERE prepared_by_user_id = ?
+        ")->execute([$userId]);
+
+        // 6. Delete audit trail
+        $pdo->prepare("
+            DELETE FROM audit_trails
+            WHERE user_id = ?
+        ")->execute([$userId]);
+
+        // 7. Delete events created by this user
         $pdo->prepare("
             DELETE FROM events
-                  WHERE created_by = ?
+            WHERE created_by_user_id = ?
         ")->execute([$userId]);
 
-        /* 2. finally, remove the user */
-        $stmt   = $pdo->prepare("DELETE FROM users WHERE user_id = ?");
+        // 8. Delete person records
+        $pdo->prepare("DELETE FROM persons WHERE user_id = ?")
+            ->execute([$userId]);
+
+        // 9. Finally, remove the user
+        $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
         $result = $stmt->execute([$userId]);
 
         if ($result) {
@@ -193,37 +213,38 @@ if (isset($_GET['delete_id'])) {
     exit;
 }
 
-/* ────────────── fetch list for page render ─────── */
+/* ────────────── fetch list for page render (FIXED) ─────── */
 $officialRoles = [ROLE_SECRETARY, ROLE_TREASURER, ROLE_COUNCILOR, ROLE_CHIEF];
-$rolePlaceholders = implode(',', $officialRoles);
+$placeholders = str_repeat('?,', count($officialRoles) - 1) . '?';
 $stmt = $pdo->prepare("
-    SELECT u.*, r.role_name, b.barangay_name,
+    SELECT u.*, r.name as role_name, b.name as barangay_name,
            CASE
-             WHEN u.role_id IN ($rolePlaceholders) THEN
+             WHEN u.role_id IN ($placeholders) THEN
                   IF(u.start_term_date <= CURDATE() AND
                      (u.end_term_date IS NULL OR u.end_term_date >= CURDATE()),
                      'active','inactive')
              ELSE 'N/A'
            END AS term_status
       FROM users u
-      JOIN Role r      ON r.role_id     = u.role_id
-      JOIN barangay b  ON b.barangay_id = u.barangay_id
-     WHERE u.role_id IN ($rolePlaceholders)
+      JOIN roles r      ON r.id     = u.role_id
+      JOIN barangay b  ON b.id = u.barangay_id
+     WHERE u.role_id IN ($placeholders)
        AND u.barangay_id = ?
      ORDER BY u.role_id, u.last_name, u.first_name
 ");
-$stmt->execute([$bid]);
+$executeParams = array_merge($officialRoles, $officialRoles, [$bid]);
+$stmt->execute($executeParams);
 $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 /* ──────────────── Fetch single user (AJAX) ──────────────── */
 if ($_SERVER['REQUEST_METHOD'] === 'GET' && isset($_GET['get'])) {
     $userId = (int)$_GET['get'];
     $stmt = $pdo->prepare("
-        SELECT u.*, r.role_name, b.barangay_name
+        SELECT u.*, r.name as role_name, b.name as barangay_name
         FROM users u
-        JOIN Role r ON r.role_id = u.role_id
-        JOIN barangay b ON b.barangay_id = u.barangay_id
-        WHERE u.user_id = ?
+        JOIN roles r ON r.id = u.role_id
+        JOIN barangay b ON b.id = u.barangay_id
+        WHERE u.id = ?
         AND u.barangay_id = ?
     ");
     $stmt->execute([$userId, $bid]);
@@ -259,6 +280,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
     $isOfficial  = in_array($roleId, [ROLE_SECRETARY, ROLE_TREASURER, ROLE_CHIEF, ROLE_COUNCILOR], true);
     $error       = null;
 
+    // Define emergency contact variables before validations
+    $pnpContact = $isOfficial ? trim($_POST['pnp_contact'] ?? '') : null;
+    $bfpContact = $isOfficial ? trim($_POST['bfp_contact'] ?? '') : null;
+
     /* Validate role */
     $allowedRoles = [ROLE_SECRETARY, ROLE_TREASURER, ROLE_COUNCILOR, ROLE_CHIEF];
     if (!in_array($roleId, $allowedRoles)) {
@@ -269,7 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
         $error = 'Invalid email format';
     } else {
-        $dup = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND user_id <> ?");
+        $dup = $pdo->prepare("SELECT COUNT(*) FROM users WHERE email = ? AND id <> ?");
         $dup->execute([$email, $uid]);
         if ($dup->fetchColumn() > 0) $error = 'Email already in use';
     }
@@ -344,13 +369,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
             if ($action === 'add') {
                 $passwordHash = password_hash($password, PASSWORD_DEFAULT);
                 $sql = "INSERT INTO users (
-                            email, password_hash, first_name, last_name, 
-                            role_id, barangay_id, is_active, isverify,
+                            email, password, first_name, last_name, 
+                            role_id, barangay_id, is_active, email_verified_at,
                             start_term_date, end_term_date,
-                            id_image_path, signature_image_path
+                            id_image_path, signature_image_path,
+                            pnp_contact, bfp_contact
                         ) VALUES (
                             ?, ?, ?, ?, 
-                            ?, ?, 'yes', 'yes',
+                            ?, ?, 1, NOW(),
+                            ?, ?,
                             ?, ?,
                             ?, ?
                         )";
@@ -361,11 +388,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                     $isOfficial ? $startTerm : null,
                     $isOfficial ? $endTerm : null,
                     $profilePic ?: 'default.png',
-                    $signaturePic
+                    $signaturePic,
+                    $pnpContact, $bfpContact
                 ]);
             } else {
                 // Verify user belongs to captain's barangay
-                $checkStmt = $pdo->prepare("SELECT barangay_id FROM Users WHERE user_id = ?");
+                $checkStmt = $pdo->prepare("SELECT barangay_id FROM users WHERE id = ?");
                 $checkStmt->execute([$uid]);
                 $checkResult = $checkStmt->fetch(PDO::FETCH_ASSOC);
                 
@@ -405,16 +433,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                     $params[] = $signaturePic;
                 }
                 
+                // Add PNP contact update if provided
+                if ($pnpContact) {
+                    $sqlParts[] = "pnp_contact = ?";
+                    $params[] = $pnpContact;
+                }
+                
+                // Add BFP contact update if provided
+                if ($bfpContact) {
+                    $sqlParts[] = "bfp_contact = ?";
+                    $params[] = $bfpContact;
+                }
+                
                 // Add password update if provided
                 if (!empty($password)) {
-                    $sqlParts[] = "password_hash = ?";
+                    $sqlParts[] = "password = ?";
                     $params[] = password_hash($password, PASSWORD_DEFAULT);
                 }
                 
                 // Add user_id to params for WHERE clause
                 $params[] = $uid;
                 
-                $sql = "UPDATE Users SET " . implode(", ", $sqlParts) . " WHERE user_id = ?";
+                $sql = "UPDATE users SET " . implode(", ", $sqlParts) . " WHERE id = ?";
                 $stmt = $pdo->prepare($sql);
                 $stmt->execute($params);
             }
@@ -437,14 +477,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
 }
 
 // Get barangay name
-$barangayStmt = $pdo->prepare("SELECT barangay_name FROM barangay WHERE barangay_id = ?");
+$barangayStmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
 $barangayStmt->execute([$bid]);
 $barangayName = $barangayStmt->fetchColumn();
 
 // Get allowed roles for dropdown
 $allowedRoles = [ROLE_SECRETARY, ROLE_TREASURER, ROLE_COUNCILOR, ROLE_CHIEF];
-$roleStmt = $pdo->prepare("SELECT role_id, role_name FROM Role WHERE role_id IN (" . implode(',', $allowedRoles) . ")");
-$roleStmt->execute();
+$placeholders = str_repeat('?,', count($allowedRoles) - 1) . '?';
+$roleStmt = $pdo->prepare("SELECT id as role_id, name as role_name FROM roles WHERE id IN ($placeholders)");
+$roleStmt->execute($allowedRoles);
 $roles = $roleStmt->fetchAll(PDO::FETCH_ASSOC);
 
 require_once __DIR__ . "/../pages/header.php";
@@ -481,8 +522,6 @@ require_once __DIR__ . "/../pages/header.php";
             </div>
 
             <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-                
-                
                 <div class="overflow-x-auto">
                     <table class="min-w-full divide-y divide-gray-200">
                         <thead class="bg-gray-50">
@@ -497,7 +536,7 @@ require_once __DIR__ . "/../pages/header.php";
                         </thead>
                         <tbody class="bg-white divide-y divide-gray-200" id="userTable">
                             <?php foreach ($users as $user): ?>
-                            <tr data-id="<?= htmlspecialchars($user['user_id']) ?>">
+                            <tr data-id="<?= htmlspecialchars($user['id']) ?>">
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <img src="../uploads/staff_pics/<?= htmlspecialchars($user['id_image_path'] ?? 'default.png') ?>" 
                                          class="w-10 h-10 rounded-full object-cover" alt="Profile">
@@ -526,13 +565,13 @@ require_once __DIR__ . "/../pages/header.php";
                                     <?php endif; ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap space-x-2">
-                                    <button onclick="openModal('edit', <?= $user['user_id'] ?>, <?= $user['role_id'] ?>)" 
+                                    <button onclick="openModal('edit', <?= $user['id'] ?>, <?= $user['role_id'] ?>)" 
                                             class="text-purple-600 hover:text-purple-900">Edit</button>
-                                    <button onclick="toggleStatus(<?= $user['user_id'] ?>, '<?= $user['is_active'] === 'yes' ? 'deactivate' : 'activate' ?>')" 
+                                    <button onclick="toggleStatus(<?= $user['id'] ?>, '<?= $user['is_active'] ? 'deactivate' : 'activate' ?>')" 
                                             class="text-blue-600 hover:text-blue-900">
-                                        <?= $user['is_active'] === 'yes' ? 'Deactivate' : 'Activate' ?>
+                                        <?= $user['is_active'] ? 'Deactivate' : 'Activate' ?>
                                     </button>
-                                    <button onclick="deleteUser(<?= $user['user_id'] ?>)" 
+                                    <button onclick="deleteUser(<?= $user['id'] ?>)" 
                                             class="text-red-600 hover:text-red-900">Delete</button>
                                 </td>
                             </tr>
@@ -608,6 +647,17 @@ require_once __DIR__ . "/../pages/header.php";
                         <div id="signatureUpload" class="col-span-2 hidden">
                             <label class="block text-sm font-medium text-gray-700 mb-2">Signature</label>
                             <input type="file" name="signature_pic" accept="image/*" class="w-full px-3 py-2 border rounded-lg">
+                        </div>
+
+                        <!-- FIXED: Removed nested PHP tags -->
+                        <?php $isSecretaryRole = in_array(ROLE_SECRETARY, $allowedRoles); ?>
+                        <div id="emergencyContacts" class="col-span-2 <?= $isSecretaryRole ? '' : 'hidden' ?>">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">PNP Contact Number</label>
+                            <input type="text" name="pnp_contact" class="w-full px-3 py-2 border rounded-lg" placeholder="Enter PNP contact">
+                        </div>
+                        <div id="emergencyContacts2" class="col-span-2 <?= $isSecretaryRole ? '' : 'hidden' ?>">
+                            <label class="block text-sm font-medium text-gray-700 mb-2">BFP Contact Number</label>
+                            <input type="text" name="bfp_contact" class="w-full px-3 py-2 border rounded-lg" placeholder="Enter BFP contact">
                         </div>
                     </div>
 
