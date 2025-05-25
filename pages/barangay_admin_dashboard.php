@@ -6,13 +6,12 @@ require_once "../pages/header.php";
 $barangay_id = $_SESSION['barangay_id'] ?? 1;
 
 
-// Fetch metrics
 $sql = "SELECT COUNT(*) AS total_residents FROM users WHERE role_id = 8 AND barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalResidents = (int) $stmt->fetchColumn();
 
-// Updated households query with proper joins; replacing the old query using a.user_id
+
 $sql = "SELECT COUNT(DISTINCT p.user_id) FROM addresses a 
         JOIN persons p ON a.person_id = p.id 
         JOIN users u ON p.user_id = u.id 
@@ -97,6 +96,21 @@ foreach ($events as $event) {
         'location' => $event['location']
     ];
 }
+
+// Process update for local barangay contact
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_barangay_contact'])) {
+    $localContact = trim($_POST['local_contact'] ?? '');
+    $updateStmt = $pdo->prepare("UPDATE barangay_settings SET local_barangay_contact = ? WHERE barangay_id = ?");
+    $updateStmt->execute([$localContact, $barangay_id]);
+    $_SESSION['success'] = 'Barangay Contact updated successfully';
+    header("Location: barangay_admin_dashboard.php");
+    exit;
+}
+
+// Fetch local barangay contact from barangay_settings
+$contactStmt = $pdo->prepare("SELECT local_barangay_contact FROM barangay_settings WHERE barangay_id = ?");
+$contactStmt->execute([$barangay_id]);
+$barangayContact = $contactStmt->fetchColumn() ?: '';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -182,6 +196,14 @@ foreach ($events as $event) {
       </tbody>
     </table>
   </div>
+</div>
+
+<div class="bg-white p-6 rounded-lg shadow hover:shadow-lg mb-6">
+    <h2 class="text-xl font-semibold text-gray-800 mb-4">Local Barangay Emergency Contact</h2>
+    <form method="POST" class="flex flex-col gap-4">
+        <input type="text" name="local_contact" value="<?= htmlspecialchars($barangayContact) ?>" placeholder="Enter Barangay Contact" class="px-4 py-2 border rounded-lg">
+        <button type="submit" name="update_barangay_contact" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">Update Contact</button>
+    </form>
 </div>
 </section>
 

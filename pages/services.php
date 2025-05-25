@@ -1,8 +1,8 @@
 <?php
 session_start();
 require_once "../config/dbconn.php";
-
-// Fetch user info for navbar (copy from user_dashboard.php)
+require "../components/navbar.php";
+// services. php page
 $userName = '';
 $barangayName = '';
 if (isset($_SESSION['user_id'])) {
@@ -19,9 +19,6 @@ if (isset($_SESSION['user_id'])) {
         $barangayName = $user['barangay_name'] ?? '';
     }
 }
-
-
-
 
 // Get all document types (only the 6 supported)
 $stmt = $pdo->query("
@@ -54,7 +51,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 </head>
 <body>
-    <?php if (isset($_SESSION['success'])): ?>
+  <?php if (isset($_SESSION['success'])): ?>
     <script>
         Swal.fire({
             title: '<?= $_SESSION['success']['title'] ?>',
@@ -76,80 +73,6 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
     </script>
     <?php unset($_SESSION['error']); endif; ?>
 
-    <!-- Navigation Bar (copied from user_dashboard.php) -->
-    <header> 
-      <nav class="navbar">
-        <a href="#" class="logo">
-          <img src="../photo/logo.png" alt="iBarangay Logo" />
-          <h2>iBarangay</h2>
-        </a>
-        <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
-          <i class="fas fa-bars"></i>
-        </button>
-        <div class="nav-links">
-          <a href="../pages/user_dashboard.php#home">Home</a>
-          <a href="../pages/user_dashboard.php#about">About</a>
-          <a href="../pages/user_dashboard.php#services">Services</a>
-          <a href="../pages/user_dashboard.php#contact">Contact</a>
-          <?php if (!empty($userName)): ?>
-          <div class="user-info" onclick="window.location.href='../pages/edit_account.php'" style="cursor: pointer;">
-            <div class="user-avatar">
-              <i class="fas fa-user-circle"></i>
-            </div>
-            <div class="user-details">
-              <div class="user-name"><?php echo htmlspecialchars($userName); ?></div>
-              <div class="user-barangay"><?php echo htmlspecialchars($barangayName); ?></div>
-            </div>
-          </div>
-          <?php endif; ?>
-        </div>
-      </nav>
-    </header>
-    <!-- Add CSS for User Info in Navbar -->
-    <style>
-    /* User Info Styles - Minimalist Version */
-.user-info {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.5rem 1rem;
-    background: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    color: #333333;
-    margin-left: 1rem;
-    transition: all 0.2s ease;
-}
-
-.user-info:hover {
-    background: #f8f8f8;
-    border-color: #d0d0d0;
-}
-
-.user-avatar {
-    font-size: 1.5rem;
-    color: #666666;
-    display: flex;
-    align-items: center;
-}
-
-.user-details {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.2;
-}
-
-.user-name {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: #0a2240; /* navy blue */
-}
-
-.user-barangay {
-    font-size: 0.75rem;
-    color: #0a2240; /* navy blue */
-}
-    </style>
 
     <main>
         <section class="wizard-section">
