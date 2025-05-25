@@ -368,7 +368,6 @@ ALTER TABLE users ADD COLUMN govt_id_image LONGBLOB;
 -- Person information
 CREATE TABLE persons (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    id_number VARCHAR(20) UNIQUE NOT NULL,
     first_name VARCHAR(50) NOT NULL,
     middle_name VARCHAR(50),
     last_name VARCHAR(50) NOT NULL,
@@ -386,7 +385,7 @@ CREATE TABLE persons (
     nhts_pr_listahanan BOOLEAN DEFAULT FALSE,
     indigenous_people BOOLEAN DEFAULT FALSE,
     pantawid_beneficiary BOOLEAN DEFAULT FALSE,
-    resident_type ENUM('regular', 'temporary', 'non-resident') DEFAULT 'regular',
+    resident_type ENUM('REGULAR', 'SENIOR', 'PWD') DEFAULT 'REGULAR',
     contact_number VARCHAR(20),
     user_id INT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -441,7 +440,6 @@ CREATE TABLE addresses (
     region VARCHAR(50) DEFAULT 'III',
     is_primary BOOLEAN DEFAULT TRUE,
     is_permanent BOOLEAN DEFAULT FALSE,
-    residency_type ENUM('Home Owner', 'Renter', 'Boarder', 'Living with Relatives', 'Living with Friends', 'Others'),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
@@ -497,11 +495,12 @@ INSERT INTO users (email, password, role_id, barangay_id, first_name, last_name,
     ('resident1@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 8, 32, 'Test', 'Resident', 'Male', NOW(), TRUE);
 
 -- Insert sample persons for the users
-INSERT INTO persons (id_number, user_id, first_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, monthly_income, years_of_residency, resident_type, contact_number) VALUES
-    ('PROG-2024-0001', 1, 'System', 'Programmer', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 50000.00, 15, 'regular', '09123456789'),
-    ('SADM-2024-0001', 2, 'Super', 'Administrator', '1985-01-01', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 45000.00, 20, 'regular', '09234567890'),
-    ('BADM-2024-0001', 3, 'Barangay', 'Administrator', '1980-01-01', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE LEVEL', 35000.00, 25, 'regular', '09345678901'),
-    ('RES-2024-0001', 4, 'Test', 'Resident', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'VOCATIONAL', 25000.00, 10, 'regular', '09456789012');
+INSERT INTO persons (user_id, first_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, monthly_income, years_of_residency, resident_type, contact_number) 
+VALUES 
+    (1, 'System', 'Programmer', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 50000.00, 15, 'REGULAR', '09123456789'),
+    (2, 'Super', 'Administrator', '1985-01-01', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 45000.00, 20, 'REGULAR', '09234567890'),
+    (3, 'Barangay', 'Administrator', '1980-01-01', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE LEVEL', 35000.00, 25, 'REGULAR', '09345678901'),
+    (4, 'Test', 'Resident', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'VOCATIONAL', 25000.00, 10, 'REGULAR', '09456789012');
 
 -- Insert user roles
 INSERT INTO user_roles (user_id, role_id, barangay_id, is_active) VALUES
@@ -511,34 +510,33 @@ INSERT INTO user_roles (user_id, role_id, barangay_id, is_active) VALUES
     (4, 8, 32, TRUE);   -- Resident role
 
 -- Insert more sample persons (general residents)
-INSERT INTO persons (id_number, first_name, middle_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, occupation, monthly_income, years_of_residency, resident_type, contact_number) VALUES
-    ('RES-2024-0002', 'Juan', 'Santos', 'Dela Cruz', '1980-05-15', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'HIGH SCHOOL GRADUATE', 'Farmer', 15000.00, 30, 'regular', '09567890123'),
-    ('RES-2024-0003', 'Maria', 'Garcia', 'Santos', '1985-08-20', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Teacher', 25000.00, 18, 'regular', '09678901234'),
-    ('RES-2024-0004', 'Pedro', 'Ramos', 'Gonzales', '1975-12-10', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'PROTESTANT', 'HIGH SCHOOL LEVEL', 'Driver', 12000.00, 12, 'regular', '09789012345'),
-    ('RES-2024-0005', 'Ana', 'Flores', 'Reyes', '1990-03-25', 'San Rafael, Bulacan', 'FEMALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Nurse', 35000.00, 8, 'regular', '09890123456'),
-    ('RES-2024-0006', 'Jose', 'Miguel', 'Torres', '1970-07-08', 'San Rafael, Bulacan', 'MALE', 'WIDOW/WIDOWER', 'ROMAN CATHOLIC', 'VOCATIONAL', 'Retired', 15000.00, 35, 'regular', '09901234567');
+INSERT INTO persons (first_name, middle_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, occupation, monthly_income, years_of_residency, resident_type, contact_number) 
+VALUES 
+    ('Juan', 'Santos', 'Dela Cruz', '1980-05-15', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'HIGH SCHOOL GRADUATE', 'Farmer', 15000.00, 30, 'REGULAR', '09567890123'),
+    ('Maria', 'Garcia', 'Santos', '1985-08-20', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Teacher', 25000.00, 18, 'REGULAR', '09678901234'),
+    ('Pedro', 'Ramos', 'Gonzales', '1975-12-10', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'PROTESTANT', 'HIGH SCHOOL LEVEL', 'Driver', 12000.00, 12, 'REGULAR', '09789012345'),
+    ('Ana', 'Flores', 'Reyes', '1990-03-25', 'San Rafael, Bulacan', 'FEMALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Nurse', 35000.00, 8, 'REGULAR', '09890123456'),
+    ('Jose', 'Miguel', 'Torres', '1970-07-08', 'San Rafael, Bulacan', 'MALE', 'WIDOW/WIDOWER', 'ROMAN CATHOLIC', 'VOCATIONAL', 'Retired', 15000.00, 35, 'REGULAR', '09901234567');
 
 -- Insert sample addresses for residents
-INSERT INTO addresses (person_id, user_id, barangay_id, house_no, street, residency_type, is_primary) VALUES
-    (5, NULL, 32, '123', 'Mabini Street', 'Home Owner', TRUE),
-    (6, NULL, 18, '456', 'Rizal Avenue', 'Renter', TRUE),
-    (7, NULL, 3, '789', 'Luna Street', 'Home Owner', TRUE),
-    (8, NULL, 32, '321', 'Bonifacio Road', 'Boarder', TRUE),
-    (9, NULL, 18, '654', 'Aguinaldo Street', 'Home Owner', TRUE);
+INSERT INTO addresses (person_id, user_id, barangay_id, house_no, street, is_primary, is_permanent) VALUES
+    (5, NULL, 32, '123', 'Mabini Street', TRUE, FALSE),
+    (6, NULL, 18, '456', 'Rizal Avenue', TRUE, FALSE),
+    (7, NULL, 3, '789', 'Luna Street', TRUE, FALSE),
+    (8, NULL, 32, '321', 'Bonifacio Road', TRUE, FALSE),
+    (9, NULL, 18, '654', 'Aguinaldo Street', TRUE, FALSE);
 
 -- Insert sample households
 INSERT INTO households (id, barangay_id, household_head_person_id) VALUES
-    ('HSN0001', 32, 5),  -- Juan's household in Tambubong
-    ('HSN0002', 18, 6),  -- Maria's household in Pantubig
-    ('HSN0003', 3, 7);   -- Pedro's household in Caingin
+    ('0001', 32, 5);  -- Juan's household in Tambubong
 
 -- Insert sample household members
 INSERT INTO household_members (household_id, person_id, relationship_type_id, is_household_head) VALUES
-    ('HSN0001', 5, 1, TRUE),   -- Juan as HEAD
-    ('HSN0001', 8, 3, FALSE),  -- Ana as CHILD
-    ('HSN0002', 6, 1, TRUE),   -- Maria as HEAD
-    ('HSN0002', 9, 2, FALSE),  -- Jose as SPOUSE
-    ('HSN0003', 7, 1, TRUE);   -- Pedro as HEAD
+    ('0001', 5, 1, TRUE),   -- Juan as HEAD
+    ('0001', 6, 2, FALSE),  -- Maria as SPOUSE
+    ('0001', 7, 3, FALSE),  -- Pedro as CHILD
+    ('0001', 8, 3, FALSE),  -- Ana as CHILD
+    ('0001', 9, 3, FALSE);  -- Jose as CHILD
 
 /*-------------------------------------------------------------
   SECTION 2.B: NORMALIZED PERSON DETAIL TABLES (CENSUS)
@@ -1239,7 +1237,6 @@ CREATE INDEX idx_users_barangay_id ON users(barangay_id);
 
 -- Person-related indexes
 CREATE INDEX idx_persons_user_id ON persons(user_id);
-CREATE INDEX idx_persons_id_number ON persons(id_number);
 CREATE INDEX idx_persons_name ON persons(last_name, first_name);
 CREATE INDEX idx_persons_birth_date ON persons(birth_date);
 
@@ -1248,6 +1245,7 @@ CREATE INDEX idx_addresses_person_id ON addresses(person_id);
 CREATE INDEX idx_addresses_user_id ON addresses(user_id);
 CREATE INDEX idx_addresses_barangay_id ON addresses(barangay_id);
 CREATE INDEX idx_addresses_primary ON addresses(is_primary);
+CREATE INDEX idx_addresses_permanent ON addresses(is_permanent);
 
 -- Document request indexes
 CREATE INDEX idx_document_requests_person_id ON document_requests(person_id);
@@ -1437,5 +1435,138 @@ SELECT
 FROM household_members hm
 JOIN persons p ON hm.person_id = p.id
 JOIN relationship_types rt ON hm.relationship_type_id = rt.id;
+
+-- Insert sample person identification data
+INSERT INTO person_identification (person_id, osca_id, gsis_id, sss_id, tin_id, philhealth_id, other_id_type, other_id_number) VALUES
+    (1, NULL, '1234567890', '11-2222222-3', '123-456-789-000', 'PH-12345678901', 'Driver\'s License', 'N01-12-345678'),
+    (2, NULL, '2345678901', '22-3333333-4', '234-567-890-000', 'PH-23456789012', 'Voter\'s ID', 'VID-123456789'),
+    (3, NULL, '3456789012', '33-4444444-5', '345-678-901-000', 'PH-34567890123', 'UMID', 'CRN-123456789012'),
+    (4, NULL, NULL, '44-5555555-6', '456-789-012-000', 'PH-45678901234', 'Postal ID', 'P-12345678'),
+    (5, '1234-5678-9012', NULL, '55-6666666-7', '567-890-123-000', 'PH-56789012345', NULL, NULL),
+    (6, NULL, '4567890123', '66-7777777-8', '678-901-234-000', 'PH-67890123456', 'PRC ID', 'PRC-123456'),
+    (7, NULL, NULL, '77-8888888-9', '789-012-345-000', 'PH-78901234567', NULL, NULL),
+    (8, NULL, NULL, '88-9999999-0', '890-123-456-000', 'PH-89012345678', 'Passport', 'P1234567A'),
+    (9, '2345-6789-0123', NULL, '99-0000000-1', '901-234-567-000', 'PH-90123456789', NULL, NULL);
+
+-- Insert sample person assets data
+INSERT INTO person_assets (person_id, asset_type_id, details) VALUES
+    (1, 1, 'Two-story house'),
+    (1, 2, '150 sqm residential lot'),
+    (2, 2, '200 sqm with house'),
+    (3, 1, 'Bungalow house'),
+    (3, 3, '1 hectare rice field'),
+    (4, 4, 'Small store building'),
+    (5, 2, '300 sqm with house'),
+    (5, 6, 'Small fish pond'),
+    (6, 1, 'Three-story house'),
+    (6, 5, '500 sqm vacant lot'),
+    (7, 3, '2 hectare farmland'),
+    (8, 2, '250 sqm with house'),
+    (9, 1, 'Two-story house');
+
+-- Insert sample person income sources data
+INSERT INTO person_income_sources (person_id, source_type_id, amount, details) VALUES
+    (1, 1, NULL, 'Software Developer Salary'),
+    (1, 3, NULL, 'Stock investments'),
+    (2, 1, NULL, 'Administrative work'),
+    (3, 1, NULL, 'Government Employee'),
+    (3, 7, 15000.00, 'Monthly pension'),
+    (4, 1, NULL, 'Private sector employee'),
+    (5, 1, NULL, 'Farming income'),
+    (5, 8, NULL, 'Land rental'),
+    (6, 2, 25000.00, 'Teacher\'s pension'),
+    (7, 1, NULL, 'Driver income'),
+    (8, 1, NULL, 'Nurse salary'),
+    (9, 2, 20000.00, 'Retirement pension');
+
+-- Insert sample person living arrangements data
+INSERT INTO person_living_arrangements (person_id, arrangement_type_id, details) VALUES
+    (1, 2, 'Living with spouse'),
+    (2, 4, 'Living with children'),
+    (3, 2, 'Living with spouse'),
+    (4, 1, 'Living alone'),
+    (5, 2, 'Living with spouse and children'),
+    (6, 4, 'Living with children'),
+    (7, 1, 'Living alone'),
+    (8, 8, 'Living with relatives'),
+    (9, 3, 'Senior care facility');
+
+-- Insert sample person skills data
+INSERT INTO person_skills (person_id, skill_type_id, details) VALUES
+    (1, 12, 'Software Engineering'),
+    (2, 2, 'Elementary Education'),
+    (3, 3, 'Paralegal'),
+    (4, 10, 'Automotive'),
+    (5, 7, 'Rice Farming'),
+    (6, 2, 'High School Teaching'),
+    (7, 8, 'Deep sea fishing'),
+    (8, 1, 'Nursing'),
+    (9, 11, 'Traditional Crafts');
+
+-- Insert sample person community involvements data
+INSERT INTO person_involvements (person_id, involvement_type_id, details) VALUES
+    (1, 2, 'IT Training Volunteer'),
+    (2, 4, 'Parent-Teacher Association Head'),
+    (3, 8, 'Church Organization Leader'),
+    (4, 3, 'Street Cleaning Drive Organizer'),
+    (5, 7, 'Neighborhood Watch Member'),
+    (6, 1, 'Medical Mission Volunteer'),
+    (7, 6, 'Senior Citizens Group Member'),
+    (8, 9, 'Youth Counseling'),
+    (9, 4, 'Senior Citizens Association Officer');
+
+-- Insert sample person problems data
+INSERT INTO person_problems (person_id, problem_category_id, details) VALUES
+    (1, 15, 'High cost of living'),
+    (2, 3, 'Limited access to medical services'),
+    (3, 7, 'Mobility issues'),
+    (4, 14, 'Housing loan concerns'),
+    (5, 2, 'Healthcare costs'),
+    (6, 20, 'Transportation difficulties'),
+    (7, 12, 'Home maintenance issues'),
+    (8, 4, 'Work-related stress'),
+    (9, 19, 'Social isolation');
+
+-- Insert sample person health information
+INSERT INTO person_health_info (person_id, health_condition, has_maintenance, maintenance_details, high_cost_medicines) VALUES
+    (1, 'Hypertension', TRUE, 'Maintenance for blood pressure', TRUE),
+    (2, 'Diabetes', TRUE, 'Insulin maintenance', TRUE),
+    (3, 'Arthritis', TRUE, 'Pain management medication', TRUE),
+    (4, 'None', FALSE, NULL, FALSE),
+    (5, 'High Cholesterol', TRUE, 'Cholesterol maintenance', FALSE),
+    (6, 'Asthma', TRUE, 'Inhaler maintenance', TRUE),
+    (7, 'Heart Disease', TRUE, 'Heart medication', TRUE),
+    (8, 'None', FALSE, NULL, FALSE),
+    (9, 'Osteoporosis', TRUE, 'Calcium supplements', FALSE);
+
+-- Insert sample person health concerns
+INSERT INTO person_health_concerns (person_id, concern_type_id, details, is_active) VALUES
+    (1, 1, 'Regular monitoring needed', TRUE),
+    (2, 2, 'Blood sugar monitoring', TRUE),
+    (3, 4, 'Joint pain management', TRUE),
+    (5, 1, 'Monthly checkup required', TRUE),
+    (6, 5, 'Breathing difficulties', TRUE),
+    (7, 3, 'Cardiac care', TRUE),
+    (9, 4, 'Bone density concerns', TRUE);
+
+-- Insert sample person service needs
+INSERT INTO person_service_needs (person_id, service_type_id, details, is_urgent, status) VALUES
+    (1, 1, 'Annual medical checkup', FALSE, 'pending'),
+    (2, 2, 'Dental cleaning', FALSE, 'pending'),
+    (3, 3, 'Eye checkup', TRUE, 'in_progress'),
+    (5, 4, 'Physical therapy', TRUE, 'in_progress'),
+    (6, 5, 'Mental health counseling', FALSE, 'pending'),
+    (7, 1, 'Heart specialist consultation', TRUE, 'in_progress'),
+    (9, 6, 'Home care assistance', TRUE, 'pending');
+
+-- Insert sample person other needs
+INSERT INTO person_other_needs (person_id, need_type_id, details, priority_level, status) VALUES
+    (1, 1, 'Medicine subsidy', 'medium', 'identified'),
+    (2, 2, 'Part-time work', 'high', 'assessed'),
+    (3, 3, 'Skills training', 'medium', 'addressed'),
+    (5, 4, 'Social activities', 'low', 'monitoring'),
+    (6, 5, 'Family counseling', 'high', 'assessed'),
+    (7, 6, 'Home safety improvements', 'urgent', 'identified'),
+    (9, 7, 'Environmental concerns', 'medium', 'monitoring');
 
 

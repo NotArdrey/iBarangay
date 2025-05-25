@@ -15,12 +15,12 @@ $stmt = $pdo->prepare("
         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age,
         p.years_of_residency
     FROM persons p
-    JOIN household_members hm ON p.id = hm.person_id
-    JOIN households h ON hm.household_id = h.id
-    JOIN barangay b ON h.barangay_id = b.id
+    LEFT JOIN household_members hm ON p.id = hm.person_id
+    LEFT JOIN households h ON hm.household_id = h.id
+    LEFT JOIN barangay b ON h.barangay_id = b.id
     LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
     LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
-    WHERE h.barangay_id = ?
+    WHERE (h.barangay_id = ? OR h.barangay_id IS NULL)
     ORDER BY p.last_name, p.first_name
 ");
 $stmt->execute([$_SESSION['barangay_id']]);
@@ -128,8 +128,6 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                 <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
-                <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
-                <a href="javascript:void(0)" onclick="confirmDelete(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</a>
               </td>
             </tr>
             <?php endforeach; ?>

@@ -1,1556 +1,1799 @@
 <?php
 session_start();
 require "../config/dbconn.php";
-header("Cross-Origin-Opener-Policy: same-origin-allow-popups");
-//../pages/user_dashboard.php
-$events_result = [];
-$orgChartData = [];
-$barangayName = '';
-$userName = '';
-$userEmail = '';
 
-// Flag to check if user has already requested First Time Job Seeker document
-$hasRequestedFirstTimeJobSeeker = false;
+$conn = $pdo;
+global $conn;
 
-if (isset($_SESSION['user_id'])) {
-    $user_id = $_SESSION['user_id'];
-    
-    // Fetch user's information including barangay_id and barangay name
-    $sql = "SELECT u.barangay_id, u.first_name, u.last_name, u.email, b.name as barangay_name 
+$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 4;
+$user_info = null;
+$barangay_name = "Barangay";
+$barangay_id = 32; 
+
+if ($user_id) {
+    $sql = "SELECT u.first_name, u.last_name, u.barangay_id, b.name as barangay_name 
             FROM users u 
             LEFT JOIN barangay b ON u.barangay_id = b.id 
             WHERE u.id = ?";
-    $stmt = $pdo->prepare($sql);
+    $stmt = $conn->prepare($sql);
     $stmt->execute([$user_id]);
-    $user = $stmt->fetch();
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($user && isset($user['barangay_id'])) {
-        $barangay_id = $user['barangay_id'];
-        $barangayName = $user['barangay_name'] ? $user['barangay_name'] : '';
-        $userName = trim($user['first_name'] . ' ' . $user['last_name']);
-        $userEmail = $user['email'];
-        $currentDateTime = date('Y-m-d H:i:s');
-
-        // Fetch events using PDO
-        $events_sql = "
-        SELECT *
-          FROM events
-         WHERE barangay_id = ?
-           AND (status = 'scheduled' OR status = 'postponed')
-         ORDER BY
-           CASE WHEN status = 'postponed' THEN 1 ELSE 0 END,
-           start_datetime ASC
-        ";
-        $events_stmt = $pdo->prepare($events_sql);
-        $events_stmt->execute([$barangay_id]);
-        $events_result = $events_stmt->fetchAll();
-      
-        // Check if user has already requested First Time Job Seeker document
-        $firstTimeJobSeekerCheck = $pdo->prepare("
-            SELECT COUNT(*) as count 
-            FROM document_requests dr
-            JOIN document_types dt ON dr.document_type_id = dt.id
-            JOIN persons p ON dr.person_id = p.id
-            WHERE p.user_id = ? 
-            AND dt.name = 'First Time Job Seeker'
-        ");
-        $firstTimeJobSeekerCheck->execute([$user_id]);
-        $result = $firstTimeJobSeekerCheck->fetch(PDO::FETCH_ASSOC);
-        $hasRequestedFirstTimeJobSeeker = $result['count'] > 0;
-
-        // Fetch organizational chart members (excluding programmer, super_admin, and resident roles)
-        $orgChartQuery = $pdo->prepare("
-            SELECT DISTINCT
-                u.first_name,
-                u.last_name,
-                u.email,
-                r.name as role_name,
-                r.description as role_description,
-                ur.start_term_date,
-                ur.end_term_date,
-                ur.is_active,
-                bs.barangay_captain_name,
-                bs.contact_number as barangay_contact
-            FROM users u
-            JOIN user_roles ur ON u.id = ur.user_id
-            JOIN roles r ON ur.role_id = r.id
-            LEFT JOIN barangay_settings bs ON u.barangay_id = bs.barangay_id
-            WHERE ur.barangay_id = ? 
-            AND ur.is_active = TRUE
-            AND r.name NOT IN ('programmer', 'super_admin', 'resident')
-            AND u.is_active = TRUE
-            ORDER BY 
-                CASE r.name
-                    WHEN 'barangay_captain' THEN 1
-                    WHEN 'barangay_secretary' THEN 2
-                    WHEN 'barangay_treasurer' THEN 3
-                    WHEN 'barangay_councilor' THEN 4
-                    WHEN 'barangay_health_worker' THEN 5
-                    WHEN 'chief_officer' THEN 6
-                    ELSE 7
-                END,
-                u.first_name, u.last_name
-        ");
-        $orgChartQuery->execute([$barangay_id]);
-        $orgChartData = $orgChartQuery->fetchAll();
+    if ($row) {
+        $user_info = $row;
+        $barangay_name = $row['barangay_name'];
+        $barangay_id = $row['barangay_id'];
     }
+    $stmt = null;
 }
 
-// Fetch persons data using PDO
-if (isset($_SESSION['user_id'])) {
-    $stmt = $pdo->prepare("SELECT * FROM persons WHERE user_id = ?");
-    $stmt->execute([$_SESSION['user_id']]);
+// NOW INCLUDE NAVBAR AFTER VARIABLES ARE SET
+require "../components/navbar.php";
+//user_dashboard.php PAGE
+// REST OF YOUR CODE CONTINUES...
+$emergency_contacts = [
+    'local_barangay_contact' => null,
+    'pnp_contact' => null,
+    'bfp_contact' => null
+];
+
+// Use the correct column names from your database schema
+$sqlLocal = "SELECT local_barangay_contact FROM barangay_settings WHERE barangay_id = ?";
+$stmtLocal = $conn->prepare($sqlLocal);
+$stmtLocal->execute([$barangay_id]);
+$rowLocal = $stmtLocal->fetch(PDO::FETCH_ASSOC);
+$emergency_contacts['local_barangay_contact'] = $rowLocal && !empty($rowLocal['local_barangay_contact'])
+    ? $rowLocal['local_barangay_contact']
+    : 'No Available Number';
+
+$sqlGlobal = "SELECT pnp_contact, bfp_contact FROM barangay_settings WHERE barangay_id = 0";
+$stmtGlobal = $conn->prepare($sqlGlobal);
+$stmtGlobal->execute();
+$rowGlobal = $stmtGlobal->fetch(PDO::FETCH_ASSOC);
+$emergency_contacts['pnp_contact'] = $rowGlobal && !empty($rowGlobal['pnp_contact'])
+    ? $rowGlobal['pnp_contact']
+    : 'No Available Number';
+$emergency_contacts['bfp_contact'] = $rowGlobal && !empty($rowGlobal['bfp_contact'])
+    ? $rowGlobal['bfp_contact']
+    : 'No Available Number';
+
+$stmt = null;
+
+
+$announcements = [];
+$sql = "SELECT title, description, start_datetime, location, organizer 
+        FROM events 
+        WHERE barangay_id = ? 
+        AND start_datetime >= NOW() 
+        ORDER BY start_datetime ASC 
+        LIMIT 5";
+$stmt = $conn->prepare($sql);
+$stmt->execute([$barangay_id]);
+while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $announcements[] = $row;
 }
+$stmt = null;
+
+
+$sql = "SELECT u.first_name, u.last_name, r.name as role
+        FROM users u 
+        JOIN roles r ON u.role_id = r.id 
+        WHERE u.barangay_id = ? 
+          AND r.name IN ('barangay_captain','barangay_secretary','barangay_treasurer','barangay_councilor')
+        ORDER BY FIELD(r.name, 'barangay_captain','barangay_secretary','barangay_treasurer','barangay_councilor')";
+$stmt = $conn->prepare($sql);
+$stmt->execute([$barangay_id]);
+$council = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stmt = null;
+
+
 ?>
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>iBarangay - Community Portal</title>
-  <!-- Link to the separated CSS file -->
-  <link rel="stylesheet" href="../styles/user_dashboard.css" />
-  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
-</head>
-<body>
-  <!-- Navigation Bar -->
-<header> 
-  <nav class="navbar">
-    <a href="#" class="logo">
-      <img src="../photo/logo.png" alt="iBarangay Logo" />
-      <h2>iBarangay</h2>
-    </a>
-    <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
-      <i class="fas fa-bars"></i>
-    </button>
-    <div class="nav-links">
-      <a href="#home">Home</a>
-      <a href="#about">About</a>
-      <a href="#services">Services</a>
-      <a href="#contact">Contact</a>
-      
-      <!-- User Info Section -->
-      <?php if (!empty($userName)): ?>
-      <div class="user-info" onclick="window.location.href='../pages/edit_account.php'" style="cursor: pointer;">
-        <div class="user-avatar">
-          <i class="fas fa-user-circle"></i>
-        </div>
-        <div class="user-details">
-          <div class="user-name"><?php echo htmlspecialchars($userName); ?></div>
-          <div class="user-barangay"><?php echo htmlspecialchars($barangayName); ?></div>
-        </div>
-      </div>
-      <?php endif; ?>
-    </div>
-  </nav>
-</header>
-
-  <!-- Add CSS for User Info in Navbar -->
+  <link href="https://unpkg.com/aos@next/dist/aos.css" rel="stylesheet" />
   <style>
-  /* User Info Styles - Minimalist Version */
-.user-info {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.5rem 1rem;
-    background: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    color: #333333;
-    margin-left: 1rem;
-    transition: all 0.2s ease;
-}
 
-.user-info:hover {
-    background: #f8f8f8;
-    border-color: #d0d0d0;
-}
-
-.user-avatar {
-    font-size: 1.5rem;
-    color: #666666;
-    display: flex;
-    align-items: center;
-}
-
-.user-details {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.2;
-}
-
-.user-name {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: #0a2240; /* navy blue */
-}
-
-.user-barangay {
-    font-size: 0.75rem;
-    color: #0a2240; /* navy blue */
-}
-  </style>
-
-  <main>
-    <!-- Hero Section -->
-    <section class="hero" id="home">
-      <div class="hero-overlay"></div>
-      <div class="hero-content" data-aos="fade-up">
-        <?php if (!empty($barangayName)): ?>
-        <h1>Welcome to <?php echo htmlspecialchars($barangayName); ?></h1>
-        <?php else: ?>
-        <h1>Welcome to iBarangay</h1>
-        <?php endif; ?>       
-        <p>Your one-stop platform for all barangay services</p>
-
-        <a href="#services" class="btn cta-button">Explore Services</a>
-      </div>
-    </section>
-
-<!-- Minimalist About Section - Carousel -->
-<section class="about-section" id="about" data-aos="fade-up">
-    <div class="section-header">
-        <h2>Meet Our Council</h2>
-    </div>
-    
-    <?php if (!empty($orgChartData)): ?>
-    <div class="org-carousel-wrapper">
-        <div class="carousel-container">
-            <button class="nav-btn prev-btn" id="prevBtn">
-                <i class="fas fa-chevron-left"></i>
-            </button>
-            
-            <div class="carousel-track" id="carouselTrack">
-                <?php
-                // Group officials by role
-                $roleGroups = [];
-                foreach ($orgChartData as $member) {
-                    $roleGroups[$member['role_name']][] = $member;
-                }
-                
-                // Define role hierarchy
-                $roleHierarchy = [
-                    'barangay_captain' => 'Captain',
-                    'barangay_secretary' => 'Secretary',
-                    'barangay_treasurer' => 'Treasurer',
-                    'barangay_councilor' => 'Councilor',
-                    'barangay_health_worker' => 'Health Worker',
-                    'chief_officer' => 'Chief Officer'
-                ];
-                
-                // Create slides for each official
-                foreach ($roleHierarchy as $roleKey => $roleDisplayName):
-                    if (isset($roleGroups[$roleKey])):
-                        foreach ($roleGroups[$roleKey] as $member):
-                ?>
-                <div class="carousel-slide">
-                    <div class="official-card">
-                        <div class="official-avatar">
-                            <span><?php echo strtoupper(substr($member['first_name'], 0, 1) . substr($member['last_name'], 0, 1)); ?></span>
-                        </div>
-                        <h3><?php echo htmlspecialchars($member['first_name'] . ' ' . $member['last_name']); ?></h3>
-                        <p><?php echo htmlspecialchars($roleDisplayName); ?></p>
-                    </div>
-                </div>
-                <?php 
-                        endforeach;
-                    endif;
-                endforeach; 
-                ?>
-            </div>
-            
-            <button class="nav-btn next-btn" id="nextBtn">
-                <i class="fas fa-chevron-right"></i>
-            </button>
-        </div>
-        
-        <div class="carousel-dots" id="carouselDots"></div>
-    </div>
-    <?php else: ?>
-    <div class="no-data">
-        <p>No team information available</p>
-    </div>
-    <?php endif; ?>
-</section>
-
-<!-- Scroll to Top -->
-<button class="scroll-top" id="scrollTop">
-    <i class="fas fa-arrow-up"></i>
-</button>
-
-<style>
-    /* About Section - Consistent styling */
-    .about-section {
-        padding: 4rem 5%;
-        background: #f8f9fa;
-        min-height: 70vh;
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'Poppins', sans-serif;
     }
 
-.section-header {
-    text-align: center;
-    margin-bottom: 5rem;
-}
-
-.section-header h2 {
-    font-size: 3rem;
-    font-weight: 300;
-    color: #333;
-    margin: 0;
-}
-
-/* Carousel Wrapper */
-.org-carousel-wrapper {
-    max-width: 1400px;
-    margin: 0 auto;
-}
-
-.carousel-container {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 2rem;
-    padding: 2rem 0;
-}
-
-.carousel-track {
-    display: flex;
-    overflow: hidden;
-    width: 100%;
-    scroll-behavior: smooth;
-}
-
-.carousel-slide {
-    min-width: 400px;
-    flex-shrink: 0;
-    padding: 0 1rem;
-    transition: opacity 0.3s ease;
-}
-
-/* Official Card - Minimalist */
-.official-card {
-    text-align: center;
-    padding: 5rem 2rem;
-    background: #fff;
-    border: 1px solid #eee;
-    border-radius: 15px;
-    transition: all 0.2s ease;
-    min-height: 380px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-}
-
-.official-card:hover {
-    border-color: #ddd;
-    box-shadow: 0 6px 20px rgba(0,0,0,0.08);
-    transform: translateY(-2px);
-}
-
-.official-avatar {
-    width: 130px;
-    height: 130px;
-    border-radius: 50%;
-    background: #f5f5f5;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 2rem;
-    font-size: 2rem;
-    font-weight: 500;
-    color: #666;
-    border: 3px solid #eee;
-}
-
-.official-card h3 {
-    font-size: 1.6rem;
-    font-weight: 400;
-    color: #333;
-    margin: 0 0 1rem 0;
-    line-height: 1.4;
-}
-
-.official-card p {
-    font-size: 1.2rem;
-    color: #888;
-    margin: 0;
-    font-weight: 300;
-}
-
-/* Navigation Buttons - Minimalist */
-.nav-btn {
-    width: 60px;
-    height: 60px;
-    border: 1px solid #ddd;
-    background: #fff;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 1.2rem;
-    color: #666;
-    flex-shrink: 0;
-}
-
-.nav-btn:hover {
-    border-color: #ccc;
-    color: #333;
-}
-
-.nav-btn:disabled {
-    opacity: 0.3;
-    cursor: not-allowed;
-}
-
-/* Carousel Dots - Minimalist */
-.carousel-dots {
-    display: flex;
-    justify-content: center;
-    gap: 1rem;
-    margin-top: 4rem;
-}
-
-.dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    background: #ddd;
-    cursor: pointer;
-    transition: background 0.2s ease;
-}
-
-.dot.active {
-    background: #666;
-}
-
-/* No Data State */
-.no-data {
-    text-align: center;
-    padding: 5rem;
-    color: #888;
-    font-size: 1.2rem;
-}
-
-/* Scroll to Top - Minimalist */
-.scroll-top {
-    position: fixed;
-    bottom: 2rem;
-    right: 2rem;
-    width: 55px;
-    height: 55px;
-    background: #fff;
-    border: 1px solid #ddd;
-    border-radius: 50%;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 1.1rem;
-    color: #666;
-    z-index: 100;
-}
-
-.scroll-top:hover {
-    border-color: #ccc;
-    color: #333;
-}
-
-.scroll-top.show {
-    display: flex;
-}
-
-/* Responsive - Mobile */
-@media (max-width: 768px) {
-    .about-section {
-        padding: 4rem 5%;
-    }
-    
-    .section-header {
-        margin-bottom: 4rem;
-    }
-    
-    .section-header h2 {
-        font-size: 2.5rem;
-    }
-    
-    .carousel-container {
-        gap: 1.5rem;
-        padding: 1.5rem 0;
-    }
-    
-    .carousel-slide {
-        min-width: 350px;
-        padding: 0 1.5rem;
-    }
-    
-    .official-card {
-        padding: 3rem 1.5rem;
-        min-height: 320px;
-    }
-    
-    .official-avatar {
-        width: 110px;
-        height: 110px;
-        font-size: 1.8rem;
-    }
-    
-    .official-card h3 {
-        font-size: 1.4rem;
-    }
-    
-    .official-card p {
-        font-size: 1.1rem;
-    }
-    
-    .nav-btn {
-        width: 52px;
-        height: 52px;
-        font-size: 1.1rem;
-    }
-    
-    .scroll-top {
-        bottom: 1.5rem;
-        right: 1.5rem;
-        width: 50px;
-        height: 50px;
-    }
-}
-
-@media (max-width: 480px) {
-    .about-section {
-        padding: 3rem 3%;
-    }
-    
-    .section-header h2 {
-        font-size: 2.2rem;
-    }
-    
-    .carousel-slide {
-        min-width: 300px;
-        padding: 0 1rem;
-    }
-    
-    .official-card {
-        padding: 2.5rem 1rem;
-        min-height: 280px;
-    }
-    
-    .official-avatar {
-        width: 100px;
-        height: 100px;
-        font-size: 1.6rem;
-    }
-    
-    .official-card h3 {
-        font-size: 1.3rem;
-    }
-    
-    .official-card p {
-        font-size: 1rem;
-    }
-    
-    .nav-btn {
-        width: 48px;
-        height: 48px;
-        font-size: 1rem;
-    }
-}
-
-/* Simple animations */
-.carousel-slide {
-    animation: fadeIn 0.3s ease;
-}
-
-@keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
-}
-</style>
-
-    <!-- Services Section -->
-    <section class="services-section" id="services">
-        <div class="services-container">
-            <div class="section-header">
-                <h2>Services</h2>
-                <p>Complete barangay services at your fingertips</p>
-            </div>
-
-            <!-- Barangay Certificates Category -->
-            <div class="service-category">
-                <div class="category-header" onclick="toggleCategory('certificates')" style="cursor: pointer;">
-                    <div class="category-icon"><i class="fas fa-certificate"></i></div>
-                    <h3>Barangay Certificates</h3>
-                    <p>Official documents and certifications</p>
-                    <div class="toggle-icon">
-                        <i class="fas fa-chevron-down" id="certificates-icon"></i>
-                    </div>
-                </div>
-                
-                <div class="services-grid" id="certificates-grid" style="display: none;">
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_clearance';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-file-alt"></i></div>
-                        <div class="service-content">
-                            <h4>Barangay Clearance</h4>
-                            <p>Required for employment, business permits, and various transactions</p>
-                            <a href="../pages/services.php?documentType=barangay_clearance" class="service-cta">
-                                Request <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_indigency';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-hand-holding-heart"></i></div>
-                        <div class="service-content">
-                            <h4>Certificate of Indigency</h4>
-                            <p>For accessing social welfare programs and financial assistance</p>
-                            <a href="../pages/services.php?documentType=barangay_indigency" class="service-cta">
-                                Apply <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=business_permit_clearance';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-store"></i></div>
-                        <div class="service-content">
-                            <h4>Business Permit Clearance</h4>
-                            <p>Barangay clearance required for business license applications</p>
-                            <a href="../pages/services.php?documentType=business_permit_clearance" class="service-cta">
-                                Apply <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=cedula';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-id-card"></i></div>
-                        <div class="service-content">
-                            <h4>Community Tax Certificate (Sedula)</h4>
-                            <p>Annual tax certificate required for government transactions</p>
-                            <a href="../pages/services.php?documentType=cedula" class="service-cta">
-                                Get Certificate <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=proof_of_residency';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-home"></i></div>
-                        <div class="service-content">
-                            <h4>Certificate of Residency</h4>
-                            <p>Official proof of residence in the barangay</p>
-                            <a href="../pages/services.php?documentType=proof_of_residency" class="service-cta">
-                                Request <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Other Services Category -->
-            <div class="service-category">
-                <div class="category-header" onclick="toggleCategory('other')" style="cursor: pointer;">
-                    <div class="category-icon"><i class="fas fa-hands-helping"></i></div>
-                    <h3>Other Services</h3>
-                    <p>Social services and community assistance</p>
-                    <div class="toggle-icon">
-                        <i class="fas fa-chevron-down" id="other-icon"></i>
-                    </div>
-                </div>
-                
-                <div class="services-grid" id="other-grid" style="display: none;">
-                    <div class="service-item" onclick="window.location.href='../pages/ayuda_request.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-hand-holding-usd"></i></div>
-                        <div class="service-content">
-                            <h4>Financial Assistance (Ayuda)</h4>
-                            <p>Emergency financial assistance for community members in need</p>
-                            <a href="../pages/ayuda_request.php" class="service-cta">
-                                Apply for Assistance <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/scholarship_application.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-graduation-cap"></i></div>
-                        <div class="service-content">
-                            <h4>Educational Scholarship</h4>
-                            <p>Scholarship programs for deserving students in the community</p>
-                            <a href="../pages/scholarship_application.php" class="service-cta">
-                                Apply for Scholarship <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/medical_assistance.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-heart"></i></div>
-                        <div class="service-content">
-                            <h4>Medical Assistance Program</h4>
-                            <p>Healthcare support and medical aid for community members</p>
-                            <a href="../pages/medical_assistance.php" class="service-cta">
-                                Request Assistance <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/senior_citizen_services.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-users"></i></div>
-                        <div class="service-content">
-                            <h4>Senior Citizen Services</h4>
-                            <p>Special services and benefits for senior citizens</p>
-                            <a href="../pages/senior_citizen_services.php" class="service-cta">
-                                Learn More <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/pwd_services.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-wheelchair"></i></div>
-                        <div class="service-content">
-                            <h4>PWD Services</h4>
-                            <p>Services and assistance for Persons with Disabilities</p>
-                            <a href="../pages/pwd_services.php" class="service-cta">
-                                Access Services <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/livelihood_programs.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-seedling"></i></div>
-                        <div class="service-content">
-                            <h4>Livelihood Programs</h4>
-                            <p>Skills training and livelihood opportunities for residents</p>
-                            <a href="../pages/livelihood_programs.php" class="service-cta">
-                                Join Program <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Blotter Services Category -->
-            <div class="service-category">
-                <div class="category-header" onclick="toggleCategory('blotter')" style="cursor: pointer;">
-                    <div class="category-icon"><i class="fas fa-file-signature"></i></div>
-                    <h3>Blotter Services</h3>
-                    <p>Incident reporting and documentation</p>
-                    <div class="toggle-icon">
-                        <i class="fas fa-chevron-down" id="blotter-icon"></i>
-                    </div>
-                </div>
-                
-                <div class="services-grid" id="blotter-grid" style="display: none;">
-                    <div class="service-item" onclick="window.location.href='../pages/blotter_request.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-exclamation-triangle"></i></div>
-                        <div class="service-content">
-                            <h4>File a Blotter Report</h4>
-                            <p>Report incidents and request official documentation</p>
-                            <a href="../pages/blotter_request.php" class="service-cta">
-                                File Report <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/blotter_status.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-search"></i></div>
-                        <div class="service-content">
-                            <h4>Check Blotter Status</h4>
-                            <p>Track the status of your blotter requests</p>
-                            <a href="../pages/blotter_status.php" class="service-cta">
-                                Check Status <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </section>
-
-    <style>
-    /* Services Section - Consistent styling */
-    .services-section {
-        padding: 4rem 5%;
-        background: #fff; /* Match contact-section background */
-        min-height: 70vh;
+    :root {
+      --primary-color: #0056b3;
+      --primary-dark: #003366;
+      --secondary-color: #3498db;
+      --text-dark: #2c3e50;
+      --text-light: #7f8c8d;
+      --bg-light: #f8f9fa;
+      --white: #ffffff;
+      --sidebar-bg: #2c3e50;
+      --sidebar-hover: #34495e;
+      --border-light: #e0e0e0;
+      --shadow-sm: 0 2px 10px rgba(0,0,0,0.1);
+      --shadow-md: 0 5px 15px rgba(0,0,0,0.08);
+      --shadow-lg: 0 15px 30px rgba(0,0,0,0.1);
     }
 
-    .services-container {
-        max-width: 1200px;
-        margin: 0 auto;
+    /* Remove scrollbar for WebKit and Firefox */
+    html::-webkit-scrollbar, body::-webkit-scrollbar {
+      display: none;
+    }
+    body {
+      -ms-overflow-style: none; /* IE and Edge */
+      scrollbar-width: none; /* Firefox */
     }
 
-    .section-header {
-        text-align: center;
-        margin-bottom: 3rem;
+    /* Ensure body takes full height and navbar stays on top */
+    html, body {
+      height: 100%;
     }
 
-    .section-header h2 {
-        font-size: 2.5rem;
-        color: #2c3e50;
-        margin-bottom: 1rem;
-        font-weight: 600;
+    body {
+      display: flex;
+      flex-direction: column;
     }
 
-    .section-header p {
-        font-size: 1.2rem;
-        color: #7f8c8d;
-        max-width: 600px;
-        margin: 0 auto;
+    /* Main wrapper to contain everything below navbar */
+    .page-wrapper {
+      flex: 1;
+      margin-top: 70px; /* Add top margin equal to navbar height */
     }
 
-    /* Service Category Styles */
-    .service-category {
-        margin-bottom: 2rem;
-        background: white;
-        border-radius: 20px;
-        padding: 0;
-        box-shadow: 0 5px 15px rgba(0,0,0,0.08);
-        border: 1px solid rgba(0,0,0,0.05);
-        overflow: hidden;
+    .main-layout {
+      display: flex;
+      min-height: calc(100vh - 70px); /* Adjust for navbar height */
     }
 
-    .category-header {
-        position: relative;
-        text-align: center;
-        padding: 2.5rem;
-        /* Darker blue gradient */
-        background: linear-gradient(135deg, #0056b3 0%, #003366 100%);
-        color: white;
-        transition: all 0.3s ease;
+    .main-content-area {
+      flex: 1;
+      width: 100%;
+      min-width: 0; /* Prevents overflow on flex children */
     }
 
-    .category-header:hover {
-        /* Even darker blue gradient for hover */
-        background: linear-gradient(135deg, #003366 0%, #001a33 100%);
+
+    .hero {
+      background: url("../photo/bg2.jpg") no-repeat;
+      background-position: 50% 60%;
+      color: #ffffff;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+      padding: clamp(3rem, 8vw, 6rem) clamp(1rem, 5vw, 5%) clamp(2rem, 5vw, 4rem);
+      position: relative;
+      overflow: hidden;
+      min-height: 80vh;
+      display: flex;
+      align-items: center;
+      width: 100%;
+      box-sizing: border-box;
     }
 
-    .category-icon {
-        width: 80px;
-        height: 80px;
-        border-radius: 50%;
-        background: rgba(255, 255, 255, 0.2);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin: 0 auto 1.5rem;
-        font-size: 2rem;
-        color: white;
+    .hero-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0,0,0,0.3);
     }
 
-    .category-header h3 {
-        font-size: 2.2rem;
-        color: white;
-        margin-bottom: 0.8rem;
-        font-weight: 600;
+    .hero-content {
+      position: relative;
+      z-index: 2;
+      text-align: center;
+      max-width: 800px;
+      margin: 0 auto;
+      width: 100%;
     }
 
-    .toggle-icon {
-        position: absolute;
-        bottom: 1rem;
-        right: 2rem;
-        font-size: 1.5rem;
-        color: rgba(255, 255, 255, 0.8);
-        transition: transform 0.3s ease;
+    .hero-content h1 {
+      margin-bottom: clamp(1rem, 2vw, 1.5rem);
+      font-weight: 700;
+      font-size: clamp(2rem, 6vw, 60px); /* Responsive font size */
+      word-break: break-word;
     }
 
-    .toggle-icon.expanded {
-        transform: rotate(180deg);
+    .hero-content p {
+      font-size: clamp(1rem, 2vw, 1.3rem);
+      margin-bottom: clamp(1.5rem, 3vw, 2.5rem);
+      opacity: 0.9;
     }
 
-    /* Services Grid */
-    .services-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-        gap: 2rem;
-        padding: 2.5rem;
-        transition: all 0.3s ease;
-        opacity: 0;
-        max-height: 0;
-        overflow: hidden;
+    .cta-button {
+      /* Updated to have the same color as "Just In" news */
+      background: var(--sidebar-hover);
+      color: var(--white);
+      padding: 1rem 2rem; /* increased padding */
+      border-radius: 50px;
+      text-decoration: none;
+      font-weight: 600;
+      font-size: 1.1rem;
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
     }
 
-    .services-grid.show {
-        opacity: 1;
-        max-height: none;
+    .cta-button:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 16px rgba(0,0,0,0.3);
     }
 
-    .service-item {
-        background: #fff;
-        border-radius: 15px;
-        padding: 2rem;
-        border: 2px solid #f1f2f6;
-        transition: all 0.3s ease;
-        position: relative;
-        overflow: hidden;
+    /* Sidebar Styles */
+    .sidebar {
+      width: min(350px, 90vw);
+      background: var(--sidebar-bg);
+      color: white;
+      position: sticky;
+      top: 70px; /* Adjust to be below navbar */
+      height: calc(100vh - 70px); /* Adjust height */
+      overflow-y: auto;
+      flex-shrink: 0;
     }
 
-    .service-item::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, #3498db 0%, #2ecc71 100%);
-        transform: scaleX(0);
-        transition: transform 0.3s ease;
+    .sidebar-header {
+      background: var(--sidebar-hover);
+      padding: clamp(1rem, 2vw, 1.5rem);
+      border-bottom: 1px solid #465a75;
+      position: sticky;
+      top: 0;
+      z-index: 10;
     }
 
-    .service-item:hover::before {
-        transform: scaleX(1);
+    .sidebar-header h2 {
+      font-size: clamp(1.2rem, 2vw, 1.5rem);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
     }
 
-    .service-item:hover {
-        transform: translateY(-5px);
-        box-shadow: 0 15px 30px rgba(0,0,0,0.1);
-        border-color: #e8e9ef;
+    .sidebar-header i {
+      color: var(--secondary-color);
     }
 
-    .service-icon {
-        width: 60px;
-        height: 60px;
-        border-radius: 12px;
-        /* Darker blue gradient */
-        background: linear-gradient(135deg, #0056b3 0%, #003366 100%);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        margin-bottom: 1.5rem;
-        font-size: 1.5rem;
-        color: white;
+    .sidebar-content {
+      padding: 0;
     }
 
-    .service-content h4 {
-        font-size: 1.3rem;
-        color: #2c3e50;
-        margin-bottom: 1rem;
-        font-weight: 600;
-        line-height: 1.3;
+    .sidebar-item {
+      padding: clamp(1rem, 2vw, 1.5rem);
+      border-bottom: 1px solid #465a75;
+      transition: background 0.3s ease;
+      cursor: pointer;
     }
 
-    .service-content p {
-        color: #7f8c8d;
-        line-height: 1.6;
-        margin-bottom: 1.5rem;
-        font-size: 0.95rem;
+    .sidebar-item:hover {
+      background: var(--sidebar-hover);
     }
 
-    .service-cta {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        color: #3498db;
-        text-decoration: none;
-        font-weight: 500;
-        transition: all 0.2s ease;
-        font-size: 0.9rem;
+    .sidebar-time {
+      color: var(--secondary-color);
+      font-size: clamp(0.7rem, 1vw, 0.8rem);
+      font-weight: 500;
+      margin-bottom: 0.5rem;
     }
 
-    .service-cta:hover {
-        color: #2980b9;
-        gap: 0.8rem;
+    .sidebar-item h4 {
+      font-size: clamp(0.9rem, 1.5vw, 1rem);
+      margin-bottom: 0.8rem;
+      color: #ecf0f1;
+      font-weight: 500;
+      line-height: 1.3;
     }
 
-    .service-cta i {
-        font-size: 0.8rem;
-        transition: transform 0.2s ease;
+    .sidebar-item p {
+      font-size: clamp(0.8rem, 1vw, 0.85rem);
+      line-height: 1.4;
+      color: #bdc3c7;
+      margin-bottom: 0.8rem;
     }
 
-    .service-cta:hover i {
-        transform: translateX(3px);
+    .sidebar-meta {
+      font-size: clamp(0.7rem, 1vw, 0.75rem);
+      color: #95a5a6;
+      display: flex;
+      align-items: center;
+      gap: 0.3rem;
+      flex-wrap: wrap;
     }
 
-    /* Responsive Design */
-    @media (max-width: 1200px) {
-        .services-grid {
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 1.5rem;
-        }
+    .sidebar-meta i {
+      color: var(--secondary-color);
+    }
+
+    /* Mobile Sidebar Styles */
+    .sidebar.mobile-announcements {
+      width: min(calc(100% - 2rem), 600px);
+      position: static;
+      height: auto;
+      max-height: min(70vh, 800px);
+      margin: 2rem auto;
+      border-radius: clamp(10px, 2vw, 15px);
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+      transition: all 0.3s ease;
     }
 
     @media (max-width: 768px) {
-        .services-section {
-            padding: 3rem 5%;
-        }
-        
-        .section-header h2 {
-            font-size: 2rem;
-        }
-        
-        .service-category {
-            margin-bottom: 1.5rem;
-        }
-        
-        .category-header {
-            padding: 2rem 1.5rem;
-        }
-        
-        .category-icon {
-            width: 70px;
-            height: 70px;
-            font-size: 1.8rem;
-        }
-        
-        .category-header h3 {
-            font-size: 1.8rem;
-        }
-        
-        .services-grid {
-            grid-template-columns: 1fr;
-            gap: 1.5rem;
-            padding: 2rem 1.5rem;
-        }
-        
-        .service-item {
-            padding: 1.5rem;
-        }
-        
-        .service-content h4 {
-            font-size: 1.2rem;
-        }
-
-        .toggle-icon {
-            bottom: 0.8rem;
-            right: 1.5rem;
-            font-size: 1.3rem;
-        }
+      .sidebar.mobile-announcements {
+        width: calc(100% - 2rem);
+        margin: 1rem;
+        max-height: 60vh;
+      }
     }
 
     @media (max-width: 480px) {
-        .services-section {
-            padding: 2.5rem 3%;
-        }
-        
-        .section-header h2 {
-            font-size: 1.8rem;
-        }
-        
-        .category-header {
-            padding: 1.5rem 1rem;
-        }
-        
-        .category-header h3 {
-            font-size: 1.6rem;
-        }
-        
-        .services-grid {
-            padding: 1.5rem 1rem;
-        }
-        
-        .service-item {
-            padding: 1.2rem;
-        }
-        
-        .service-icon {
-            width: 50px;
-            height: 50px;
-            font-size: 1.3rem;
-        }
-
-        .toggle-icon {
-            bottom: 0.5rem;
-            right: 1rem;
-            font-size: 1.2rem;
-        }
-    }
-
-    /* Animation for service items */
-    .service-item {
-        opacity: 0;
-        transform: translateY(20px);
-        animation: fadeInUp 0.6s ease forwards;
-    }
-
-    .service-item:nth-child(1) { animation-delay: 0.1s; }
-    .service-item:nth-child(2) { animation-delay: 0.2s; }
-    .service-item:nth-child(3) { animation-delay: 0.3s; }
-    .service-item:nth-child(4) { animation-delay: 0.4s; }
-    .service-item:nth-child(5) { animation-delay: 0.5s; }
-    .service-item:nth-child(6) { animation-delay: 0.6s; }
-
-    @keyframes fadeInUp {
-        to {
-            opacity: 1;
-            transform: translateY(0);
-        }
-    }
-
-    /* Announcements Section - Consistent styling */
-    .announcements-section {
-        padding: 4rem 5%;
-        background: #f8f9fa;
-        min-height: 70vh;
-    }
-
-    .announcements-container {
-        max-width: 1000px;
-        margin: 0 auto;
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
-        gap: 2rem;
-        padding: 0;
-    }
-
-    .announcement-card {
-        background: white;
-        border-radius: 15px;
-        overflow: hidden;
-        transition: transform 0.3s ease, box-shadow 0.3s ease;
-        position: relative;
-        border: 1px solid rgba(0,0,0,0.05);
-        min-height: auto;
-        display: flex;
-        flex-direction: column;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
-    }
-
-    .announcement-card:hover {
-        transform: translateY(-3px);
-        box-shadow: 0 10px 20px rgba(0,0,0,0.08);
-    }
-
-    .announcement-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 4px;
-        background: linear-gradient(90deg, #3498db 0%, #2ecc71 100%);
-    }
-
-    .announcement-card h3 {
-        font-size: 1.3rem;
-        color: #2c3e50;
-        margin: 1.5rem 1.5rem 1rem;
-        line-height: 1.3;
-        flex-shrink: 0;
-    }
-
-    .event-details {
-        padding: 0 1.5rem 1.5rem;
-        flex: 1;
-        display: flex;
-        flex-direction: column;
-    }
-
-    .event-meta {
-        display: flex;
-        flex-direction: column;
-        gap: 0.8rem;
-        margin-bottom: 1rem;
-        flex-shrink: 0;
-    }
-
-    .meta-item {
-        display: flex;
-        align-items: center;
-        color: #7f8c8d;
-        font-size: 0.95rem;
-    }
-
-    .meta-item i {
-        width: 24px;
-        text-align: center;
-        margin-right: 10px;
-        color: #3498db;
-        font-size: 1rem;
-    }
-
-    .event-date {
-        font-weight: 500;
-        color: #2c3e50;
-        font-size: 0.95rem;
-    }
-
-    .event-location {
-        font-size: 0.9rem;
-    }
-
-    .event-description {
-        color: #34495e;
-        line-height: 1.6;
-        margin-bottom: 1.5rem;
-        font-size: 0.95rem;
-        flex: 1;
-    }
-
-    .event-organizer {
-        font-size: 0.85rem;
-        color: #7f8c8d;
-        border-top: 1px solid #eee;
-        padding-top: 1rem;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        flex-shrink: 0;
-        margin-top: auto;
-    }
-
-    .no-announcements {
-        text-align: center;
-        color: #7f8c8d;
-        font-size: 1.1rem;
-        grid-column: 1 / -1;
-        padding: 3rem 0;
-    }
-
-    /* Postponed Event Styles */
-    .postponed {
-        position: relative;
-        opacity: 0.8;
-        background: #fff9e6;
-    }
-
-    .postponed-banner {
-        background: #ffeb3b;
-        color: #856404;
-        padding: 8px 15px;
-        font-weight: bold;
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        font-size: 0.85rem;
-    }
-
-    .postponed::after {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        background: repeating-linear-gradient(
-            45deg,
-            transparent,
-            transparent 10px,
-            rgba(0,0,0,0.05) 10px,
-            rgba(0,0,0,0.05) 20px
-        );
-        z-index: 1;
-    }
-
-    .postponed .announcement-card {
-        position: relative;
-        z-index: 2;
-    }
-
-    /* Responsive Design for Announcements */
-    @media (max-width: 1000px) {
-        .announcements-container {
-            grid-template-columns: 1fr;
-            max-width: 600px;
-            gap: 1.5rem;
-        }
+      .sidebar.mobile-announcements {
+        width: calc(100% - 1rem);
+        margin: 0.5rem;
+        border-radius: 8px;
+      }
     }
 
     @media (max-width: 600px) {
-        .announcements-container {
-            max-width: 100%;
-            padding: 0 1rem;
-            gap: 1rem;
-        }
-        
-        .announcement-card h3 {
-            font-size: 1.2rem;
-            margin: 1.2rem 1.2rem 1rem;
-        }
-        
-        .event-details {
-            padding: 0 1.2rem 1.2rem;
-        }
-
-        .meta-item {
-            font-size: 0.9rem;
-        }
-
-        .event-description {
-            font-size: 0.9rem;
-        }
-
-        .event-organizer {
-            font-size: 0.8rem;
-        }
+      .sidebar.mobile-announcements {
+        width: 90%;
+        margin: 1rem auto;
+      }
     }
-    </style>
 
-<script>
-// Minimalist Carousel Controller
-document.addEventListener('DOMContentLoaded', function() {
-    const track = document.getElementById('carouselTrack');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const dotsContainer = document.getElementById('carouselDots');
-    
-    if (!track) return;
-    
-    const slides = track.querySelectorAll('.carousel-slide');
-    const totalSlides = slides.length;
-    let currentIndex = 0;
-    
-    // Determine slides per view based on screen size
-    function getSlidesPerView() {
+    /* About Section */
+    .section-divider {
+      width: 100%;
+      border: none;
+      border-top: 2px solid #e0e0e0;
+      margin: 2.5rem 0 2.5rem 0;
+      box-sizing: border-box;
+    }
+
+    .about-section {
+      padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 5vw, 5%);
+      background: var(--bg-light); /* Ensure grey background */
+    }
+
+    .section-header {
+      text-align: center;
+      margin-bottom: clamp(2rem, 4vw, 3rem);
+    }
+
+    .section-header h2 {
+      color: var(--text-dark);
+      margin-bottom: clamp(0.5rem, 1vw, 1rem);
+      font-weight: 600;
+    }
+
+    .section-header p {
+      font-size: clamp(1rem, 1.5vw, 1.2rem);
+      color: var(--text-light);
+      max-width: 600px;
+      margin: 0 auto;
+    }
+
+    /* FIXED Carousel Styles */
+    .org-carousel-wrapper {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 0 1rem;
+    }
+
+    .carousel-container {
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: clamp(0.5rem, 2vw, 2rem);
+      padding: clamp(1rem, 2vw, 2rem) 0;
+    }
+
+    .carousel-track {
+      display: flex;
+      overflow: hidden;
+      scroll-snap-type: x mandatory;
+      -webkit-overflow-scrolling: touch;
+      width: 100%;
+      scroll-behavior: smooth;
+      gap: 1rem;
+      padding: 0.5rem;
+    }
+
+    .carousel-track::-webkit-scrollbar {
+      display: none;
+    }
+
+    .carousel-slide {
+      flex-shrink: 0;
+      scroll-snap-align: start;
+      transition: opacity 0.3s ease;
+      /* Width will be set dynamically by JavaScript */
+    }
+
+    .official-card {
+      text-align: center;
+      padding: clamp(1.5rem, 3vw, 3rem) clamp(1rem, 2vw, 2rem);
+      background: var(--white);
+      border: 1px solid #eee;
+      border-radius: 15px;
+      transition: all 0.2s ease;
+      min-height: 250px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      height: 100%;
+      width: 100%;
+    }
+
+    .official-card:hover {
+      border-color: #ddd;
+      box-shadow: var(--shadow-md);
+      transform: translateY(-2px);
+    }
+
+    .official-avatar {
+      width: clamp(70px, 15vw, 100px);
+      height: clamp(70px, 15vw, 100px);
+      border-radius: 50%;
+      background: #f5f5f5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto clamp(1rem, 2vw, 1.5rem);
+      font-size: clamp(1.2rem, 2vw, 1.5rem);
+      font-weight: 500;
+      color: #666;
+      border: 3px solid #eee;
+    }
+
+    .official-card h3 {
+      font-size: clamp(1.1rem, 2vw, 1.3rem);
+      font-weight: 500;
+      color: var(--text-dark);
+      margin: 0 0 0.5rem 0;
+      line-height: 1.4;
+    }
+
+    .official-card p {
+      font-size: clamp(0.9rem, 1.5vw, 1rem);
+      color: #888;
+      margin: 0;
+      font-weight: 300;
+    }
+
+    .nav-btn {
+      width: clamp(40px, 5vw, 50px);
+      height: clamp(40px, 5vw, 50px);
+      border: 1px solid #ddd;
+      background: var(--white);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: clamp(0.9rem, 1.5vw, 1rem);
+      color: #666;
+      flex-shrink: 0;
+    }
+
+    .nav-btn:hover:not(:disabled) {
+      border-color: #ccc;
+      color: var(--text-dark);
+      transform: scale(1.1);
+    }
+
+    .nav-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+
+    .carousel-dots {
+      display: flex;
+      justify-content: center;
+      gap: clamp(0.5rem, 1vw, 1rem);
+      margin-top: clamp(1rem, 2vw, 2rem);
+    }
+
+    .dot {
+      width: clamp(8px, 1vw, 12px);
+      height: clamp(8px, 1vw, 12px);
+      border-radius: 50%;
+      background: #ddd;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      border: none;
+    }
+
+    .dot.active {
+      background: var(--primary-color);
+      transform: scale(1.3);
+    }
+
+    .dot:hover {
+      background: var(--secondary-color);
+    }
+
+    /* Services Section */
+    .services-section {
+      padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 5vw, 5%);
+      background: var(--bg-light); /* Changed from white to grey */
+    }
+
+    .services-container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .service-category {
+      margin-bottom: clamp(1.5rem, 3vw, 2rem);
+      background: white;
+      border-radius: 20px;
+      padding: 0;
+      box-shadow: var(--shadow-md);
+      border: 1px solid rgba(0,0,0,0.05);
+      overflow: hidden;
+    }
+
+    .category-header {
+      position: relative;
+      text-align: center;
+      padding: clamp(1.5rem, 3vw, 2.5rem);
+      background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+      color: white;
+      transition: all 0.3s ease;
+      cursor: pointer;
+    }
+
+    .category-header:hover {
+      background: linear-gradient(135deg, var(--primary-dark) 0%, #001a33 100%);
+    }
+
+    .category-icon {
+      width: clamp(60px, 10vw, 80px);
+      height: clamp(60px, 10vw, 80px);
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.2);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto clamp(1rem, 2vw, 1.5rem);
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      color: white;
+    }
+
+    .category-header h3 {
+      font-size: clamp(1.5rem, 3vw, 2.2rem);
+      color: white;
+      margin-bottom: 0.8rem;
+      font-weight: 600;
+    }
+
+    .category-header p {
+      color: rgba(255, 255, 255, 0.9);
+      font-size: clamp(0.9rem, 1.5vw, 1rem);
+    }
+
+    .toggle-icon {
+      position: absolute;
+      bottom: 1rem;
+      right: clamp(1rem, 2vw, 2rem);
+      font-size: clamp(1.2rem, 2vw, 1.5rem);
+      color: rgba(255, 255, 255, 0.8);
+      transition: transform 0.3s ease;
+    }
+
+    .toggle-icon.expanded {
+      transform: rotate(180deg);
+    }
+
+    .services-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+      gap: clamp(1rem, 2vw, 2rem);
+      padding: clamp(1.5rem, 3vw, 2.5rem);
+      transition: all 0.3s ease;
+      opacity: 0;
+      max-height: 0;
+      overflow: hidden;
+    }
+
+    .services-grid.show {
+      opacity: 1;
+      max-height: none;
+    }
+
+    .service-item {
+      background: var(--white);
+      border-radius: 15px;
+      padding: clamp(1.5rem, 3vw, 2rem);
+      border: 2px solid #f1f2f6;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      cursor: pointer;
+    }
+
+    .service-item::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, var(--secondary-color) 0%, #2ecc71 100%);
+      transform: scaleX(0);
+      transition: transform 0.3s ease;
+    }
+
+    .service-item:hover::before {
+      transform: scaleX(1);
+    }
+
+    .service-item:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--shadow-lg);
+      border-color: #e8e9ef;
+    }
+
+    .service-icon {
+      width: clamp(50px, 8vw, 60px);
+      height: clamp(50px, 8vw, 60px);
+      border-radius: 12px;
+      background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: clamp(1rem, 2vw, 1.5rem);
+      font-size: clamp(1.2rem, 2vw, 1.5rem);
+      color: white;
+    }
+
+    .service-content h4 {
+      font-size: clamp(1.1rem, 2vw, 1.3rem);
+      color: var(--text-dark);
+      margin-bottom: clamp(0.75rem, 1.5vw, 1rem);
+      font-weight: 600;
+      line-height: 1.3;
+    }
+
+    .service-content p {
+      color: var(--text-light);
+      line-height: 1.6;
+      margin-bottom: clamp(1rem, 2vw, 1.5rem);
+      font-size: clamp(0.85rem, 1.5vw, 0.95rem);
+    }
+
+    .service-cta {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      color: var(--secondary-color);
+      text-decoration: none;
+      font-weight: 500;
+      transition: all 0.2s ease;
+      font-size: clamp(0.85rem, 1.5vw, 0.9rem);
+    }
+
+    .service-cta:hover {
+      color: #2980b9;
+      gap: 0.8rem;
+    }
+
+    .service-cta i {
+      font-size: 0.8rem;
+      transition: transform 0.2s ease;
+    }
+
+    .service-cta:hover i {
+      transform: translateX(3px);
+    }
+
+    /* Contact Section */
+    .contact-section {
+      padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 5vw, 5%);
+      background: var(--bg-light); /* Ensure grey background */
+    }
+
+    .contact-container {
+      max-width: 1000px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+      gap: clamp(1.5rem, 3vw, 2rem);
+    }
+
+    .contact-card {
+      background: white;
+      border-radius: 20px;
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+      border: 1px solid rgba(0,0,0,0.05);
+      transition: all 0.3s ease;
+      position: relative;
+    }
+
+    .contact-card:hover {
+      transform: translateY(-5px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .contact-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      transition: transform 0.3s ease;
+    }
+
+    .emergency-card::before {
+      background: linear-gradient(90deg, #e74c3c 0%, #c0392b 100%);
+    }
+
+    .services-card::before {
+      background: linear-gradient(90deg, #2ecc71 0%, #27ae60 100%);
+    }
+
+    .card-header {
+      text-align: center;
+      padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1rem, 2vw, 2rem) clamp(1rem, 2vw, 1.5rem);
+      border-bottom: 1px solid #f1f2f6;
+    }
+
+    .card-icon {
+      width: clamp(60px, 10vw, 80px);
+      height: clamp(60px, 10vw, 80px);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto clamp(1rem, 2vw, 1.5rem);
+      font-size: clamp(1.5rem, 3vw, 2rem);
+      color: white;
+    }
+
+    .emergency-icon {
+      background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+    }
+
+    .services-icon {
+      background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+    }
+
+    .card-header h3 {
+      font-size: clamp(1.3rem, 2.5vw, 1.8rem);
+      color: var(--text-dark);
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    .card-header p {
+      color: var(--text-light);
+      font-size: clamp(0.9rem, 1.5vw, 1rem);
+      margin: 0;
+    }
+
+    .contact-info {
+      padding: clamp(1.5rem, 3vw, 2rem);
+    }
+
+    .contact-item {
+      display: flex;
+      flex-direction: column;
+      gap: 0.8rem;
+      margin-bottom: clamp(1.5rem, 3vw, 2rem);
+      padding-bottom: clamp(1rem, 2vw, 1.5rem);
+      border-bottom: 1px solid var(--bg-light);
+    }
+
+    .contact-item:last-child {
+      margin-bottom: 0;
+      padding-bottom: 0;
+      border-bottom: none;
+    }
+
+    .contact-label {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.8rem;
+      font-weight: 500;
+      color: var(--text-dark);
+      font-size: clamp(0.85rem, 1.5vw, 0.95rem);
+      flex-wrap: wrap;
+    }
+
+    .contact-value {
+      color: #34495e;
+      font-size: clamp(0.9rem, 1.5vw, 1rem);
+      line-height: 1.5;
+      font-weight: 400;
+      text-align: center;
+    }
+
+    /* Scroll to Top */
+    .scroll-top {
+      position: fixed;
+      bottom: clamp(1.5rem, 3vw, 2rem);
+      right: clamp(1.5rem, 3vw, 2rem);
+      width: clamp(45px, 7vw, 55px);
+      height: clamp(45px, 7vw, 55px);
+      background: var(--white);
+      border: 1px solid #ddd;
+      border-radius: 50%;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      font-size: clamp(1rem, 1.5vw, 1.1rem);
+      color: #666;
+      z-index: 100;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .scroll-top:hover {
+      border-color: #ccc;
+      color: var(--text-dark);
+      transform: scale(1.1);
+    }
+
+    .scroll-top.show {
+      display: flex;
+    }
+
+    /* Footer */
+    .footer {
+      background: var(--sidebar-bg);
+      color: white;
+      text-align: center;
+      padding: clamp(1.5rem, 3vw, 2rem) clamp(1rem, 5vw, 5%);
+      border-top: 2px solid #e0e0e0; 
+    }
+
+    .footer p {
+      font-size: clamp(0.85rem, 1.5vw, 1rem);
+    }
+
+    /* Tablet Styles */
+    @media (max-width: 1024px) {
+      .carousel-slide {
+        width: calc(50% - 0.5rem) !important; /* 2 cards per view on tablet */
+      }
+      
+      .services-grid {
+        grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      }
+    }
+
+    /* Mobile Styles */
+    @media (max-width: 768px) {
+      /* Mobile Carousel */
+      .carousel-container {
+        gap: 0.5rem;
+      }
+
+      .nav-btn {
+        display: none;
+      }
+
+      .carousel-track {
+        overflow-x: auto;
+        padding-bottom: 1rem;
+      }
+
+      .carousel-slide {
+        width: calc(100% - 1rem) !important; /* 1 card per view on mobile */
+      }
+
+      /* Mobile Service Grid */
+      .services-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+      }
+
+      /* Mobile Contact Cards */
+      .contact-container {
+        grid-template-columns: 1fr;
+      }
+
+      /* Adjust width and margins for better responsiveness on mobile devices: */
+      .sidebar.mobile-announcements {
+        width: calc(100% - 2rem);
+        margin-left: 1rem;
+        margin-right: 1rem;
+      }
+
+      /* Add margin to Just In (mobile announcements) to match services section */
+      .sidebar.mobile-announcements {
+        margin-left: clamp(1rem, 5vw, 5%);
+        margin-right: clamp(1rem, 5vw, 5%);
+      }
+    }
+
+    /* Small Mobile */
+    @media (max-width: 480px) {
+      .hero {
+        min-height: 60vh;
+      }
+
+      .carousel-slide {
+        min-width: 85vw;
+      }
+
+      .category-header {
+        padding: 1.5rem 1rem;
+      }
+
+      .toggle-icon {
+        right: 1rem;
+        font-size: 1rem;
+      }
+
+      .service-item {
+        padding: 1.25rem;
+      }
+
+      .contact-info {
+        padding: 1.25rem;
+      }
+    }
+
+    /* Very Small Devices */
+    @media (max-width: 360px) {
+      body {
+        font-size: 14px;
+      }
+
+      .hero-content h1 {
+        font-size: 1.5rem;
+      }
+
+      .hero-content p {
+        font-size: 0.9rem;
+      }
+
+      .cta-button {
+        padding: 0.75rem 1.25rem;
+        font-size: 0.85rem;
+      }
+    }
+
+    /* Landscape Mobile */
+    @media (max-height: 600px) and (orientation: landscape) {
+      .hero {
+        min-height: 80vh;
+        padding: 2rem 5%;
+      }
+
+      .sidebar {
+        height: 100vh;
+      }
+
+      .sidebar.mobile-announcements {
+        max-height: 50vh;
+      }
+    }
+
+    /* Desktop First Approach for Sidebar */
+    @media (min-width: 1201px) {
+      .sidebar.mobile-announcements {
+        display: none !important;
+      }
+
+      .carousel-slide {
+        width: calc(33.333% - 0.667rem) !important; /* 3 cards per view on desktop */
+      }
+    }
+
+    @media (max-width: 1200px) {
+      .main-layout {
+        flex-direction: column;
+      }
+
+      .sidebar.desktop-announcements {
+        display: none !important;
+      }
+
+      .sidebar.mobile-announcements {
+        display: block !important;
+      }
+
+      .main-content-area {
+        padding-right: 0;
+      }
+    }
+
+    /* Touch-friendly tap targets */
+    @media (hover: none) {
+      .service-item,
+      .contact-card,
+      .cta-button,
+      .service-cta {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      .service-item:active {
+        transform: scale(0.98);
+      }
+
+      .cta-button:active {
+        transform: scale(0.95);
+      }
+    }
+
+    /* Print Styles */
+    @media print {
+      .sidebar,
+      .scroll-top {
+        display: none !important;
+      }
+
+      .main-layout {
+        margin-top: 0;
+      }
+
+      .hero {
+        background: none;
+        color: black;
+        padding: 1rem;
+      }
+
+      .hero-overlay {
+        display: none;
+      }
+
+      .services-grid {
+        display: block !important;
+        opacity: 1 !important;
+        max-height: none !important;
+      }
+
+      .service-item {
+        page-break-inside: avoid;
+        margin-bottom: 1rem;
+      }
+    }
+
+    body, .page-wrapper {
+      background: var(--bg-light) !important;
+      border: none !important;
+    }
+
+    /* Ensure anchor targets are not hidden behind fixed navbar */
+    section, .about-section, .services-section, .contact-section {
+      scroll-margin-top: 80px; /* Adjust to navbar height + spacing */
+    }
+  </style>
+</head>
+<body>
+  <!-- Wrapper to contain everything below navbar -->
+  <div class="page-wrapper">
+    <main>
+      <div class="main-layout">
+        <!-- Main Content Area -->
+        <div class="main-content-area">
+          <!-- Hero Section -->
+          <section class="hero" id="home">
+            <div class="hero-overlay"></div>
+            <div class="hero-content" data-aos="fade-up">
+              <h1>Welcome to <?php echo htmlspecialchars($barangay_name); ?></h1>
+              <p>Your one-stop platform for all barangay services</p>
+              <a href="#services" class="btn cta-button">Explore Services</a>
+            </div>
+          </section>
+
+          <!-- Sidebar - Announcements (MOBILE ONLY) -->
+          <aside class="sidebar mobile-announcements" id="mobile-announcements">
+            <div class="sidebar-header">
+              <h2><i class="fas fa-bullhorn"></i> Just In</h2>
+            </div>
+            <div class="sidebar-content">
+              <?php if (empty($announcements)): ?>
+                <div class="sidebar-item">
+                  <div class="sidebar-time">Now</div>
+                  <h4>No Current Announcements</h4>
+                  <p>Check back later for updates and announcements.</p>
+                  <div class="sidebar-meta">
+                    <i class="fas fa-info-circle"></i> System Message
+                  </div>
+                </div>
+              <?php else: ?>
+                <?php foreach ($announcements as $announcement): 
+                  $datetime = new DateTime($announcement['start_datetime']);
+                  $time = $datetime->format('g:i A');
+                  $date = $datetime->format('F j, Y g:i A');
+                ?>
+                  <div class="sidebar-item">
+                    <div class="sidebar-time"><?php echo $time; ?></div>
+                    <h4><?php echo htmlspecialchars($announcement['title']); ?></h4>
+                    <p><?php echo htmlspecialchars($announcement['description']); ?></p>
+                    <div class="sidebar-meta">
+                      <i class="fas fa-calendar"></i> <?php echo $date; ?>
+                      <?php if (!empty($announcement['location'])): ?>
+                        <br><i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($announcement['location']); ?>
+                      <?php endif; ?>
+                      <?php if (!empty($announcement['organizer'])): ?>
+                        <br><i class="fas fa-user-tie"></i> <?php echo htmlspecialchars($announcement['organizer']); ?>
+                      <?php endif; ?>
+                    </div>
+                  </div>
+                <?php endforeach; ?>
+              <?php endif; ?>
+            </div>
+          </aside>
+
+          <!-- About Section - Meet Our Council -->
+          <section class="about-section" id="about" data-aos="fade-up">
+            <div class="section-header">
+              <h2>Meet Our Council</h2>
+              <p>Dedicated officials serving our community</p>
+            </div>
+            
+            <div class="org-carousel-wrapper">
+              <div class="carousel-container">
+                <button class="nav-btn prev-btn" id="prevBtn">
+                  <i class="fas fa-chevron-left"></i>
+                </button>
+                
+                <div class="carousel-track" id="carouselTrack">
+                  <?php if(!empty($council)): ?>
+                    <?php foreach($council as $member): 
+                      $initials = strtoupper(substr($member['first_name'], 0, 1) . substr($member['last_name'], 0, 1));
+                    ?>
+                      <div class="carousel-slide">
+                        <div class="official-card">
+                          <div class="official-avatar">
+                            <span><?php echo htmlspecialchars($initials); ?></span>
+                          </div>
+                          <h3><?php echo htmlspecialchars($member['first_name'] . ' ' . $member['last_name']); ?></h3>
+                          <p><?php echo htmlspecialchars($member['role']); ?></p>
+                        </div>
+                      </div>
+                    <?php endforeach; ?>
+                  <?php else: ?>
+                      <div class="carousel-slide">
+                        <div class="official-card">
+                          <div class="official-avatar">
+                            <span>NA</span>
+                          </div>
+                          <h3>No Council Members</h3>
+                          <p></p>
+                        </div>
+                      </div>
+                  <?php endif; ?>
+                </div>
+                
+                <button class="nav-btn next-btn" id="nextBtn">
+                  <i class="fas fa-chevron-right"></i>
+                </button>
+              </div>
+              
+              <div class="carousel-dots" id="carouselDots"></div>
+            </div>
+          </section>
+
+          <!-- Section Divider -->
+          <hr class="section-divider">
+
+          <!-- Services Section -->
+          <section class="services-section" id="services">
+            <div class="services-container">
+              <div class="section-header">
+                <h2>Our Services</h2>
+                <p>Complete range of barangay services for our community</p>
+              </div>
+
+              <!-- Barangay Certificates Category -->
+              <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('certificates')">
+                  <div class="category-icon"><i class="fas fa-certificate"></i></div>
+                  <h3>Barangay Certificates</h3>
+                  <p>Official documents and certifications</p>
+                  <div class="toggle-icon">
+                    <i class="fas fa-chevron-down" id="certificates-icon"></i>
+                  </div>
+                </div>
+                
+                <div class="services-grid" id="certificates-grid">
+                  <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_clearance';">
+                    <div class="service-icon"><i class="fas fa-file-alt"></i></div>
+                    <div class="service-content">
+                      <h4>Barangay Clearance</h4>
+                      <p>Required for employment, business permits, and various transactions</p>
+                      <a href="../pages/services.php?documentType=barangay_clearance" class="service-cta">
+                        Request <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_indigency';">
+                    <div class="service-icon"><i class="fas fa-hand-holding-heart"></i></div>
+                    <div class="service-content">
+                      <h4>Certificate of Indigency</h4>
+                      <p>For accessing social welfare programs and financial assistance</p>
+                      <a href="../pages/services.php?documentType=barangay_indigency" class="service-cta">
+                        Apply <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=business_permit_clearance';">
+                    <div class="service-icon"><i class="fas fa-store"></i></div>
+                    <div class="service-content">
+                      <h4>Business Permit Clearance</h4>
+                      <p>Barangay clearance required for business license applications</p>
+                      <a href="../pages/services.php?documentType=business_permit_clearance" class="service-cta">
+                        Apply <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=cedula';">
+                    <div class="service-icon"><i class="fas fa-id-card"></i></div>
+                    <div class="service-content">
+                      <h4>Community Tax Certificate (Sedula)</h4>
+                      <p>Annual tax certificate required for government transactions</p>
+                      <a href="../pages/services.php?documentType=cedula" class="service-cta">
+                        Get Certificate <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=proof_of_residency';">
+                    <div class="service-icon"><i class="fas fa-home"></i></div>
+                    <div class="service-content">
+                      <h4>Certificate of Residency</h4>
+                      <p>Official proof of residence in the barangay</p>
+                      <a href="../pages/services.php?documentType=proof_of_residency" class="service-cta">
+                        Request <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Other Services Category -->
+              <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('other')">
+                  <div class="category-icon"><i class="fas fa-hands-helping"></i></div>
+                  <h3>Other Services</h3>
+                  <p>Social services and community assistance</p>
+                  <div class="toggle-icon">
+                    <i class="fas fa-chevron-down" id="other-icon"></i>
+                  </div>
+                </div>
+                
+                <div class="services-grid" id="other-grid">
+                  <div class="service-item" onclick="window.location.href='../pages/ayuda_request.php';">
+                    <div class="service-icon"><i class="fas fa-hand-holding-usd"></i></div>
+                    <div class="service-content">
+                      <h4>Financial Assistance (Ayuda)</h4>
+                      <p>Emergency financial assistance for community members in need</p>
+                      <a href="../pages/ayuda_request.php" class="service-cta">
+                        Apply for Assistance <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/scholarship_application.php';">
+                    <div class="service-icon"><i class="fas fa-graduation-cap"></i></div>
+                    <div class="service-content">
+                      <h4>Educational Scholarship</h4>
+                      <p>Scholarship programs for deserving students in the community</p>
+                      <a href="../pages/scholarship_application.php" class="service-cta">
+                        Apply for Scholarship <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/medical_assistance.php';">
+                    <div class="service-icon"><i class="fas fa-heart"></i></div>
+                    <div class="service-content">
+                      <h4>Medical Assistance Program</h4>
+                      <p>Healthcare support and medical aid for community members</p>
+                      <a href="../pages/medical_assistance.php" class="service-cta">
+                        Request Assistance <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/senior_citizen_services.php';">
+                    <div class="service-icon"><i class="fas fa-users"></i></div>
+                    <div class="service-content">
+                      <h4>Senior Citizen Services</h4>
+                      <p>Special services and benefits for senior citizens</p>
+                      <a href="../pages/senior_citizen_services.php" class="service-cta">
+                        Learn More <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/pwd_services.php';">
+                    <div class="service-icon"><i class="fas fa-wheelchair"></i></div>
+                    <div class="service-content">
+                      <h4>PWD Services</h4>
+                      <p>Services and assistance for Persons with Disabilities</p>
+                      <a href="../pages/pwd_services.php" class="service-cta">
+                        Access Services <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/livelihood_programs.php';">
+                    <div class="service-icon"><i class="fas fa-seedling"></i></div>
+                    <div class="service-content">
+                      <h4>Livelihood Programs</h4>
+                      <p>Skills training and livelihood opportunities for residents</p>
+                      <a href="../pages/livelihood_programs.php" class="service-cta">
+                        Join Program <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Blotter Services Category -->
+              <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('blotter')">
+                  <div class="category-icon"><i class="fas fa-file-signature"></i></div>
+                  <h3>Blotter Services</h3>
+                  <p>Incident reporting and documentation</p>
+                  <div class="toggle-icon">
+                    <i class="fas fa-chevron-down" id="blotter-icon"></i>
+                  </div>
+                </div>
+                
+                <div class="services-grid" id="blotter-grid">
+                  <div class="service-item" onclick="window.location.href='../pages/blotter_request.php';">
+                    <div class="service-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                    <div class="service-content">
+                      <h4>File a Blotter Report</h4>
+                      <p>Report incidents and request official documentation</p>
+                      <a href="../pages/blotter_request.php" class="service-cta">
+                        File Report <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+
+                  <div class="service-item" onclick="window.location.href='../pages/blotter_status.php';">
+                    <div class="service-icon"><i class="fas fa-search"></i></div>
+                    <div class="service-content">
+                      <h4>Check Blotter Status</h4>
+                      <p>Track the status of your blotter requests</p>
+                      <a href="../pages/blotter_status.php" class="service-cta">
+                        Check Status <i class="fas fa-arrow-right"></i>
+                      </a>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Section Divider -->
+          <hr class="section-divider">
+
+          <!-- Contact Section -->
+          <section class="contact-section" id="contact" data-aos="fade-up">
+            <div class="section-header">
+              <h2>Contact Us</h2>
+              <p>Get in touch with your barangay officials</p>
+            </div>
+            
+            <div class="contact-container">
+              <!-- Emergency Contacts Card -->
+              <div class="contact-card emergency-card">
+                <div class="card-header">
+                  <div class="card-icon emergency-icon">
+                    <i class="fas fa-phone-alt"></i>
+                  </div>
+                  <h3>Emergency Contacts</h3>
+                  <p>24/7 Emergency Services</p>
+                </div>
+                <div class="contact-info text-center">
+                  <div class="contact-item">
+                    <div class="contact-label">
+                      <i class="fas fa-shield-alt"></i>
+                      <span>Philippine National Police (PNP)</span>
+                    </div>
+                    <div class="contact-value"><?php echo htmlspecialchars($emergency_contacts['pnp_contact']); ?></div>
+                  </div>
+                  <div class="contact-item">
+                    <div class="contact-label">
+                      <i class="fas fa-fire-extinguisher"></i>
+                      <span>Bureau of Fire Protection (BFP)</span>
+                    </div>
+                    <div class="contact-value"><?php echo htmlspecialchars($emergency_contacts['bfp_contact']); ?></div>
+                  </div>
+                  <div class="contact-item">
+                    <div class="contact-label">
+                      <i class="fas fa-building"></i>
+                      <span>Barangay Contact Number</span>
+                    </div>
+                    <div class="contact-value"><?php echo htmlspecialchars($emergency_contacts['local_barangay_contact']); ?></div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Quick Services Card -->
+              <div class="contact-card services-card">
+                <div class="card-header">
+                  <div class="card-icon services-icon">
+                    <i class="fas fa-headset"></i>
+                  </div>
+                  <h3>Get Help</h3>
+                  <p>How to reach us for assistance</p>
+                </div>
+                <div class="contact-info text-center">
+                  <div class="contact-item">
+                    <div class="contact-label">
+                      <i class="fas fa-file-alt"></i>
+                      <span>Document Requests</span>
+                    </div>
+                    <div class="contact-value">Use our online services portal</div>
+                  </div>
+                  <div class="contact-item">
+                    <div class="contact-label">
+                      <i class="fas fa-clock"></i>
+                      <span>Regular Office Hours</span>
+                    </div>
+                    <div class="contact-value">Monday - Friday<br>8:00 AM - 5:00 PM</div>
+                  </div>
+                  <div class="contact-item">
+                    <div class="contact-label">
+                      <i class="fas fa-exclamation-circle"></i>
+                      <span>Complaints & Reports</span>
+                    </div>
+                    <div class="contact-value">File through our blotter services</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <!-- Sidebar - Announcements (DESKTOP ONLY) -->
+        <aside class="sidebar desktop-announcements" id="desktop-announcements">
+          <div class="sidebar-header">
+            <h2><i class="fas fa-bullhorn"></i> Just In</h2>
+          </div>
+          <div class="sidebar-content">
+            <?php if (empty($announcements)): ?>
+              <div class="sidebar-item">
+                <div class="sidebar-time">Now</div>
+                <h4>No Current Announcements</h4>
+                <p>Check back later for updates and announcements.</p>
+                <div class="sidebar-meta">
+                  <i class="fas fa-info-circle"></i> System Message
+                </div>
+              </div>
+            <?php else: ?>
+              <?php foreach ($announcements as $announcement): 
+                $datetime = new DateTime($announcement['start_datetime']);
+                $time = $datetime->format('g:i A');
+                $date = $datetime->format('F j, Y g:i A');
+              ?>
+                <div class="sidebar-item">
+                  <div class="sidebar-time"><?php echo $time; ?></div>
+                  <h4><?php echo htmlspecialchars($announcement['title']); ?></h4>
+                  <p><?php echo htmlspecialchars($announcement['description']); ?></p>
+                  <div class="sidebar-meta">
+                    <i class="fas fa-calendar"></i> <?php echo $date; ?>
+                    <?php if (!empty($announcement['location'])): ?>
+                      <br><i class="fas fa-map-marker-alt"></i> <?php echo htmlspecialchars($announcement['location']); ?>
+                    <?php endif; ?>
+                    <?php if (!empty($announcement['organizer'])): ?>
+                      <br><i class="fas fa-user-tie"></i> <?php echo htmlspecialchars($announcement['organizer']); ?>
+                    <?php endif; ?>
+                  </div>
+                </div>
+              <?php endforeach; ?>
+            <?php endif; ?>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Scroll to Top Button -->
+      <button class="scroll-top" id="scrollTop">
+        <i class="fas fa-arrow-up"></i>
+      </button>
+
+    </main>
+    <footer class="footer">
+      <p>&copy; 2025 iBarangay. All rights reserved.</p>
+    </footer>
+  <!-- Scripts -->
+  <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+  <script>
+    // Initialize AOS animations
+    AOS.init({
+      duration: 800,
+      once: true,
+      easing: 'ease-out-quad',
+      offset: 50
+    });
+
+    // FIXED CAROUSEL CONTROLLER
+    document.addEventListener('DOMContentLoaded', function() {
+      const track = document.getElementById('carouselTrack');
+      const prevBtn = document.getElementById('prevBtn');
+      const nextBtn = document.getElementById('nextBtn');
+      const dotsContainer = document.getElementById('carouselDots');
+      
+      if (!track) return;
+      
+      const slides = track.querySelectorAll('.carousel-slide');
+      const totalSlides = slides.length;
+      let currentIndex = 0;
+      let slidesPerView = getSlidesPerView();
+      
+      // FIXED: Responsive slides per view function
+      function getSlidesPerView() {
         const width = window.innerWidth;
-        if (width <= 480) return 1;
-        if (width <= 768) return 1;
-        if (width <= 1024) return 2;
-        if (width <= 1200) return 3;
-        return 3;
-    }
-    
-    let slidesPerView = getSlidesPerView();
-    
-    // Create dots
-    function createDots() {
+        if (width <= 768) return 1;      // Mobile: 1 card
+        if (width <= 1024) return 2;     // Tablet: 2 cards
+        return 3;                        // Desktop: 3 cards
+      }
+      
+      // FIXED: Create responsive dots
+      function createDots() {
         dotsContainer.innerHTML = '';
         const totalDots = Math.ceil(totalSlides / slidesPerView);
         
         for (let i = 0; i < totalDots; i++) {
-            const dot = document.createElement('div');
-            dot.classList.add('dot');
-            if (i === 0) dot.classList.add('active');
-            dot.addEventListener('click', () => goToSlide(i * slidesPerView));
-            dotsContainer.appendChild(dot);
+          const dot = document.createElement('button');
+          dot.classList.add('dot');
+          dot.setAttribute('aria-label', `Go to slide group ${i + 1}`);
+          if (i === 0) dot.classList.add('active');
+          
+          dot.addEventListener('click', () => {
+            currentIndex = i * slidesPerView;
+            // Make sure we don't go beyond the last slide
+            if (currentIndex >= totalSlides) {
+              currentIndex = totalSlides - slidesPerView;
+            }
+            updateCarousel();
+          });
+          
+          dotsContainer.appendChild(dot);
         }
-    }
-    
-    // Update carousel
-    function updateCarousel() {
+      }
+      
+      // FIXED: Update carousel display and controls
+      function updateCarousel() {
+        // Update slide widths based on current view
+        slides.forEach(slide => {
+          if (slidesPerView === 1) {
+            slide.style.width = 'calc(100% - 1rem)';
+          } else if (slidesPerView === 2) {
+            slide.style.width = 'calc(50% - 0.5rem)';
+          } else {
+            slide.style.width = 'calc(33.333% - 0.667rem)';
+          }
+        });
+
+        // Calculate scroll position
         const slideWidth = slides[0].offsetWidth;
+        const gap = parseFloat(getComputedStyle(track).gap) || 16;
+        const scrollDistance = currentIndex * (slideWidth + gap);
+        
+        // Scroll to position
         track.scrollTo({
-            left: currentIndex * slideWidth,
-            behavior: 'smooth'
+          left: scrollDistance,
+          behavior: 'smooth'
         });
         
-        // Update dots
+        // FIXED: Update dots based on current position
         const dots = dotsContainer.querySelectorAll('.dot');
+        const activeDotIndex = Math.floor(currentIndex / slidesPerView);
         dots.forEach((dot, index) => {
-            dot.classList.toggle('active', index === Math.floor(currentIndex / slidesPerView));
+          dot.classList.toggle('active', index === activeDotIndex);
         });
         
-        // Update buttons
+        // Update navigation buttons
         prevBtn.disabled = currentIndex === 0;
         nextBtn.disabled = currentIndex >= totalSlides - slidesPerView;
-    }
-    
-    // Go to slide
-    function goToSlide(index) {
-        currentIndex = Math.max(0, Math.min(index, totalSlides - slidesPerView));
-        updateCarousel();
-    }
-    
-    // Navigation
-    prevBtn.addEventListener('click', () => {
+        
+        // Update button opacity
+        prevBtn.style.opacity = prevBtn.disabled ? '0.3' : '1';
+        nextBtn.style.opacity = nextBtn.disabled ? '0.3' : '1';
+      }
+      
+      // Navigation functions
+      function goToPrev() {
         if (currentIndex > 0) {
-            currentIndex -= slidesPerView;
-            if (currentIndex < 0) currentIndex = 0;
-            updateCarousel();
+          currentIndex = Math.max(0, currentIndex - slidesPerView);
+          updateCarousel();
         }
-    });
-    
-    nextBtn.addEventListener('click', () => {
+      }
+      
+      function goToNext() {
         if (currentIndex < totalSlides - slidesPerView) {
-            currentIndex += slidesPerView;
-            updateCarousel();
+          currentIndex = Math.min(totalSlides - slidesPerView, currentIndex + slidesPerView);
+          updateCarousel();
         }
+      }
+      
+      // Event listeners
+      prevBtn.addEventListener('click', goToPrev);
+      nextBtn.addEventListener('click', goToNext);
+      
+      // Touch/Swipe support for mobile
+      let touchStartX = 0;
+      let touchEndX = 0;
+      let isScrolling = false;
+      
+      track.addEventListener('touchstart', (e) => {
+        touchStartX = e.changedTouches[0].screenX;
+        isScrolling = false;
+      }, { passive: true });
+      
+      track.addEventListener('touchmove', (e) => {
+        isScrolling = true;
+      }, { passive: true });
+      
+      track.addEventListener('touchend', (e) => {
+        if (isScrolling) return; // Don't trigger swipe if user was scrolling
+        
+        touchEndX = e.changedTouches[0].screenX;
+        handleSwipe();
+      }, { passive: true });
+      
+      function handleSwipe() {
+        const swipeThreshold = 50;
+        const diff = touchStartX - touchEndX;
+        
+        if (Math.abs(diff) > swipeThreshold) {
+          if (diff > 0) {
+            // Swipe left - next
+            goToNext();
+          } else {
+            // Swipe right - prev
+            goToPrev();
+          }
+        }
+      }
+      
+      // Keyboard navigation
+      track.addEventListener('keydown', (e) => {
+        if (e.key === 'ArrowLeft') {
+          e.preventDefault();
+          goToPrev();
+        } else if (e.key === 'ArrowRight') {
+          e.preventDefault();
+          goToNext();
+        }
+      });
+      
+      // FIXED: Handle window resize
+      let resizeTimer;
+      window.addEventListener('resize', () => {
+        clearTimeout(resizeTimer);
+        resizeTimer = setTimeout(() => {
+          const newSlidesPerView = getSlidesPerView();
+          
+          if (newSlidesPerView !== slidesPerView) {
+            slidesPerView = newSlidesPerView;
+            // Adjust currentIndex to be valid for new slidesPerView
+            currentIndex = Math.min(currentIndex, Math.max(0, totalSlides - newSlidesPerView));
+            createDots();
+            updateCarousel();
+          }
+        }, 250);
+      });
+      
+      // Initialize carousel
+      createDots();
+      updateCarousel();
+      
+      // Make track focusable for keyboard navigation
+      track.setAttribute('tabindex', '0');
     });
-    
-    // Handle resize
-    window.addEventListener('resize', () => {
-        slidesPerView = getSlidesPerView();
-        currentIndex = 0;
-        createDots();
-        updateCarousel();
-    });
-    
-    // Initialize
-    createDots();
-    updateCarousel();
-    
+
     // Scroll to top button
     const scrollBtn = document.getElementById('scrollTop');
     
     window.addEventListener('scroll', () => {
-        if (window.pageYOffset > 300) {
-            scrollBtn.classList.add('show');
-        } else {
-            scrollBtn.classList.remove('show');
-        }
+      if (window.pageYOffset > 300) {
+        scrollBtn.classList.add('show');
+      } else {
+        scrollBtn.classList.remove('show');
+      }
     });
     
     scrollBtn.addEventListener('click', () => {
-        window.scrollTo({ top: 0, behavior: 'smooth' });
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     });
-});
 
-// Toggle Category Function
-function toggleCategory(categoryName) {
-    const grid = document.getElementById(categoryName + '-grid');
-    const icon = document.getElementById(categoryName + '-icon');
-    const toggleIcon = icon.parentElement;
-    
-    if (grid.style.display === 'none' || grid.style.display === '') {
+    // Toggle Category Function
+    function toggleCategory(categoryName) {
+      const grid = document.getElementById(categoryName + '-grid');
+      const icon = document.getElementById(categoryName + '-icon');
+      const toggleIcon = icon.parentElement;
+      
+      if (grid.style.display === 'none' || grid.style.display === '') {
         // Show the grid
         grid.style.display = 'grid';
         setTimeout(() => {
-            grid.classList.add('show');
+          grid.classList.add('show');
         }, 10);
         
         // Rotate the icon
         toggleIcon.classList.add('expanded');
-    } else {
+      } else {
         // Hide the grid
         grid.classList.remove('show');
         toggleIcon.classList.remove('expanded');
         
         setTimeout(() => {
-            grid.style.display = 'none';
+          grid.style.display = 'none';
         }, 300);
+      }
     }
-}
-</script>
 
-<!-- Announcements Section -->
-<section class="announcements-section" id="announcements">
-  <div class="section-header">
-    <h2>Announcements</h2>
-    <p>Stay updated with the latest news and events</p>
-  </div>
-  <div class="announcements-container">
-    <?php if (count($events_result) > 0): ?>
-      <?php foreach ($events_result as $event): ?>
-        <div class="announcement-card <?= $event['status'] === 'postponed' ? 'postponed' : '' ?>">
-          <?php if ($event['status'] === 'postponed'): ?>
-            <div class="postponed-banner">
-              <i class="fas fa-exclamation-triangle"></i>
-              Event Postponed - New Date TBA
-            </div>
-          <?php endif; ?>
-          <h3><?php echo htmlspecialchars($event['title']); ?></h3>
-          <div class="event-details">
-            <div class="event-meta">
-              <div class="meta-item">
-                <i class="fas fa-calendar-alt"></i>
-                <div class="event-date">
-                  <?php 
-                    $start = new DateTime($event['start_datetime']);
-                    $end = new DateTime($event['end_datetime']);
-                    echo $start->format('M j, Y g:i A') . ' - ' . $end->format('g:i A');
-                  ?>
-                </div>
-              </div>
-              <div class="meta-item">
-                <i class="fas fa-map-marker-alt"></i>
-                <div class="event-location">
-                  <?php echo htmlspecialchars($event['location']); ?>
-                </div>
-              </div>
-            </div>
-            <p class="event-description">
-              <?php echo htmlspecialchars($event['description']); ?>
-            </p>
-            <div class="event-organizer">
-              <i class="fas fa-user-tie"></i>
-              Organized by: <?php echo htmlspecialchars($event['organizer']); ?>
-            </div>
-          </div>
-        </div>
-      <?php endforeach; ?>
-    <?php else: ?>
-      <p class="no-announcements">No upcoming events at the moment. Check back later!</p>
-    <?php endif; ?>
-  </div>
-</section>
-
-    <!-- Contact Section -->
-    <section class="contact-section" id="contact" data-aos="fade-up">
-      <div class="section-header">
-        <h2>Contact Us</h2>
-        <p>We'd love to hear from you</p>
-      </div>
-      <div class="contact-content">
-        <div class="contact-form">
-          <h3>Send Us a Message</h3>
-          <form>
-            <div class="form-group">
-              <label for="name">Your Name</label>
-              <input id="name" type="text" placeholder="Your Name" required />
-            </div>
-            <div class="form-group">
-              <label for="email">Your Email</label>
-              <input id="email" type="email" placeholder="Your Email" required />
-            </div>
-            <div class="form-group">
-              <label for="message">Your Message</label>
-              <textarea id="message" rows="5" placeholder="Your Message" required></textarea>
-            </div>
-            <button type="submit" class="btn cta-button">Submit</button>
-          </form>
-        </div>
-      </div>
-    </section>
-  </main>
-
-  <!-- Footer -->
-  <footer class="footer">
-    <p>&copy; 2025 iBarangay. All rights reserved.</p>
-  </footer>
-
-  <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
-  <script>
-    // Initialize AOS animations
-    AOS.init({
-      duration: 1000,
-      once: true,
-      easing: 'ease-out-quad'
-    });
-
-    // Mobile Menu Toggle
-    const menuBtn = document.querySelector('.mobile-menu-btn');
-    const navLinks = document.querySelector('.nav-links');
-    menuBtn.addEventListener('click', () => {
-      navLinks.classList.toggle('active');
-      menuBtn.classList.toggle('active');
-    });
-
-    // Smooth scroll for anchor links
-    document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-      anchor.addEventListener('click', function(e) {
-        e.preventDefault();
-        const target = document.querySelector(this.getAttribute('href'));
-        const headerHeight = document.querySelector('.navbar').offsetHeight;
-        const targetPosition = target.offsetTop - headerHeight;
-        window.scrollTo({
-          top: targetPosition,
-          behavior: 'smooth'
-        });
-      });
-    });
-
-    // Lazy loading for images
-    const lazyImages = document.querySelectorAll('img[data-src]');
-    const lazyLoad = target => {
-      const io = new IntersectionObserver((entries, observer) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            const img = entry.target;
-            img.src = img.dataset.src;
-            img.removeAttribute('data-src');
-            observer.disconnect();
-          }
-        });
-      });
-      io.observe(target);
+    // Intersection Observer for fade-in animations
+    const observerOptions = {
+      threshold: 0.1,
+      rootMargin: '0px 0px -50px 0px'
     };
-    lazyImages.forEach(lazyLoad);
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          entry.target.style.opacity = '1';
+          entry.target.style.transform = 'translateY(0)';
+        }
+      });
+    }, observerOptions);
+
+    // Observe service items
+    document.querySelectorAll('.service-item').forEach(item => {
+      item.style.opacity = '0';
+      item.style.transform = 'translateY(20px)';
+      item.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
+      observer.observe(item);
+    });
+
+    // Handle announcements sidebar position
+    function handleAnnouncementsPosition() {
+      const mobileSidebar = document.getElementById('mobile-announcements');
+      const desktopSidebar = document.getElementById('desktop-announcements');
+      const mainContentArea = document.querySelector('.main-content-area');
+      const heroSection = document.querySelector('.hero');
+      const aboutSection = document.querySelector('.about-section');
+
+      if (window.innerWidth <= 1200) {
+        // Mobile/Tablet view
+        if (mobileSidebar && heroSection && aboutSection) {
+          // Insert mobile sidebar after hero section
+          heroSection.insertAdjacentElement('afterend', mobileSidebar);
+        }
+      }
+    }
+
+    handleAnnouncementsPosition();
+
+    // Performance optimization - Debounce resize events
+    function debounce(func, wait) {
+      let timeout;
+      return function executedFunction(...args) {
+        const later = () => {
+          clearTimeout(timeout);
+          func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+      };
+    }
+
+    // Apply debounce to resize handlers
+    window.addEventListener('resize', debounce(handleAnnouncementsPosition, 250));
   </script>
 </body>
 </html>
-
-<?php
-  if(isset($_SESSION['alert'])) {
-    echo $_SESSION['alert'];
-    unset($_SESSION['alert']);
-  }
-?>

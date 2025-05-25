@@ -9,7 +9,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $middle_name = trim($_POST['middle_name'] ?? '');
     $last_name = trim($_POST['last_name']);
     $birth_date = trim($_POST['birth_date']);
-    $id_number = trim($_POST['id_number'] ?? '');
     $gender = trim($_POST['gender'] ?? '');
     
     // Basic validation
@@ -39,12 +38,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         if (!empty($middle_name)) {
             $sql .= " AND (middle_name = :middle_name OR middle_name IS NULL)";
             $params[':middle_name'] = $middle_name;
-        }
-        
-        // If ID number is provided, add it to the query
-        if (!empty($id_number)) {
-            $sql .= " AND (id_number = :id_number OR id_number IS NULL)";
-            $params[':id_number'] = $id_number;
         }
         
         // If gender is provided, add it to the query
