@@ -1568,5 +1568,3 @@ INSERT INTO person_other_needs (person_id, need_type_id, details, priority_level
     (6, 5, 'Family counseling', 'high', 'assessed'),
     (7, 6, 'Home safety improvements', 'urgent', 'identified'),
     (9, 7, 'Environmental concerns', 'medium', 'monitoring');
-
-
