@@ -131,7 +131,7 @@ $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get available persons for household head selection
 $stmt = $pdo->prepare("
-    SELECT p.id, p.first_name, p.last_name, p.contact_number
+    SELECT p.id, p.first_name, p.last_name
     FROM persons p
     LEFT JOIN addresses a ON p.id = a.person_id
     WHERE a.barangay_id = ? OR a.barangay_id IS NULL
@@ -226,9 +226,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                         <?php foreach($available_persons as $person): ?>
                             <option value="<?= $person['id'] ?>">
                                 <?= htmlspecialchars($person['first_name'] . ' ' . $person['last_name']) ?>
-                                <?php if($person['contact_number']): ?>
-                                    (<?= htmlspecialchars($person['contact_number']) ?>)
-                                <?php endif; ?>
                             </option>
                         <?php endforeach; ?>
                     </select>

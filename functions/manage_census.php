@@ -14,162 +14,130 @@ function saveResident($pdo, $data, $barangay_id) {
     try {
         $pdo->beginTransaction();
         
-        // Generate ID number
+        // Generate ID number for the new resident
         $id_number = generateCensusId($pdo, $barangay_id);
-        
-        // Insert into persons table with named parameters
-        $stmt = $pdo->prepare("
+
+        // Prepare data for persons table
+        $person_params = [
+            ':id_number' => $id_number,
+            ':first_name' => trim($data['first_name'] ?? ''),
+            ':middle_name' => isset($data['middle_name']) ? trim($data['middle_name']) : null,
+            ':last_name' => trim($data['last_name'] ?? ''),
+            ':suffix' => isset($data['suffix']) ? trim($data['suffix']) : null,
+            ':birth_date' => $data['birth_date'] ?? null,
+            ':birth_place' => isset($data['birth_place']) ? trim($data['birth_place']) : null,
+            ':gender' => $data['gender'] ?? null,
+            ':civil_status' => $data['civil_status'] ?? null,
+            ':citizenship' => isset($data['citizenship']) ? trim($data['citizenship']) : 'FILIPINO',
+            ':religion' => (isset($data['religion']) && strtoupper($data['religion']) === 'OTHERS') ? 'OTHERS' : (isset($data['religion']) ? trim($data['religion']) : null),
+            ':other_religion' => (isset($data['religion']) && strtoupper($data['religion']) === 'OTHERS') ? (isset($data['other_religion']) ? trim($data['other_religion']) : null) : null,
+            ':education_level' => isset($data['education_level']) ? trim($data['education_level']) : null,
+            ':occupation' => isset($data['occupation']) ? trim($data['occupation']) : null,
+            ':monthly_income' => isset($data['monthly_income']) && trim($data['monthly_income']) !== '' ? (float)trim($data['monthly_income']) : null,
+            ':nhts_pr_listahanan' => isset($data['nhts_pr_listahanan']) ? 1 : 0,
+            ':indigenous_people' => isset($data['indigenous_people']) ? 1 : 0,
+            ':pantawid_beneficiary' => isset($data['pantawid_beneficiary']) ? 1 : 0,
+            ':user_id' => null
+        ];
+
+        // SQL for persons table
+        $sql_persons = "
             INSERT INTO persons (
                 id_number, first_name, middle_name, last_name, suffix,
                 birth_date, birth_place, gender, civil_status,
-                citizenship, religion, education_level, occupation,
-                monthly_income, contact_number, user_id
+                citizenship, religion, other_religion, education_level,
+                occupation, monthly_income,
+                nhts_pr_listahanan, indigenous_people, pantawid_beneficiary,
+                user_id
             ) VALUES (
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?, ?
+                :id_number, :first_name, :middle_name, :last_name, :suffix,
+                :birth_date, :birth_place, :gender, :civil_status,
+                :citizenship, :religion, :other_religion, :education_level,
+                :occupation, :monthly_income,
+                :nhts_pr_listahanan, :indigenous_people, :pantawid_beneficiary,
+                :user_id
             )
-        ");
-        
-        $stmt->execute([
-            $id_number,
-            $data['first_name'],
-            isset($data['middle_name']) ? trim($data['middle_name']) : null,
-            $data['last_name'],
-            isset($data['suffix']) ? trim($data['suffix']) : null,
-            $data['birth_date'],
-            $data['birth_place'],
-            $data['gender'],
-            $data['civil_status'],
-            isset($data['citizenship']) ? trim($data['citizenship']) : 'Filipino',
-            isset($data['religion']) ? trim($data['religion']) : null,
-            isset($data['education_level']) ? trim($data['education_level']) : null,
-            isset($data['occupation']) ? trim($data['occupation']) : null,
-            isset($data['monthly_income']) && trim($data['monthly_income']) !== '' ? (float)$data['monthly_income'] : null,
-            isset($data['contact_number']) ? trim($data['contact_number']) : null,
-            isset($data['user_id']) ? $data['user_id'] : null
-        ]);
-        
+        ";
+        $stmt_persons = $pdo->prepare($sql_persons);
+        $stmt_persons->execute($person_params);
         $person_id = $pdo->lastInsertId();
         
-        // Insert address if provided
-        if (!empty($data['house_no']) || !empty($data['street'])) {            $stmt = $pdo->prepare("
+        // Insert Present Address
+        if (!empty($data['present_house_no']) || !empty($data['present_street'])) {
+            $stmt_present_address = $pdo->prepare("
                 INSERT INTO addresses (
-                    person_id, barangay_id, house_no, street,
-                    subdivision, block_lot, phase,
-                    residency_type, years_in_san_rafael, is_primary
+                    person_id, barangay_id, house_no, street, municipality, province, region,
+                    residency_type, is_primary, is_permanent
                 ) VALUES (
-                    :person_id, :barangay_id, :house_no, :street,
-                    :subdivision, :block_lot, :phase,
-                    :residency_type, :years_in_san_rafael, 1
+                    :person_id, :barangay_id, :house_no, :street, :municipality, :province, :region,
+                    :residency_type, 1, 0
                 )
             ");
-
-            $addressData = [
+            $stmt_present_address->execute([
                 ':person_id' => $person_id,
                 ':barangay_id' => $barangay_id,
-                ':house_no' => isset($data['house_no']) ? trim($data['house_no']) : null,
-                ':street' => isset($data['street']) ? trim($data['street']) : null,
-                ':subdivision' => isset($data['subdivision']) ? trim($data['subdivision']) : null,
-                ':block_lot' => isset($data['block_lot']) ? trim($data['block_lot']) : null,
-                ':phase' => isset($data['phase']) ? trim($data['phase']) : null,
-                ':residency_type' => isset($data['residency_type']) && trim($data['residency_type']) !== '' ? trim($data['residency_type']) : 'Home Owner',
-                ':years_in_san_rafael' => isset($data['years_in_san_rafael']) ? (int)$data['years_in_san_rafael'] : null
-            ];
-
-            $stmt->execute($addressData);
+                ':house_no' => isset($data['present_house_no']) ? trim($data['present_house_no']) : null,
+                ':street' => isset($data['present_street']) ? trim($data['present_street']) : null,
+                ':municipality' => isset($data['present_municipality']) && trim($data['present_municipality']) !== '' ? trim($data['present_municipality']) : 'SAN RAFAEL',
+                ':province' => isset($data['present_province']) && trim($data['present_province']) !== '' ? trim($data['present_province']) : 'BULACAN',
+                ':region' => isset($data['present_region']) && trim($data['present_region']) !== '' ? trim($data['present_region']) : 'III',
+                ':residency_type' => isset($data['residency_type']) && trim($data['residency_type']) !== '' ? trim($data['residency_type']) : 'Home Owner'
+            ]);
         }
-        
-        // Add to household if specified
-        if (!empty($data['household_id'])) {
-            // If marked as household head, update the household record
-            if (!empty($data['is_household_head'])) {
-                $stmt = $pdo->prepare("
-                    UPDATE households 
-                    SET household_head_person_id = :person_id 
-                    WHERE id = :household_id
-                ");
-                $stmt->execute([
-                    ':person_id' => $person_id,
-                    ':household_id' => $data['household_id']
-                ]);
-                
-                // Update any existing household heads to non-head
-                $stmt = $pdo->prepare("
-                    UPDATE household_members 
-                    SET is_household_head = 0 
-                    WHERE household_id = :household_id AND person_id != :person_id
-                ");
-                $stmt->execute([
-                    ':household_id' => $data['household_id'],
-                    ':person_id' => $person_id
-                ]);
-            }
-            
-            // Insert into household_members
-            $stmt = $pdo->prepare("
-                INSERT INTO household_members (
-                    household_id, person_id, relationship_to_head, is_household_head
+
+        // Insert Permanent Address if different from present
+        if (!empty($data['permanent_house_no']) || !empty($data['permanent_street'])) {
+            $stmt_permanent_address = $pdo->prepare("
+                INSERT INTO addresses (
+                    person_id, barangay_id, house_no, street, municipality, province, region,
+                    residency_type, is_primary, is_permanent
                 ) VALUES (
-                    :household_id, :person_id, :relationship, :is_head
+                    :person_id, :barangay_id, :house_no, :street, :municipality, :province, :region,
+                    :residency_type, 0, 1
                 )
             ");
-            
-            $stmt->execute([
+            $stmt_permanent_address->execute([
+                ':person_id' => $person_id,
+                ':barangay_id' => $barangay_id,
+                ':house_no' => isset($data['permanent_house_no']) ? trim($data['permanent_house_no']) : null,
+                ':street' => isset($data['permanent_street']) ? trim($data['permanent_street']) : null,
+                ':municipality' => isset($data['permanent_municipality']) ? trim($data['permanent_municipality']) : null,
+                ':province' => isset($data['permanent_province']) ? trim($data['permanent_province']) : null,
+                ':region' => isset($data['permanent_region']) ? trim($data['permanent_region']) : null,
+                ':residency_type' => isset($data['permanent_residency_type']) ? trim($data['permanent_residency_type']) : null
+            ]);
+        }
+
+        // Insert into household_members
+        if (!empty($data['household_id'])) {
+            $stmt_household = $pdo->prepare("
+                INSERT INTO household_members (
+                    household_id, person_id, relationship_type_id, is_household_head
+                ) VALUES (
+                    :household_id, :person_id, :relationship_type_id, :is_household_head
+                )
+            ");
+            $stmt_household->execute([
                 ':household_id' => $data['household_id'],
                 ':person_id' => $person_id,
-                ':relationship' => $data['relationship'] ?: null,
-                ':is_head' => $data['is_household_head'] ?? 0
+                ':relationship_type_id' => $data['relationship'] ?? null,
+                ':is_household_head' => isset($data['is_household_head']) ? 1 : 0
             ]);
-            
-            // Update household size
-            $stmt = $pdo->prepare("
-                UPDATE households 
-                SET household_size = (
-                    SELECT COUNT(*) FROM household_members 
-                    WHERE household_id = :household_id
-                )
-                WHERE id = :household_id
-            ");
-            $stmt->execute([':household_id' => $data['household_id']]);
         }
-        
-        // Handle special resident types
-        $birthDate = new DateTime($data['birth_date']);
-        $today = new DateTime();
-        $age = $birthDate->diff($today)->y;
-        
-        // Check if senior citizen
-        if ($data['resident_type'] === 'senior' || $age >= 60) {
-            $stmt = $pdo->prepare("
-                INSERT INTO senior_health (person_id) VALUES (:person_id)
-            ");
-            $stmt->execute([':person_id' => $person_id]);
-        }
-        
-        // Check if child
-        if ($age < 18) {
-            $stmt = $pdo->prepare("
-                INSERT INTO child_information (person_id) VALUES (:person_id)
-            ");
-            $stmt->execute([':person_id' => $person_id]);
-        }
-        
+
         // Log the action in audit trail
         if (isset($_SESSION['user_id'])) {
-            $stmt = $pdo->prepare("
+            $stmt_audit = $pdo->prepare("
                 INSERT INTO audit_trails (
                     user_id, action, table_name, record_id, description
                 ) VALUES (
                     :user_id, 'INSERT', 'persons', :record_id, :description
                 )
             ");
-            
-            $stmt->execute([
+            $stmt_audit->execute([
                 ':user_id' => $_SESSION['user_id'],
                 ':record_id' => $person_id,
-                ':description' => "Added new resident: {$data['first_name']} {$data['last_name']}"
+                ':description' => "Added new resident: {$data['first_name']} {$data['last_name']} (ID: {$id_number})"
             ]);
         }
         
@@ -177,12 +145,17 @@ function saveResident($pdo, $data, $barangay_id) {
         return [
             'success' => true,
             'message' => 'Resident data saved successfully!',
-            'person_id' => $person_id
+            'person_id' => $person_id,
+            'id_number' => $id_number
         ];
         
     } catch (Exception $e) {
         $pdo->rollback();
-        error_log("Error in saveResident: " . $e->getMessage());
+        error_log("Error in saveResident: " . $e->getMessage() . " in " . $e->getFile() . " on line " . $e->getLine());
+        error_log("Trace: " . $e->getTraceAsString());
+        if ($e instanceof PDOException) {
+            error_log("PDO Error Info: " . print_r($e->errorInfo, true));
+        }
         return [
             'success' => false,
             'message' => 'Error saving resident data: ' . $e->getMessage()
@@ -218,90 +191,75 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
                 education_level = :education_level,
                 occupation = :occupation,
                 monthly_income = :monthly_income,
-                contact_number = :contact_number,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :person_id
         ");
         
         $stmt->execute([
             ':person_id' => $person_id,
-            ':first_name' => $data['first_name'],
-            ':middle_name' => $data['middle_name'] ?: null,
-            ':last_name' => $data['last_name'],
-            ':suffix' => $data['suffix'] ?: null,
+            ':first_name' => trim($data['first_name']),
+            ':middle_name' => isset($data['middle_name']) ? trim($data['middle_name']) : null,
+            ':last_name' => trim($data['last_name']),
+            ':suffix' => isset($data['suffix']) ? trim($data['suffix']) : null,
             ':birth_date' => $data['birth_date'],
-            ':birth_place' => $data['birth_place'],
+            ':birth_place' => isset($data['birth_place']) ? trim($data['birth_place']) : null,
             ':gender' => $data['gender'],
             ':civil_status' => $data['civil_status'],
-            ':citizenship' => $data['citizenship'] ?: 'Filipino',
-            ':religion' => $data['religion'] ?: null,
-            ':education_level' => $data['education_level'] ?: null,
-            ':occupation' => $data['occupation'] ?: null,
-            ':monthly_income' => $data['monthly_income'] ?: null,
-            ':contact_number' => $data['contact_number'] ?: null
+            ':citizenship' => isset($data['citizenship']) ? trim($data['citizenship']) : 'FILIPINO',
+            ':religion' => isset($data['religion']) ? trim($data['religion']) : null,
+            ':education_level' => isset($data['education_level']) ? trim($data['education_level']) : null,
+            ':occupation' => isset($data['occupation']) ? trim($data['occupation']) : null,
+            ':monthly_income' => isset($data['monthly_income']) ? trim($data['monthly_income']) : null
         ]);
         
-        // Update or insert address
-        if (!empty($data['house_no']) || !empty($data['street'])) {
-            // Check if address exists
+        // Update present address
+        if (!empty($data['present_address_id'])) {
             $stmt = $pdo->prepare("
-                SELECT id FROM addresses 
-                WHERE person_id = :person_id AND is_primary = 1
+                UPDATE addresses SET
+                    house_no = :house_no,
+                    street = :street,
+                    municipality = :municipality,
+                    province = :province,
+                    region = :region,
+                    residency_type = :residency_type,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :address_id
             ");
-            $stmt->execute([':person_id' => $person_id]);
-            $address = $stmt->fetch();
             
-            if ($address) {
-                // Update existing address
-                $stmt = $pdo->prepare("
-                    UPDATE addresses SET
-                        house_no = :house_no,
-                        street = :street,
-                        subdivision = :subdivision,
-                        block_lot = :block_lot,
-                        phase = :phase,
-                        residency_type = :residency_type,
-                        years_in_san_rafael = :years_in_san_rafael,
-                        updated_at = CURRENT_TIMESTAMP
-                    WHERE id = :address_id
-                ");
-                
-                $stmt->execute([
-                    ':address_id' => $address['id'],
-                    ':house_no' => $data['house_no'] ?: null,
-                    ':street' => $data['street'] ?: null,
-                    ':subdivision' => $data['subdivision'] ?: null,
-                    ':block_lot' => $data['block_lot'] ?: null,
-                    ':phase' => $data['phase'] ?: null,
-                    ':residency_type' => $data['residency_type'] ?: null,
-                    ':years_in_san_rafael' => $data['years_in_san_rafael'] ?: null
-                ]);
-            } else {
-                // Insert new address
-                $stmt = $pdo->prepare("
-                    INSERT INTO addresses (
-                        person_id, barangay_id, house_no, street,
-                        subdivision, block_lot, phase,
-                        residency_type, years_in_san_rafael, is_primary
-                    ) VALUES (
-                        :person_id, :barangay_id, :house_no, :street,
-                        :subdivision, :block_lot, :phase,
-                        :residency_type, :years_in_san_rafael, 1
-                    )
-                ");
-                
-                $stmt->execute([
-                    ':person_id' => $person_id,
-                    ':barangay_id' => $barangay_id,
-                    ':house_no' => $data['house_no'] ?: null,
-                    ':street' => $data['street'] ?: null,
-                    ':subdivision' => $data['subdivision'] ?: null,
-                    ':block_lot' => $data['block_lot'] ?: null,
-                    ':phase' => $data['phase'] ?: null,
-                    ':residency_type' => $data['residency_type'] ?: null,
-                    ':years_in_san_rafael' => $data['years_in_san_rafael'] ?: null
-                ]);
-            }
+            $stmt->execute([
+                ':address_id' => $data['present_address_id'],
+                ':house_no' => $data['present_house_no'] ?: null,
+                ':street' => $data['present_street'] ?: null,
+                ':municipality' => $data['present_municipality'] ?: 'SAN RAFAEL',
+                ':province' => $data['present_province'] ?: 'BULACAN',
+                ':region' => $data['present_region'] ?: 'III',
+                ':residency_type' => $data['present_residency_type'] ?: null
+            ]);
+        }
+
+        // Update permanent address
+        if (!empty($data['permanent_address_id'])) {
+            $stmt = $pdo->prepare("
+                UPDATE addresses SET
+                    house_no = :house_no,
+                    street = :street,
+                    municipality = :municipality,
+                    province = :province,
+                    region = :region,
+                    residency_type = :residency_type,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE id = :address_id
+            ");
+            
+            $stmt->execute([
+                ':address_id' => $data['permanent_address_id'],
+                ':house_no' => $data['permanent_house_no'] ?: null,
+                ':street' => $data['permanent_street'] ?: null,
+                ':municipality' => $data['permanent_municipality'] ?: null,
+                ':province' => $data['permanent_province'] ?: null,
+                ':region' => $data['permanent_region'] ?: null,
+                ':residency_type' => $data['permanent_residency_type'] ?: null
+            ]);
         }
         
         // Update household membership if needed
@@ -319,7 +277,7 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
                 $stmt = $pdo->prepare("
                     UPDATE household_members SET
                         household_id = :household_id,
-                        relationship_to_head = :relationship,
+                        relationship_type_id = :relationship,
                         is_household_head = :is_head
                     WHERE person_id = :person_id
                 ");
@@ -531,7 +489,7 @@ function getResidentById($pdo, $person_id) {
     $stmt = $pdo->prepare("
         SELECT 
             p.*,
-            hm.household_id, hm.relationship_to_head, hm.is_household_head,
+            hm.household_id, hm.relationship_type_id, hm.is_household_head,
             b.name as barangay_name,
             TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
         FROM persons p
@@ -571,49 +529,39 @@ function checkHouseholdExists($pdo, $household_id, $barangay_id) {
  * @return array Validation result with 'valid' boolean and 'errors' array
  */
 function validatePersonData($data) {
-    $errors = [];
-    
-    // Required fields
-    $required = [
-        'first_name' => 'First Name',
-        'last_name' => 'Last Name',
-        'birth_date' => 'Date of Birth',
-        'birth_place' => 'Place of Birth',
-        'gender' => 'Gender',
-        'civil_status' => 'Civil Status',
-        'household_id' => 'Household ID'
-    ];
-    
-    foreach ($required as $field => $label) {
-        if (empty($data[$field])) {
-            $errors[] = "$label is required.";
-        }
+    $validation_errors = [];
+
+    if (empty($data['first_name'])) {
+        $validation_errors[] = "First name is required.";
     }
-    
-    // Validate date format
-    if (!empty($data['birth_date'])) {
-        $date = DateTime::createFromFormat('Y-m-d', $data['birth_date']);
-        if (!$date || $date->format('Y-m-d') !== $data['birth_date']) {
-            $errors[] = "Invalid birth date format.";
-        } else {
-            // Check if birth date is not in the future
-            if ($date > new DateTime()) {
-                $errors[] = "Birth date cannot be in the future.";
-            }
-        }
+
+    if (empty($data['last_name'])) {
+        $validation_errors[] = "Last name is required.";
     }
-    
-    // Validate phone number if provided
-    if (!empty($data['contact_number'])) {
-        if (!preg_match('/^(09|\+639)\d{9}$/', $data['contact_number'])) {
-            $errors[] = "Invalid contact number format.";
-        }
+
+    if (empty($data['birth_date'])) {
+        $validation_errors[] = "Birth date is required.";
+    } elseif (!strtotime($data['birth_date'])) {
+        $validation_errors[] = "Invalid birth date format.";
     }
-    
-    return [
-        'valid' => empty($errors),
-        'errors' => $errors
-    ];
+
+    if (empty($data['birth_place'])) {
+        $validation_errors[] = "Birth place is required.";
+    }
+
+    if (empty($data['gender'])) {
+        $validation_errors[] = "Gender is required.";
+    }
+
+    if (empty($data['civil_status'])) {
+        $validation_errors[] = "Civil status is required.";
+    }
+
+    if (empty($data['household_id'])) {
+        $validation_errors[] = "Household ID is required.";
+    }
+
+    return $validation_errors;
 }
 
 /**
@@ -628,9 +576,9 @@ function calculateAge($birth_date) {
     
     $birthDate = new DateTime($birth_date);
     $today = new DateTime();
-    $age = $birthDate->diff($today);
+    $age = $birthDate->diff($today)->y;
     
-    return $age->y;
+    return $age;
 }
 
 /**
@@ -646,7 +594,7 @@ function searchResidents($pdo, $search_term, $barangay_id, $filters = []) {
         SELECT 
             p.*,
             a.house_no, a.street,
-            hm.household_id, hm.relationship_to_head,
+            hm.household_id, hm.relationship_type_id,
             TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
         FROM persons p
         JOIN household_members hm ON p.id = hm.person_id

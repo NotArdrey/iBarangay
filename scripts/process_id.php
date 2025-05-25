@@ -167,7 +167,6 @@ try {
         ]
     ]);
     exit;
-
 } catch (ApiException $e) {
     // Handle Google API errors
     echo json_encode([
@@ -195,3 +194,4 @@ try {
     }
     exit;
 }
+

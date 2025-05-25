@@ -43,18 +43,55 @@ function logAuditTrail(PDO $pdo, int $admin, string $action, string $table, int 
 
 // Build query to fetch residents (role_id = ROLE_RESIDENT)
 $sql = <<<SQL
-SELECT u.*, a.street AS home_address, 
-       p.first_name AS person_first_name, p.middle_name AS person_middle_name, 
-       p.last_name AS person_last_name, p.birth_date AS person_birth_date, p.gender AS person_gender,
-       p.contact_number AS person_contact_number, p.civil_status AS marital_status,
-       ec.contact_name AS emergency_contact_name, ec.contact_number AS emergency_contact_number,
-       ec.contact_address AS emergency_contact_address, pi.id_image_path
-  FROM users u
-  LEFT JOIN persons p ON u.id = p.user_id
-  LEFT JOIN addresses a ON p.id = a.person_id
-  LEFT JOIN emergency_contacts ec ON p.id = ec.person_id
-  LEFT JOIN person_identification pi ON p.id = pi.person_id
- WHERE u.role_id = :role
+SELECT 
+    u.id,
+    u.email,
+    u.phone,
+    u.role_id,
+    u.barangay_id,
+    u.first_name AS user_first_name,
+    u.last_name AS user_last_name,
+    u.gender AS user_gender,
+    u.is_active,
+    u.last_login,
+    p.id AS person_id,
+    p.first_name AS person_first_name,
+    p.middle_name AS person_middle_name,
+    p.last_name AS person_last_name,
+    p.suffix,
+    p.birth_date,
+    p.birth_place,
+    p.gender AS person_gender,
+    p.civil_status,
+    p.citizenship,
+    p.religion,
+    p.education_level,
+    p.occupation,
+    p.monthly_income,
+    p.contact_number,
+    p.resident_type,
+    a.house_no,
+    a.street,
+    a.phase,
+    a.municipality,
+    a.province,
+    a.region,
+    a.residency_type,
+    ec.contact_name AS emergency_contact_name,
+    ec.contact_number AS emergency_contact_number,
+    ec.contact_address AS emergency_contact_address,
+    ec.relationship AS emergency_contact_relationship,
+    pi.osca_id,
+    pi.gsis_id,
+    pi.sss_id,
+    pi.tin_id,
+    pi.philhealth_id
+FROM users u
+LEFT JOIN persons p ON u.id = p.user_id
+LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+LEFT JOIN emergency_contacts ec ON p.id = ec.person_id
+LEFT JOIN person_identification pi ON p.id = pi.person_id
+WHERE u.role_id = :role
 SQL;
 $params = [':role' => ROLE_RESIDENT];
 
@@ -201,7 +238,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
         $pdo->beginTransaction();
 
         // Update Users table
-        $userFields = ['first_name', 'last_name', 'email', 'gender'];
+        $userFields = ['first_name', 'last_name', 'email', 'phone', 'gender'];
         $userUpdateParts = [];
         $userParams = [':user_id' => $user_id];
 
@@ -219,15 +256,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
         }
 
         // Update persons table
-        $personFields = ['first_name', 'middle_name', 'last_name', 'birth_date', 'gender', 'contact_number', 'civil_status'];
+        $personFields = [
+            'first_name', 'middle_name', 'last_name', 'suffix',
+            'birth_date', 'birth_place', 'gender', 'civil_status',
+            'citizenship', 'religion', 'education_level', 'occupation',
+            'monthly_income', 'contact_number', 'resident_type'
+        ];
         $personUpdateParts = [];
         $personParams = [':user_id' => $user_id];
 
         foreach ($personFields as $field) {
-            $editField = $field === 'civil_status' ? 'marital_status' : $field;
-            if (isset($_POST["edit_{$editField}"])) {
+            if (isset($_POST["edit_{$field}"])) {
                 $personUpdateParts[] = "{$field} = :{$field}";
-                $personParams[":{$field}"] = trim($_POST["edit_{$editField}"]);
+                $personParams[":{$field}"] = trim($_POST["edit_{$field}"]);
             }
         }
 
@@ -244,84 +285,95 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
             } else {
                 // Insert new person record
                 $personParams[':citizenship'] = 'Filipino';
-                $insertPersonSql = "INSERT INTO persons (user_id, " . implode(', ', $personFields) . ", citizenship) VALUES (:user_id, :" . implode(', :', $personFields) . ", :citizenship)";
+                $insertPersonSql = "INSERT INTO persons (user_id, " . implode(', ', array_keys($personParams)) . ") 
+                                  VALUES (:user_id, :" . implode(', :', array_keys($personParams)) . ")";
                 $stmt = $pdo->prepare($insertPersonSql);
                 $stmt->execute($personParams);
                 $personId = $pdo->lastInsertId();
             }
-        }
 
-        // Update or insert Address
-        $homeAddress = trim($_POST['edit_home_address'] ?? '');
-        // Retrieve person_id for this user
-        $getPersonStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = :user_id");
-        $getPersonStmt->execute([':user_id' => $user_id]);
-        $personId = $getPersonStmt->fetchColumn();
-        
-        if ($personId) {
-            $checkStmt = $pdo->prepare("SELECT id FROM addresses WHERE person_id = :person_id");
-            $checkStmt->execute([':person_id' => $personId]);
-    
-            if ($checkStmt->fetch()) {
-                $upd = $pdo->prepare("UPDATE addresses SET street = :street WHERE person_id = :person_id");
-                $upd->execute([':street' => $homeAddress, ':person_id' => $personId]);
-            } else {                $ins = $pdo->prepare("INSERT INTO addresses (person_id, barangay_id, street, residency_type) VALUES (:person_id, :barangay_id, :street, 'Homeowner')");
-                $ins->execute([
-                    ':person_id'   => $personId,
-                    ':barangay_id' => $bid,
-                    ':street'      => $homeAddress
-                ]);
-            }
-        }
-
-        // Update emergency contacts
-        if ($personId && (isset($_POST['edit_emergency_contact_name']) || isset($_POST['edit_emergency_contact_number']) || isset($_POST['edit_emergency_contact_address']))) {
-            $emergencyName = trim($_POST['edit_emergency_contact_name'] ?? '');
-            $emergencyNumber = trim($_POST['edit_emergency_contact_number'] ?? '');
-            $emergencyAddress = trim($_POST['edit_emergency_contact_address'] ?? '');
-
-            // Check if emergency contact exists
-            $checkEmergencyStmt = $pdo->prepare("SELECT id FROM emergency_contacts WHERE person_id = :person_id");
-            $checkEmergencyStmt->execute([':person_id' => $personId]);
-
-            if ($checkEmergencyStmt->fetch()) {
-                $updateEmergencyStmt = $pdo->prepare("UPDATE emergency_contacts SET contact_name = :name, contact_number = :number, contact_address = :address WHERE person_id = :person_id");
-                $updateEmergencyStmt->execute([
-                    ':name' => $emergencyName,
-                    ':number' => $emergencyNumber,
-                    ':address' => $emergencyAddress,
-                    ':person_id' => $personId
-                ]);
-            } else {
-                $insertEmergencyStmt = $pdo->prepare("INSERT INTO emergency_contacts (person_id, contact_name, contact_number, contact_address) VALUES (:person_id, :name, :number, :address)");
-                $insertEmergencyStmt->execute([
+            // Update address if provided
+            if ($personId && (isset($_POST['edit_house_no']) || isset($_POST['edit_street']))) {
+                $addressFields = ['house_no', 'street', 'phase', 'residency_type'];
+                $addressParams = [
                     ':person_id' => $personId,
-                    ':name' => $emergencyName,
-                    ':number' => $emergencyNumber,
-                    ':address' => $emergencyAddress
-                ]);
+                    ':municipality' => 'SAN RAFAEL',
+                    ':province' => 'BULACAN',
+                    ':region' => 'III'
+                ];
+                $addressUpdateParts = [];
+
+                foreach ($addressFields as $field) {
+                    if (isset($_POST["edit_{$field}"])) {
+                        $addressUpdateParts[] = "{$field} = :{$field}";
+                        $addressParams[":{$field}"] = trim($_POST["edit_{$field}"]);
+                    }
+                }
+
+                // Check if address exists
+                $checkAddressStmt = $pdo->prepare("SELECT id FROM addresses WHERE person_id = :person_id AND is_primary = TRUE");
+                $checkAddressStmt->execute([':person_id' => $personId]);
+                $addressId = $checkAddressStmt->fetchColumn();
+
+                if ($addressId && !empty($addressUpdateParts)) {
+                    $updateAddressSql = "UPDATE addresses SET " . implode(', ', $addressUpdateParts) . " WHERE id = :address_id";
+                    $addressParams[':address_id'] = $addressId;
+                    $stmt = $pdo->prepare($updateAddressSql);
+                    $stmt->execute($addressParams);
+                } elseif (!empty($addressUpdateParts)) {
+                    $addressParams[':is_primary'] = true;
+                    $insertAddressSql = "INSERT INTO addresses (person_id, " . implode(', ', array_keys($addressParams)) . ", is_primary) 
+                                       VALUES (:person_id, :" . implode(', :', array_keys($addressParams)) . ", :is_primary)";
+                    $stmt = $pdo->prepare($insertAddressSql);
+                    $stmt->execute($addressParams);
+                }
+            }
+
+            // Update emergency contact if provided
+            if ($personId && (isset($_POST['edit_emergency_contact_name']) || isset($_POST['edit_emergency_contact_number']))) {
+                $emergencyParams = [
+                    ':person_id' => $personId,
+                    ':contact_name' => $_POST['edit_emergency_contact_name'] ?? '',
+                    ':contact_number' => $_POST['edit_emergency_contact_number'] ?? '',
+                    ':contact_address' => $_POST['edit_emergency_contact_address'] ?? '',
+                    ':relationship' => $_POST['edit_emergency_contact_relationship'] ?? ''
+                ];
+
+                // Check if emergency contact exists
+                $checkEmergencyStmt = $pdo->prepare("SELECT id FROM emergency_contacts WHERE person_id = :person_id");
+                $checkEmergencyStmt->execute([':person_id' => $personId]);
+                $emergencyId = $checkEmergencyStmt->fetchColumn();
+
+                if ($emergencyId) {
+                    $updateEmergencySql = "UPDATE emergency_contacts 
+                                         SET contact_name = :contact_name,
+                                             contact_number = :contact_number,
+                                             contact_address = :contact_address,
+                                             relationship = :relationship
+                                         WHERE id = :emergency_id";
+                    $emergencyParams[':emergency_id'] = $emergencyId;
+                    $stmt = $pdo->prepare($updateEmergencySql);
+                    $stmt->execute($emergencyParams);
+                } else {
+                    $insertEmergencySql = "INSERT INTO emergency_contacts (person_id, contact_name, contact_number, contact_address, relationship)
+                                         VALUES (:person_id, :contact_name, :contact_number, :contact_address, :relationship)";
+                    $stmt = $pdo->prepare($insertEmergencySql);
+                    $stmt->execute($emergencyParams);
+                }
             }
         }
-
-        // Log audit trail
-        logAuditTrail(
-            $pdo,
-            $current_admin_id,
-            'UPDATE',
-            'users',
-            $user_id,
-            "Updated resident ID {$user_id}"
-        );
 
         $pdo->commit();
-        $_SESSION['success_message'] = 'Resident updated successfully.';
+        $_SESSION['success_message'] = "Resident information updated successfully.";
+        header("Location: residents.php");
+        exit;
+
     } catch (PDOException $e) {
         $pdo->rollBack();
-        $_SESSION['error_message'] = 'Error: ' . $e->getMessage();
+        $_SESSION['error_message'] = "Error updating resident: " . $e->getMessage();
+        header("Location: residents.php");
+        exit;
     }
-
-    header('Location: residents.php');
-    exit;
 }
 
 require_once __DIR__ . "/../pages/header.php";

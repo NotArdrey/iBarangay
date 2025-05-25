@@ -27,7 +27,8 @@ $stmt = $pdo->prepare("
     SELECT 
         p.*, 
         h.id AS household_id, 
-        hm.relationship_to_head, 
+        hm.relationship_type_id,
+        rt.name as relationship_name,
         hm.is_household_head,
         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
@@ -36,6 +37,7 @@ $stmt = $pdo->prepare("
     JOIN households h ON hm.household_id = h.id
     JOIN barangay b ON h.barangay_id = b.id
     LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
+    LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
     WHERE h.barangay_id = ?
     ORDER BY p.last_name, p.first_name
 ");
@@ -81,20 +83,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'education_level' => trim($_POST['education_level'] ?? ''),
             'occupation' => trim($_POST['occupation'] ?? ''),
             'monthly_income' => $_POST['monthly_income'] ?? '',
-            'contact_number' => trim($_POST['contact_number'] ?? ''),
             'house_no' => trim($_POST['house_no'] ?? ''),
             'street' => trim($_POST['street'] ?? ''),
-            'subdivision' => trim($_POST['subdivision'] ?? ''),
-            'block_lot' => trim($_POST['block_lot'] ?? ''),
-            'phase' => trim($_POST['phase'] ?? ''),
             'municipality' => trim($_POST['municipality'] ?? 'SAN RAFAEL'),
             'province' => trim($_POST['province'] ?? 'BULACAN'),
             'residency_type' => $_POST['residency_type'] ?? '',
-            'years_in_san_rafael' => $_POST['years_in_san_rafael'] ?? '',
             'household_id' => $_POST['household_id'] ?? '',
             'relationship' => $_POST['relationship'] ?? '',
             'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0,
             'resident_type' => $_POST['resident_type'] ?? 'regular',
+            'contact_number' => trim($_POST['contact_number'] ?? ''),
         ];
 
         // Store form data for repopulation
@@ -149,7 +147,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     SELECT 
                         p.*, 
                         h.id AS household_id, 
-                        hm.relationship_to_head, 
+                        hm.relationship_type_id,
+                        rt.name as relationship_name,
                         hm.is_household_head,
                         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
                         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
@@ -158,6 +157,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     JOIN households h ON hm.household_id = h.id
                     JOIN barangay b ON h.barangay_id = b.id
                     LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
+                    LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
                     WHERE h.barangay_id = ?
                     ORDER BY p.last_name, p.first_name
                 ");
@@ -384,6 +384,18 @@ function isCheckboxChecked($form_data, $key)
                         <label class="block text-sm font-medium">Citizenship</label>
                         <input type="text" name="citizenship" value="<?= getFormValue('citizenship', $form_data) ?: 'FILIPINO' ?>"
                             class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
+                    </div>
+
+                    <!-- Contact Information -->
+                    <div>
+                        <label class="block text-sm font-medium">Contact Number</label>
+                        <input type="text" name="contact_number" value="<?= getFormValue('contact_number', $form_data) ?>"
+                            placeholder="e.g. 09123456789"
+                            class="mt-1 block w-full border rounded p-2" 
+                            pattern="[0-9]{11}"
+                            title="Please enter a valid 11-digit phone number"
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                        <p class="text-xs text-gray-500 mt-1">Format: 11-digit number (e.g. 09123456789)</p>
                     </div>
                 </div>
 
@@ -1457,9 +1469,7 @@ function isCheckboxChecked($form_data, $key)
                         const fieldMappings = [
                             ['house_no', 'permanent_house_no'],
                             ['street', 'permanent_street'],
-                            ['subdivision', 'permanent_subdivision'],
-                            ['block_lot', 'permanent_block_lot'],
-                            ['phase', 'permanent_phase'],
+                            ['barangay', 'permanent_barangay'],
                             ['municipality', 'permanent_municipality'],
                             ['province', 'permanent_province'],
                             ['region', 'permanent_region']
@@ -1831,7 +1841,7 @@ function isCheckboxChecked($form_data, $key)
                                 <td class="px-6 py-4 whitespace-nowrap"><?= $resident['civil_status'] ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap"><?= $resident['household_id'] ?></td>
                                 <td class="px-6 py-4 whitespace-nowrap">
-                                    <?= $resident['relationship_to_head'] ?>
+                                    <?= $resident['relationship_name'] ?>
                                     <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">

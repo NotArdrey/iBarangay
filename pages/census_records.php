@@ -8,7 +8,8 @@ $stmt = $pdo->prepare("
     SELECT 
         p.*, 
         hm.household_id AS household_id, 
-        hm.relationship_to_head, 
+        hm.relationship_type_id,
+        rt.name as relationship_name,
         hm.is_household_head,
         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
@@ -17,6 +18,7 @@ $stmt = $pdo->prepare("
     JOIN households h ON hm.household_id = h.id
     JOIN barangay b ON h.barangay_id = b.id
     LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
+    LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
     WHERE h.barangay_id = ?
     ORDER BY p.last_name, p.first_name
 ");
@@ -112,7 +114,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
               <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['civil_status']) ?></td>
               <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['household_id']) ?></td>
               <td class="px-6 py-4 whitespace-nowrap">
-                <?= htmlspecialchars($resident['relationship_to_head']) ?> 
+                <?= htmlspecialchars($resident['relationship_name']) ?> 
                 <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
               </td>
               <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['address'] ?? 'No address provided') ?></td>
@@ -122,9 +124,9 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 </span>
               </td>
               <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                <a href="view_resident.php?id=<?= $resident['person_id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
-                <a href="edit_resident.php?id=<?= $resident['person_id'] ?>" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
-                <a href="javascript:void(0)" onclick="confirmDelete(<?= $resident['person_id'] ?>)" class="text-red-600 hover:text-red-900">Delete</a>
+                <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+                <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
+                <a href="javascript:void(0)" onclick="confirmDelete(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</a>
               </td>
             </tr>
             <?php endforeach; ?>
