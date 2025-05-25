@@ -12,7 +12,8 @@ $stmt = $pdo->prepare("
         rt.name as relationship_name,
         hm.is_household_head,
         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
-        TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
+        TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age,
+        p.years_of_residency
     FROM persons p
     JOIN household_members hm ON p.id = hm.person_id
     JOIN households h ON hm.household_id = h.id
@@ -94,6 +95,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Household ID</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Relationship</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Years of Residency</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -118,6 +120,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
               </td>
               <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['address'] ?? 'No address provided') ?></td>
+              <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['years_of_residency']) ?> years</td>
               <td class="px-6 py-4 whitespace-nowrap">
                 <span class="<?= $category === 'Senior' ? 'bg-purple-100 text-purple-800' : ($category === 'Child' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800') ?> px-2 py-1 rounded text-xs">
                   <?= $category ?>

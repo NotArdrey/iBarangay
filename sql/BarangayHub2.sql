@@ -382,6 +382,7 @@ CREATE TABLE persons (
     education_level ENUM('NOT ATTENDED ANY SCHOOL', 'ELEMENTARY LEVEL', 'ELEMENTARY GRADUATE', 'HIGH SCHOOL LEVEL', 'HIGH SCHOOL GRADUATE', 'VOCATIONAL', 'COLLEGE LEVEL', 'COLLEGE GRADUATE', 'POST GRADUATE'),
     occupation VARCHAR(100),
     monthly_income DECIMAL(10,2),
+    years_of_residency INT DEFAULT 0,
     nhts_pr_listahanan BOOLEAN DEFAULT FALSE,
     indigenous_people BOOLEAN DEFAULT FALSE,
     pantawid_beneficiary BOOLEAN DEFAULT FALSE,
@@ -496,11 +497,11 @@ INSERT INTO users (email, password, role_id, barangay_id, first_name, last_name,
     ('resident1@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 8, 32, 'Test', 'Resident', 'Male', NOW(), TRUE);
 
 -- Insert sample persons for the users
-INSERT INTO persons (id_number, user_id, first_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, monthly_income, resident_type, contact_number) VALUES
-    ('PROG-2024-0001', 1, 'System', 'Programmer', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 50000.00, 'regular', '09123456789'),
-    ('SADM-2024-0001', 2, 'Super', 'Administrator', '1985-01-01', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 45000.00, 'regular', '09234567890'),
-    ('BADM-2024-0001', 3, 'Barangay', 'Administrator', '1980-01-01', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE LEVEL', 35000.00, 'regular', '09345678901'),
-    ('RES-2024-0001', 4, 'Test', 'Resident', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'VOCATIONAL', 25000.00, 'regular', '09456789012');
+INSERT INTO persons (id_number, user_id, first_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, monthly_income, years_of_residency, resident_type, contact_number) VALUES
+    ('PROG-2024-0001', 1, 'System', 'Programmer', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 50000.00, 15, 'regular', '09123456789'),
+    ('SADM-2024-0001', 2, 'Super', 'Administrator', '1985-01-01', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 45000.00, 20, 'regular', '09234567890'),
+    ('BADM-2024-0001', 3, 'Barangay', 'Administrator', '1980-01-01', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE LEVEL', 35000.00, 25, 'regular', '09345678901'),
+    ('RES-2024-0001', 4, 'Test', 'Resident', '1990-01-01', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'ROMAN CATHOLIC', 'VOCATIONAL', 25000.00, 10, 'regular', '09456789012');
 
 -- Insert user roles
 INSERT INTO user_roles (user_id, role_id, barangay_id, is_active) VALUES
@@ -510,12 +511,12 @@ INSERT INTO user_roles (user_id, role_id, barangay_id, is_active) VALUES
     (4, 8, 32, TRUE);   -- Resident role
 
 -- Insert more sample persons (general residents)
-INSERT INTO persons (id_number, first_name, middle_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, occupation, monthly_income, resident_type, contact_number) VALUES
-    ('RES-2024-0002', 'Juan', 'Santos', 'Dela Cruz', '1980-05-15', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'HIGH SCHOOL GRADUATE', 'Farmer', 15000.00, 'regular', '09567890123'),
-    ('RES-2024-0003', 'Maria', 'Garcia', 'Santos', '1985-08-20', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Teacher', 25000.00, 'regular', '09678901234'),
-    ('RES-2024-0004', 'Pedro', 'Ramos', 'Gonzales', '1975-12-10', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'PROTESTANT', 'HIGH SCHOOL LEVEL', 'Driver', 12000.00, 'regular', '09789012345'),
-    ('RES-2024-0005', 'Ana', 'Flores', 'Reyes', '1990-03-25', 'San Rafael, Bulacan', 'FEMALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Nurse', 35000.00, 'regular', '09890123456'),
-    ('RES-2024-0006', 'Jose', 'Miguel', 'Torres', '1970-07-08', 'San Rafael, Bulacan', 'MALE', 'WIDOW/WIDOWER', 'ROMAN CATHOLIC', 'VOCATIONAL', 'Retired', 15000.00, 'regular', '09901234567');
+INSERT INTO persons (id_number, first_name, middle_name, last_name, birth_date, birth_place, gender, civil_status, religion, education_level, occupation, monthly_income, years_of_residency, resident_type, contact_number) VALUES
+    ('RES-2024-0002', 'Juan', 'Santos', 'Dela Cruz', '1980-05-15', 'San Rafael, Bulacan', 'MALE', 'MARRIED', 'ROMAN CATHOLIC', 'HIGH SCHOOL GRADUATE', 'Farmer', 15000.00, 30, 'regular', '09567890123'),
+    ('RES-2024-0003', 'Maria', 'Garcia', 'Santos', '1985-08-20', 'San Rafael, Bulacan', 'FEMALE', 'MARRIED', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Teacher', 25000.00, 18, 'regular', '09678901234'),
+    ('RES-2024-0004', 'Pedro', 'Ramos', 'Gonzales', '1975-12-10', 'San Rafael, Bulacan', 'MALE', 'SINGLE', 'PROTESTANT', 'HIGH SCHOOL LEVEL', 'Driver', 12000.00, 12, 'regular', '09789012345'),
+    ('RES-2024-0005', 'Ana', 'Flores', 'Reyes', '1990-03-25', 'San Rafael, Bulacan', 'FEMALE', 'SINGLE', 'ROMAN CATHOLIC', 'COLLEGE GRADUATE', 'Nurse', 35000.00, 8, 'regular', '09890123456'),
+    ('RES-2024-0006', 'Jose', 'Miguel', 'Torres', '1970-07-08', 'San Rafael, Bulacan', 'MALE', 'WIDOW/WIDOWER', 'ROMAN CATHOLIC', 'VOCATIONAL', 'Retired', 15000.00, 35, 'regular', '09901234567');
 
 -- Insert sample addresses for residents
 INSERT INTO addresses (person_id, user_id, barangay_id, house_no, street, residency_type, is_primary) VALUES
@@ -527,17 +528,17 @@ INSERT INTO addresses (person_id, user_id, barangay_id, house_no, street, reside
 
 -- Insert sample households
 INSERT INTO households (id, barangay_id, household_head_person_id) VALUES
-    ('HH-TAM-0001', 32, 5),  -- Juan's household in Tambubong
-    ('HH-PAN-0001', 18, 6),  -- Maria's household in Pantubig
-    ('HH-CAI-0001', 3, 7);   -- Pedro's household in Caingin
+    ('HSN0001', 32, 5),  -- Juan's household in Tambubong
+    ('HSN0002', 18, 6),  -- Maria's household in Pantubig
+    ('HSN0003', 3, 7);   -- Pedro's household in Caingin
 
 -- Insert sample household members
 INSERT INTO household_members (household_id, person_id, relationship_type_id, is_household_head) VALUES
-    ('HH-TAM-0001', 5, 1, TRUE),   -- Juan as HEAD
-    ('HH-TAM-0001', 8, 3, FALSE),  -- Ana as CHILD
-    ('HH-PAN-0001', 6, 1, TRUE),   -- Maria as HEAD
-    ('HH-PAN-0001', 9, 2, FALSE),  -- Jose as SPOUSE
-    ('HH-CAI-0001', 7, 1, TRUE);   -- Pedro as HEAD
+    ('HSN0001', 5, 1, TRUE),   -- Juan as HEAD
+    ('HSN0001', 8, 3, FALSE),  -- Ana as CHILD
+    ('HSN0002', 6, 1, TRUE),   -- Maria as HEAD
+    ('HSN0002', 9, 2, FALSE),  -- Jose as SPOUSE
+    ('HSN0003', 7, 1, TRUE);   -- Pedro as HEAD
 
 /*-------------------------------------------------------------
   SECTION 2.B: NORMALIZED PERSON DETAIL TABLES (CENSUS)

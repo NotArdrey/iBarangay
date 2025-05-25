@@ -21,6 +21,7 @@ $stmt = $pdo->prepare("
         hm.is_household_head,
         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age,
+        p.years_of_residency,
         gp.nhts_pr_listahanan,
         gp.indigenous_people,
         gp.pantawid_beneficiary,
@@ -41,6 +42,13 @@ $stmt = $pdo->prepare("
         ap.house as asset_house,
         ap.house_lot as asset_house_lot,
         ap.farmland as asset_farmland,
+        pi.osca_id,
+        pi.gsis_id,
+        pi.sss_id,
+        pi.tin_id,
+        pi.philhealth_id,
+        pi.other_id_type,
+        pi.other_id_number,
         la.spouse as living_spouse,
         la.care_institutions as living_care_institutions,
         la.children as living_children,
@@ -74,6 +82,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN government_programs gp ON p.id = gp.person_id
     LEFT JOIN income_sources i ON p.id = i.person_id
     LEFT JOIN assets_properties ap ON p.id = ap.person_id
+    LEFT JOIN person_identification pi ON p.id = pi.person_id
     LEFT JOIN living_arrangements la ON p.id = la.person_id
     LEFT JOIN skills s ON p.id = s.person_id
     LEFT JOIN problems_needs pn ON p.id = pn.person_id
@@ -148,6 +157,7 @@ function displayIndicator($value, $label) {
                     <p><span class="font-medium">Birth Place:</span> <?= htmlspecialchars($resident['birth_place']) ?></p>
                     <p><span class="font-medium">Gender:</span> <?= htmlspecialchars($resident['gender']) ?></p>
                     <p><span class="font-medium">Civil Status:</span> <?= htmlspecialchars($resident['civil_status']) ?></p>
+                    <p><span class="font-medium">Years of Residency:</span> <?= htmlspecialchars($resident['years_of_residency']) ?> years</p>
                     <p><span class="font-medium">Citizenship:</span> <?= htmlspecialchars($resident['citizenship']) ?></p>
                     <p><span class="font-medium">Religion:</span> <?= htmlspecialchars($resident['religion']) ?></p>
                 </div>
