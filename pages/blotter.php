@@ -1,5 +1,5 @@
 <?php
-// blotter.php – Complete Blotter Case Management with Hearing Process
+// blotter.php – Complete Blotter Case Management with Hearing Process and Barangay Forms
 session_start();
 require "../config/dbconn.php";
 require "../vendor/autoload.php";
@@ -193,6 +193,523 @@ function generateCFACertificate($pdo, $caseId, $complainantId, $issuedBy) {
     return $certNumber;
 }
 
+function generateSummonsForm($pdo, $caseId) {
+    // Get case details
+    $stmt = $pdo->prepare("
+        SELECT bc.*, 
+               GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+        FROM blotter_cases bc
+        LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
+        LEFT JOIN case_categories cc ON bcc.category_id = cc.id
+        WHERE bc.id = ?
+        GROUP BY bc.id
+    ");
+    $stmt->execute([$caseId]);
+    $case = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$case) {
+        throw new Exception("Case not found");
+    }
+    
+    // Get participants
+    $pStmt = $pdo->prepare("
+        SELECT 
+            bp.role,
+            COALESCE(CONCAT(p.first_name, ' ', p.last_name), CONCAT(ep.first_name, ' ', ep.last_name)) AS full_name,
+            COALESCE(CONCAT(a.house_no, ' ', a.street, ', ', b.name), ep.address) AS address
+        FROM blotter_participants bp
+        LEFT JOIN persons p ON bp.person_id = p.id
+        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+        LEFT JOIN barangay b ON a.barangay_id = b.id
+        LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
+        WHERE bp.blotter_case_id = ?
+    ");
+    $pStmt->execute([$caseId]);
+    $participants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    $complainants = array_filter($participants, fn($p) => $p['role'] === 'complainant');
+    $respondents = array_filter($participants, fn($p) => $p['role'] === 'respondent');
+    
+    ob_start();
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            @page { margin: 25mm 20mm; size: 8.5in 13in; }
+            body { 
+                font-family: 'Times New Roman', serif; 
+                font-size: 12pt; 
+                line-height: 1.0;
+                margin: 0;
+                padding: 0;
+                color: #000;
+            }
+            .form-number {
+                position: absolute;
+                top: 5mm;
+                left: 5mm;
+                font-size: 10pt;
+                font-weight: normal;
+            }
+            .header-container {
+                margin-top: 15mm;
+                margin-bottom: 15mm;
+            }
+            .logo-row {
+                display: table;
+                width: 100%;
+                margin-bottom: 10mm;
+            }
+            .logo-cell {
+                display: table-cell;
+                width: 80px;
+                vertical-align: middle;
+                text-align: center;
+            }
+            .logo {
+                width: 60px;
+                height: 60px;
+                border: 2px solid #000;
+                border-radius: 50%;
+                margin: 0 auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 8pt;
+                font-weight: bold;
+            }
+            .center-cell {
+                display: table-cell;
+                text-align: center;
+                vertical-align: middle;
+                font-size: 11pt;
+                font-weight: bold;
+                line-height: 1.1;
+            }
+            .main-title {
+                text-align: center;
+                font-size: 14pt;
+                font-weight: bold;
+                text-decoration: underline;
+                margin: 15mm 0 10mm 0;
+            }
+            .case-info {
+                text-align: right;
+                margin-bottom: 15mm;
+                font-size: 12pt;
+                line-height: 1.4;
+            }
+            .underline {
+                border-bottom: 1px solid #000;
+                display: inline-block;
+                min-width: 150px;
+                margin: 0 2px;
+            }
+            .complainant-section {
+                margin-bottom: 20mm;
+                line-height: 1.8;
+            }
+            .patawag-title {
+                text-align: center;
+                font-weight: bold;
+                font-size: 12pt;
+                text-decoration: underline;
+                margin: 15mm 0 8mm 0;
+            }
+            .patawag-section {
+                margin-bottom: 10mm;
+                line-height: 1.4;
+            }
+            .content-paragraph {
+                text-align: justify;
+                text-indent: 50px;
+                margin-bottom: 8mm;
+                line-height: 1.3;
+                font-size: 12pt;
+            }
+            .date-line {
+                margin: 15mm 0;
+                text-indent: 50px;
+            }
+            .signature-area {
+                text-align: right;
+                margin-top: 20mm;
+                margin-right: 20mm;
+            }
+            .signature-line {
+                border-bottom: 1px solid #000;
+                width: 250px;
+                margin: 0 0 5px 0;
+                display: inline-block;
+            }
+            .footer-motto {
+                text-align: center;
+                margin-top: 30mm;
+                font-style: italic;
+                color: #0066cc;
+                font-size: 12pt;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="form-number">KP Pormularyo Blg. 9</div>
+        
+        <div class="header-container">
+            <div class="logo-row">
+                <div class="logo-cell">
+                    <div class="logo">LOGO</div>
+                </div>
+                <div class="center-cell">
+                    Republika ng Pilipinas<br>
+                    Lalawigan ng Bulacan<br>
+                    Bayan ng San Rafael<br>
+                    Barangay Tambubong
+                </div>
+                <div class="logo-cell">
+                    <div class="logo">LOGO</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-title">TANGGAPAN NG LUPONG TAGAPAMAYAPA</div>
+        
+        <div class="case-info">
+            Usaping Barangay Blg. <span class="underline"><?= htmlspecialchars($case['case_number'] ?? '') ?></span><br>
+            Ukol sa <span class="underline" style="min-width: 200px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
+        </div>
+        
+        <div class="complainant-section">
+            <span class="underline" style="min-width: 300px;">
+                <?php 
+                if ($complainants) {
+                    echo htmlspecialchars($complainants[0]['full_name']);
+                }
+                ?>
+            </span><br>
+            (Mga) Maysumbong<br><br>
+            
+            -laban kay (kina)-<br><br>
+            
+            <span class="underline" style="min-width: 300px;">
+                <?php 
+                if ($respondents) {
+                    echo htmlspecialchars($respondents[0]['full_name']);
+                }
+                ?>
+            </span><br>
+            (Mga) Ipinagsusumbong
+        </div>
+        
+        <div class="patawag-title">PATAWAG</div>
+        
+        <div class="patawag-section">
+            Kay/Kina: <span class="underline" style="min-width: 350px;">
+                <?php 
+                foreach($respondents as $r) {
+                    echo htmlspecialchars($r['full_name']) . " ";
+                }
+                ?>
+            </span><br>
+            <span class="underline" style="min-width: 450px;">(Mga) Ipinagsusumbong</span>
+        </div>
+        
+        <div class="content-paragraph">
+            Sa pamamagitan nito, kayo'y tinatawag upang personal na humarap sa akin, kasama ang inyong mga testigo, sa ika-<span class="underline">____</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>, sa ganap na ika-<span class="underline">____</span> ng umaga/hapon, upang sagutin ang isang sumbong laban sa akin, na ako ay kopyay kalakip nito, para pamagitanan/papagkasunduin kayo sa inyong alitan ng (mga) maysumbong.
+        </div>
+        
+        <div class="content-paragraph">
+            Sa pamamagitan nito, kayo'y binabataan na ang inyong pagtanggi o sadyang di-pagharap bilang pagtalima sa patawag na ito ay magbibigay ng karapatan sa (mga) maysumbong upang tuwiran kayong ipagsakdal sa hukuman/tanggapan ng pamahalan, na doon ay may mahahadlangan kayong magharap ng kontra-demanda bunga ng nabanggit na sumbong.
+        </div>
+        
+        <div class="content-paragraph">
+            TUPARIN ITO, at kung hindi'y parurusahan kayo sa salang paglapastangan sa hukuman.
+        </div>
+        
+        <div class="date-line">
+            Ngayon ika-<span class="underline">______</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>.
+        </div>
+        
+        <div class="signature-area">
+            <div class="signature-line"></div><br>
+            Punong Barangay/Pangulo ng Lupon
+        </div>
+        
+        <div class="footer-motto">
+            "ASENSO at PROGRESO"
+        </div>
+    </body>
+    </html>
+    <?php
+    return ob_get_clean();
+}
+
+function generateReportForm($pdo, $caseId) {
+    // Get case details
+    $stmt = $pdo->prepare("
+        SELECT bc.*, 
+               GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+        FROM blotter_cases bc
+        LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
+        LEFT JOIN case_categories cc ON bcc.category_id = cc.id
+        WHERE bc.id = ?
+        GROUP BY bc.id
+    ");
+    $stmt->execute([$caseId]);
+    $case = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$case) {
+        throw new Exception("Case not found");
+    }
+    
+    // Get participants
+    $pStmt = $pdo->prepare("
+        SELECT 
+            bp.role,
+            COALESCE(CONCAT(p.first_name, ' ', p.last_name), CONCAT(ep.first_name, ' ', ep.last_name)) AS full_name,
+            COALESCE(CONCAT(a.house_no, ' ', a.street, ', ', b.name), ep.address) AS address
+        FROM blotter_participants bp
+        LEFT JOIN persons p ON bp.person_id = p.id
+        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+        LEFT JOIN barangay b ON a.barangay_id = b.id
+        LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
+        WHERE bp.blotter_case_id = ?
+    ");
+    $pStmt->execute([$caseId]);
+    $participants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    $complainants = array_filter($participants, fn($p) => $p['role'] === 'complainant');
+    $respondents = array_filter($participants, fn($p) => $p['role'] === 'respondent');
+    
+    ob_start();
+    ?>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            @page { margin: 25mm 20mm; size: 8.5in 13in; }
+            body { 
+                font-family: 'Times New Roman', serif; 
+                font-size: 12pt; 
+                line-height: 1.0;
+                margin: 0;
+                padding: 0;
+                color: #000;
+            }
+            .form-number {
+                position: absolute;
+                top: 5mm;
+                left: 5mm;
+                font-size: 10pt;
+                font-weight: normal;
+            }
+            .header-container {
+                margin-top: 15mm;
+                margin-bottom: 15mm;
+            }
+            .logo-row {
+                display: table;
+                width: 100%;
+                margin-bottom: 10mm;
+            }
+            .logo-cell {
+                display: table-cell;
+                width: 80px;
+                vertical-align: middle;
+                text-align: center;
+            }
+            .logo {
+                width: 60px;
+                height: 60px;
+                border: 2px solid #000;
+                border-radius: 50%;
+                margin: 0 auto;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                font-size: 8pt;
+                font-weight: bold;
+            }
+            .center-cell {
+                display: table-cell;
+                text-align: center;
+                vertical-align: middle;
+                font-size: 11pt;
+                font-weight: bold;
+                line-height: 1.1;
+            }
+            .main-title {
+                text-align: center;
+                font-size: 14pt;
+                font-weight: bold;
+                text-decoration: underline;
+                margin: 15mm 0 10mm 0;
+            }
+            .case-info {
+                text-align: right;
+                margin-bottom: 15mm;
+                font-size: 12pt;
+                line-height: 1.4;
+            }
+            .underline {
+                border-bottom: 1px solid #000;
+                display: inline-block;
+                min-width: 150px;
+                margin: 0 2px;
+            }
+            .complainant-section {
+                margin-bottom: 20mm;
+                line-height: 1.8;
+            }
+            .sumbong-title {
+                text-align: center;
+                font-weight: bold;
+                font-size: 12pt;
+                text-decoration: underline;
+                margin: 15mm 0 8mm 0;
+            }
+            .content-paragraph {
+                text-align: justify;
+                text-indent: 50px;
+                margin-bottom: 8mm;
+                line-height: 1.3;
+                font-size: 12pt;
+            }
+            .lined-section {
+                border-bottom: 1px solid #000;
+                height: 15px;
+                margin: 3mm 0;
+                width: 100%;
+            }
+            .date-line {
+                margin: 15mm 0 10mm 0;
+                text-indent: 50px;
+            }
+            .signature-area {
+                text-align: right;
+                margin: 15mm 20mm 15mm 0;
+            }
+            .signature-line {
+                border-bottom: 1px solid #000;
+                width: 250px;
+                margin: 0 0 5px 0;
+                display: inline-block;
+            }
+            .received-section {
+                margin: 20mm 0 15mm 0;
+                text-indent: 50px;
+            }
+            .footer-motto {
+                text-align: center;
+                margin-top: 30mm;
+                font-style: italic;
+                color: #0066cc;
+                font-size: 12pt;
+                font-weight: bold;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="form-number">KP Pormularyo Blg. 7</div>
+        
+        <div class="header-container">
+            <div class="logo-row">
+                <div class="logo-cell">
+                    <div class="logo">LOGO</div>
+                </div>
+                <div class="center-cell">
+                    Republika ng Pilipinas<br>
+                    Lalawigan ng Bulacan<br>
+                    Bayan ng San Rafael<br>
+                    Barangay Tambubong
+                </div>
+                <div class="logo-cell">
+                    <div class="logo">LOGO</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="main-title">TANGGAPAN NG LUPONG TAGAPAMAYAPA</div>
+        
+        <div class="case-info">
+            Usaping Barangay Blg. <span class="underline"><?= htmlspecialchars($case['case_number'] ?? '') ?></span><br>
+            Para sa <span class="underline" style="min-width: 200px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
+        </div>
+        
+        <div class="complainant-section">
+            <span class="underline" style="min-width: 300px;">
+                <?php 
+                if ($complainants) {
+                    echo htmlspecialchars($complainants[0]['full_name']);
+                }
+                ?>
+            </span><br>
+            (Mga) Maysumbong<br><br>
+            
+            -laban kay (kina)-<br><br>
+            
+            <span class="underline" style="min-width: 300px;">
+                <?php 
+                if ($respondents) {
+                    echo htmlspecialchars($respondents[0]['full_name']);
+                }
+                ?>
+            </span><br>
+            (Mga) Ipinagsusumbong
+        </div>
+        
+        <div class="sumbong-title">SUMBONG</div>
+        
+        <div class="content-paragraph">
+            AKO/KAMI, sa pamamagitan nito, ay naghahain ng sumbong laban sa (mga) ipinagsusumbong na binabanggit sa itaas dahil sa paglabag sa aking/aming mga karapatan at kapakanan sa sumusunod na paraan:
+        </div>
+        
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        
+        <div class="content-paragraph">
+            DAHIL DITO, AKO/KAMI ay namamanhik na ipagkaloob sa akin/amin ang sumusunod na (mga) kalunas/ang naaaalinsunod sa batas at/o pagkamakatuwiran:
+        </div>
+        
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        <div class="lined-section"></div>
+        
+        <div class="date-line">
+            Ginawa ngayong ika-<span class="underline">______</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>.
+        </div>
+        
+        <div class="signature-area">
+            <div class="signature-line"></div><br>
+            (Mga) Maysumbong
+        </div>
+        
+        <div class="received-section">
+            Tinanggap at itinala ngayong ika-<span class="underline">____</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>.
+        </div>
+        
+        <div class="signature-area">
+            <div class="signature-line"></div><br>
+            Punong Barangay/Pangulo ng Lupon
+        </div>
+        
+        <div class="footer-motto">
+            "ASENSO at PROGRESO"
+        </div>
+    </body>
+    </html>
+    <?php
+    return ob_get_clean();
+}
+
 // === POST: Add New Case ===
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
     $categories = $_POST['categories'] ?? [];
@@ -369,6 +886,40 @@ if (!empty($_GET['action'])) {
 
     try {
         switch ($action) {
+
+            case 'generate_summons':
+                if (!$id) {
+                    echo json_encode(['success'=>false,'message'=>'Invalid case ID']);
+                    exit;
+                }
+                
+                $html = generateSummonsForm($pdo, $id);
+                $pdf = new Dompdf();
+                $pdf->loadHtml($html, 'UTF-8');
+                $pdf->setPaper('A4','portrait');
+                $pdf->render();
+
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: inline; filename="Summons-Case-'.$id.'.pdf"');
+                echo $pdf->output();
+                exit;
+
+            case 'generate_report_form':
+                if (!$id) {
+                    echo json_encode(['success'=>false,'message'=>'Invalid case ID']);
+                    exit;
+                }
+                
+                $html = generateReportForm($pdo, $id);
+                $pdf = new Dompdf();
+                $pdf->loadHtml($html, 'UTF-8');
+                $pdf->setPaper('A4','portrait');
+                $pdf->render();
+
+                header('Content-Type: application/pdf');
+                header('Content-Disposition: inline; filename="Report-Form-Case-'.$id.'.pdf"');
+                echo $pdf->output();
+                exit;
 
             case 'generate_report':
                 $year  = intval($_GET['year']  ?? date('Y'));
@@ -968,6 +1519,8 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     .btn-schedule { background-color: #3b82f6; color: white; }
     .btn-record { background-color: #10b981; color: white; }
     .btn-cfa { background-color: #dc2626; color: white; }
+    .btn-summons { background-color: #7c3aed; color: white; }
+    .btn-report-form { background-color: #059669; color: white; }
     .status-badge {
         padding: 2px 8px;
         border-radius: 12px;
@@ -979,6 +1532,21 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     .status-solved { background-color: #c7f2c9; color: #166534; }
     .status-cfa-eligible { background-color: #fecaca; color: #991b1b; }
     .status-endorsed-to-court { background-color: #ddd6fe; color: #5b21b6; }
+    
+    /* Document buttons styling */
+    .document-buttons {
+        display: flex;
+        gap: 4px;
+        margin-top: 4px;
+    }
+    .document-buttons button {
+        padding: 2px 6px;
+        font-size: 10px;
+        border-radius: 3px;
+        border: none;
+        cursor: pointer;
+        color: white;
+    }
   </style>
 </head>
 <body>
@@ -1234,7 +1802,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
   <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
     <!-- Title -->
     <h1 class="text-3xl font-bold text-blue-800">
-      Blotter Cases with Hearing Process
+      Blotter Cases with Hearing Process & Forms
     </h1>
     <!-- Action buttons -->
     <div class="flex flex-col sm:flex-row sm:space-x-4 w-full md:w-auto">
@@ -1308,6 +1876,17 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <div class="hearing-actions">
               <button class="view-btn text-blue-600 hover:text-blue-900" data-id="<?= $case['id'] ?>">View</button>
               <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['id'] ?>">Edit</button>
+              
+              <!-- Document Generation Buttons -->
+              <div class="document-buttons">
+                <button class="btn-summons generate-summons-btn" data-id="<?= $case['id'] ?>" title="Generate Summons">
+                  📋 Summons
+                </button>
+                <button class="btn-report-form generate-report-form-btn" data-id="<?= $case['id'] ?>" title="Generate Report Form">
+                  📄 Report
+                </button>
+              </div>
+              
               <?php if (in_array($role, [3, 4, 5])): ?>
                 <?php if ($case['hearing_count'] < 3 && !in_array($case['status'], ['solved', 'endorsed_to_court'])): ?>
                   <button class="btn-schedule schedule-hearing-btn" data-id="<?= $case['id'] ?>">Schedule Hearing</button>
@@ -1514,6 +2093,22 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         const data = await res.json();
         if (!data.success) alert(data.message || 'Failed');
         else location.reload();
+      });
+    });
+
+    // Generate Summons Form Handler
+    document.querySelectorAll('.generate-summons-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const caseId = btn.dataset.id;
+        window.open(`?action=generate_summons&id=${caseId}`, '_blank');
+      });
+    });
+
+    // Generate Report Form Handler
+    document.querySelectorAll('.generate-report-form-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const caseId = btn.dataset.id;
+        window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
       });
     });
 
