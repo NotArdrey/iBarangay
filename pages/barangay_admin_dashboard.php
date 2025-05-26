@@ -100,7 +100,7 @@ foreach ($events as $event) {
 // Process update for local barangay contact
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_barangay_contact'])) {
     $localContact = trim($_POST['local_contact'] ?? '');
-    $updateStmt = $pdo->prepare("UPDATE barangay_settings SET local_barangay_contact = ? WHERE barangay_id = ?");
+    $updateStmt = $pdo->prepare("UPDATE barangay_settings SET contact_number = ? WHERE barangay_id = ?");
     $updateStmt->execute([$localContact, $barangay_id]);
     $_SESSION['success'] = 'Barangay Contact updated successfully';
     header("Location: barangay_admin_dashboard.php");
@@ -108,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_barangay_conta
 }
 
 // Fetch local barangay contact from barangay_settings
-$contactStmt = $pdo->prepare("SELECT local_barangay_contact FROM barangay_settings WHERE barangay_id = ?");
+$contactStmt = $pdo->prepare("SELECT contact_number FROM barangay_settings WHERE barangay_id = ?");
 $contactStmt->execute([$barangay_id]);
 $barangayContact = $contactStmt->fetchColumn() ?: '';
 ?>
@@ -199,7 +199,7 @@ $barangayContact = $contactStmt->fetchColumn() ?: '';
 </div>
 
 <div class="bg-white p-6 rounded-lg shadow hover:shadow-lg mb-6">
-    <h2 class="text-xl font-semibold text-gray-800 mb-4">Local Barangay Emergency Contact</h2>
+    <h2 class="text-xl font-semibold text-gray-800 mb-4">Barangay Emergency Contact</h2>
     <form method="POST" class="flex flex-col gap-4">
         <input type="text" name="local_contact" value="<?= htmlspecialchars($barangayContact) ?>" placeholder="Enter Barangay Contact" class="px-4 py-2 border rounded-lg">
         <button type="submit" name="update_barangay_contact" class="bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded">Update Contact</button>

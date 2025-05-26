@@ -76,7 +76,8 @@ SELECT
     a.municipality,
     a.province,
     a.region,
-    a.residency_type,
+    a.is_primary,
+    a.is_permanent,
     ec.contact_name AS emergency_contact_name,
     ec.contact_number AS emergency_contact_number,
     ec.contact_address AS emergency_contact_address,
@@ -294,7 +295,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
 
             // Update address if provided
             if ($personId && (isset($_POST['edit_house_no']) || isset($_POST['edit_street']))) {
-                $addressFields = ['house_no', 'street', 'phase', 'residency_type'];
+                $addressFields = ['house_no', 'street', 'phase'];
                 $addressParams = [
                     ':person_id' => $personId,
                     ':municipality' => 'SAN RAFAEL',
@@ -537,7 +538,13 @@ require_once __DIR__ . "/../pages/header.php";
                             <div><label class="block text-sm font-medium">Emergency Contact Name</label><input type="text" name="edit_emergency_contact_name" id="edit_emergency_contact_name" class="w-full p-2 border rounded"></div>
                             <div><label class="block text-sm font-medium">Emergency Contact Number</label><input type="text" name="edit_emergency_contact_number" id="edit_emergency_contact_number" class="w-full p-2 border rounded"></div>
                             <div class="col-span-2"><label class="block text-sm font-medium">Emergency Contact Address</label><textarea name="edit_emergency_contact_address" id="edit_emergency_contact_address" class="w-full p-2 border rounded"></textarea></div>
-                            <div class="col-span-2"><label class="block text-sm font-medium">Home Address</label><input type="text" name="edit_home_address" id="edit_home_address" class="w-full p-2 border rounded"></div>
+                            <div class="col-span-2"><label class="block text-sm font-medium">Address</label>
+                                <div class="grid grid-cols-3 gap-2">
+                                    <div><input type="text" name="edit_house_no" id="edit_house_no" placeholder="House No." class="w-full p-2 border rounded"></div>
+                                    <div><input type="text" name="edit_street" id="edit_street" placeholder="Street" class="w-full p-2 border rounded"></div>
+                                    <div><input type="text" name="edit_phase" id="edit_phase" placeholder="Phase/Subdivision" class="w-full p-2 border rounded"></div>
+                                </div>
+                            </div>
                         </div>
                         <div class="flex justify-end space-x-3 pt-4 border-t">
                             <button type="button" data-close-modal="editModal" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">Cancel</button>
@@ -575,7 +582,18 @@ require_once __DIR__ . "/../pages/header.php";
                     document.getElementById('viewGender').textContent = resident.person_gender || resident.gender || '—';
                     document.getElementById('viewContact').textContent = resident.person_contact_number || resident.contact_number || '—';
                     document.getElementById('viewMaritalStatus').textContent = resident.marital_status || '—';
-                    document.getElementById('viewHomeAddress').textContent = resident.home_address || '—';
+                    
+                    // Format the address from individual components
+                    const address = [
+                        resident.house_no,
+                        resident.street,
+                        resident.phase,
+                        resident.municipality,
+                        resident.province,
+                        resident.region
+                    ].filter(Boolean).join(', ');
+                    document.getElementById('viewHomeAddress').textContent = address || '—';
+                    
                     document.getElementById('viewEmergencyName').textContent = resident.emergency_contact_name || '—';
                     document.getElementById('viewEmergencyContact').textContent = resident.emergency_contact_number || '—';
                     document.getElementById('viewEmergencyAddress').textContent = resident.emergency_contact_address || '—';
@@ -608,7 +626,9 @@ require_once __DIR__ . "/../pages/header.php";
                     document.getElementById('edit_emergency_contact_name').value = resident.emergency_contact_name || '';
                     document.getElementById('edit_emergency_contact_number').value = resident.emergency_contact_number || '';
                     document.getElementById('edit_emergency_contact_address').value = resident.emergency_contact_address || '';
-                    document.getElementById('edit_home_address').value = resident.home_address || '';
+                    document.getElementById('edit_house_no').value = resident.house_no || '';
+                    document.getElementById('edit_street').value = resident.street || '';
+                    document.getElementById('edit_phase').value = resident.phase || '';
                     toggleModal('editModal');
                 });
             });
