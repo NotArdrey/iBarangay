@@ -607,8 +607,6 @@ CREATE TABLE person_other_needs (
     person_id INT NOT NULL,
     need_type_id INT NOT NULL,
     details TEXT,
-    priority_level ENUM('low', 'medium', 'high', 'urgent') DEFAULT 'medium',
-    status ENUM('identified', 'assessed', 'addressed', 'monitoring') DEFAULT 'identified',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
@@ -1479,14 +1477,14 @@ INSERT INTO person_health_info (person_id, health_condition, has_maintenance, ma
 -- REMOVED: person_service_needs table
 
 -- Insert sample person other needs
-INSERT INTO person_other_needs (person_id, need_type_id, details, priority_level, status) VALUES
-    (1, 1, 'Medicine subsidy', 'medium', 'identified'),
-    (2, 2, 'Part-time work', 'high', 'assessed'),
-    (3, 3, 'Skills training', 'medium', 'addressed'),
-    (5, 4, 'Social activities', 'low', 'monitoring'),
-    (6, 5, 'Family counseling', 'high', 'assessed'),
-    (7, 6, 'Home safety improvements', 'urgent', 'identified'),
-    (9, 7, 'Environmental concerns', 'medium', 'monitoring');
+INSERT INTO person_other_needs (person_id, need_type_id, details) VALUES
+    (1, 1, 'Medicine subsidy'),
+    (2, 2, 'Part-time work'),
+    (3, 3, 'Skills training'),
+    (5, 4, 'Social activities'),
+    (6, 5, 'Family counseling'),
+    (7, 6, 'Home safety improvements'),
+    (9, 7, 'Environmental concerns');
 
 -- Economic Problems
 CREATE TABLE person_economic_problems (

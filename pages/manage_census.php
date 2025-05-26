@@ -152,9 +152,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'involvement_others_specify' => trim($_POST['involvement_others_specify'] ?? ''),
 
             // Government Programs
-            'nhts_pr_listahanan' => isset($_POST['nhts_pr_listahanan']) ? 1 : 0,
-            'indigenous_people' => isset($_POST['indigenous_people']) ? 1 : 0,
-            'pantawid_beneficiary' => isset($_POST['pantawid_beneficiary']) ? 1 : 0,
+            'nhts_pr_listahanan' => isset($_POST['nhts_pr_listahanan']) && $_POST['nhts_pr_listahanan'] == 1 ? 1 : 0,
+            'indigenous_people' => isset($_POST['indigenous_people']) && $_POST['indigenous_people'] == 1 ? 1 : 0,
+            'pantawid_beneficiary' => isset($_POST['pantawid_beneficiary']) && $_POST['pantawid_beneficiary'] == 1 ? 1 : 0,
 
             // Assets
             'asset_house' => isset($_POST['asset_house']) ? 1 : 0,
@@ -195,8 +195,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Problems - Social
             'problem_loneliness' => isset($_POST['problem_loneliness']) ? 1 : 0,
-            'problem_isolation' => isset($_POST['problem_isolation']) ? 1 : 0,
-            'problem_neglect' => isset($_POST['problem_neglect']) ? 1 : 0,
+            'problem_helplessness' => isset($_POST['problem_helplessness']) ? 1 : 0,
+            'problem_neglect_rejection' => isset($_POST['problem_neglect_rejection']) ? 1 : 0,
             'problem_recreational' => isset($_POST['problem_recreational']) ? 1 : 0,
             'problem_senior_friendly' => isset($_POST['problem_senior_friendly']) ? 1 : 0,
             'problem_social_others' => isset($_POST['problem_social_others']) ? 1 : 0,
@@ -235,11 +235,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'health_condition' => trim($_POST['problem_condition_illness_specify'] ?? ''),
             'has_maintenance' => isset($_POST['problem_with_maintenance']) && $_POST['problem_with_maintenance'] === 'YES' ? 1 : 0,
             'maintenance_details' => trim($_POST['problem_with_maintenance_specify'] ?? ''),
-            'high_cost_medicines' => isset($_POST['problem_high_cost_medicine']) ? 1 : 0,
-            'lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) ? 1 : 0,
-            'lack_sanitation_access' => isset($_POST['problem_lack_sanitation']) ? 1 : 0,
-            'lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) ? 1 : 0,
-            'lack_medical_facilities' => isset($_POST['problem_lack_medical_facilities']) ? 1 : 0,
+            'high_cost_medicines' => isset($_POST['problem_high_cost_medicine']) && $_POST['problem_high_cost_medicine'] == 1 ? 1 : 0,
+            'lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) && $_POST['problem_lack_medical_professionals'] == 1 ? 1 : 0,
+            'lack_sanitation_access' => isset($_POST['problem_lack_sanitation']) && $_POST['problem_lack_sanitation'] == 1 ? 1 : 0,
+            'lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) && $_POST['problem_lack_health_insurance'] == 1 ? 1 : 0,
+            'lack_medical_facilities' => isset($_POST['problem_lack_medical_facilities']) && $_POST['problem_lack_medical_facilities'] == 1 ? 1 : 0,
             'other_health_concerns' => trim($_POST['problem_health_others_specify'] ?? ''),
 
             // Health Concerns
@@ -293,8 +293,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $validation_errors[] = "Civil status is required.";
         }
 
-        if (empty($data['household_id'])) {
-            $validation_errors[] = "Household ID is required.";
+        // Household ID is optional, but if specified, relationship must be provided
+        if (!empty($data['household_id']) && empty($data['relationship'])) {
+            $validation_errors[] = "Relationship to household head is required when household is specified.";
         }
 
         if (!empty($validation_errors)) {
@@ -805,8 +806,8 @@ function isCheckboxChecked($form_data, $key)
                     <h3 class="font-semibold text-lg">Household Information</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <label class="block text-sm font-medium">Household ID *</label>
-                            <select name="household_id" required class="mt-1 block w-full border rounded p-2">
+                            <label class="block text-sm font-medium">Household ID (Optional)</label>
+                            <select name="household_id" class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT HOUSEHOLD --</option>
                                 <?php foreach ($households as $household): ?>
                                     <option value="<?= htmlspecialchars($household['household_id']) ?>"

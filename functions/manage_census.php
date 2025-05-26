@@ -119,6 +119,50 @@ function saveResident($pdo, $data, $barangay_id) {
             ':is_permanent' => 0
         ]);
         
+        // Add person to household if household_id is provided
+        if (!empty($data['household_id'])) {
+            $stmt_household = $pdo->prepare("
+                INSERT INTO household_members (
+                    person_id, household_id, relationship_type_id, is_household_head
+                ) VALUES (
+                    :person_id, :household_id, :relationship_type_id, :is_household_head
+                )
+            ");
+            
+            // Get relationship type ID if string was provided
+            $relationship_type_id = null;
+            if (!empty($data['relationship'])) {
+                if (is_numeric($data['relationship'])) {
+                    $relationship_type_id = $data['relationship'];
+                } else {
+                    // Try to get relationship type ID from name
+                    $stmt_rel = $pdo->prepare("SELECT id FROM relationship_types WHERE LOWER(name) = LOWER(?)");
+                    $stmt_rel->execute([trim($data['relationship'])]);
+                    $relationship_type_id = $stmt_rel->fetchColumn() ?: null;
+                }
+            }
+            
+            $stmt_household->execute([
+                ':person_id' => $person_id,
+                ':household_id' => $data['household_id'],
+                ':relationship_type_id' => $relationship_type_id,
+                ':is_household_head' => isset($data['is_household_head']) && $data['is_household_head'] ? 1 : 0
+            ]);
+            
+            // If person is household head, update the household record
+            if (isset($data['is_household_head']) && $data['is_household_head']) {
+                $stmt_update_household = $pdo->prepare("
+                    UPDATE households 
+                    SET household_head_person_id = :person_id 
+                    WHERE id = :household_id
+                ");
+                $stmt_update_household->execute([
+                    ':person_id' => $person_id,
+                    ':household_id' => $data['household_id']
+                ]);
+            }
+        }
+        
         // Permanent address (if different from present)
         if (empty($data['same_as_present'])) {
             $stmt_address->execute([
@@ -285,124 +329,179 @@ function saveResident($pdo, $data, $barangay_id) {
             }
         }
 
-        // Insert problems by category
+        // Insert problems by category - only insert when at least one checkbox is selected
         
         // Economic Problems
-        $stmt_economic = $pdo->prepare("
-            INSERT INTO person_economic_problems (
-                person_id, loss_income, unemployment, high_cost_living, 
-                skills_training, skills_training_details, livelihood, livelihood_details,
-                other_economic, other_economic_details
-            ) VALUES (
-                :person_id, :loss_income, :unemployment, :high_cost_living,
-                :skills_training, :skills_training_details, :livelihood, :livelihood_details,
-                :other_economic, :other_economic_details
-            )
-        ");
-        
-        $stmt_economic->execute([
-            ':person_id' => $person_id,
-            ':loss_income' => isset($data['problem_loss_income']) ? 1 : 0,
-            ':unemployment' => isset($data['problem_unemployment']) ? 1 : 0,
-            ':high_cost_living' => isset($data['problem_high_cost_living']) ? 1 : 0,
-            ':skills_training' => isset($data['problem_skills_training']) ? 1 : 0,
-            ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
-            ':livelihood' => isset($data['problem_livelihood']) ? 1 : 0,
-            ':livelihood_details' => $data['problem_livelihood_specify'] ?? null,
-            ':other_economic' => isset($data['problem_economic_others']) ? 1 : 0,
-            ':other_economic_details' => $data['problem_economic_others_specify'] ?? null
-        ]);
+        $has_economic_problems = 
+            (isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1) ||
+            (isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1) ||
+            (isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1) ||
+            (isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1) ||
+            (isset($data['problem_economic_others']) && $data['problem_economic_others'] == 1) ||
+            !empty($data['problem_skills_training_specify']) ||
+            !empty($data['problem_livelihood_specify']) ||
+            !empty($data['problem_economic_others_specify']);
+            
+        if ($has_economic_problems) {
+            $stmt_economic = $pdo->prepare("
+                INSERT INTO person_economic_problems (
+                    person_id, loss_income, unemployment, high_cost_living, 
+                    skills_training, skills_training_details, livelihood, livelihood_details,
+                    other_economic, other_economic_details
+                ) VALUES (
+                    :person_id, :loss_income, :unemployment, :high_cost_living,
+                    :skills_training, :skills_training_details, :livelihood, :livelihood_details,
+                    :other_economic, :other_economic_details
+                )
+            ");
+            
+            $stmt_economic->execute([
+                ':person_id' => $person_id,
+                ':loss_income' => isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1 ? 1 : 0,
+                ':unemployment' => isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1 ? 1 : 0,
+                ':high_cost_living' => 0, // This field isn't in the form
+                ':skills_training' => isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1 ? 1 : 0,
+                ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
+                ':livelihood' => isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1 ? 1 : 0,
+                ':livelihood_details' => $data['problem_livelihood_specify'] ?? null,
+                ':other_economic' => isset($data['problem_economic_others']) && $data['problem_economic_others'] == 1 ? 1 : 0,
+                ':other_economic_details' => $data['problem_economic_others_specify'] ?? null
+            ]);
+        }
         
         // Social Problems
-        $stmt_social = $pdo->prepare("
-            INSERT INTO person_social_problems (
-                person_id, loneliness, isolation, neglect, recreational,
-                senior_friendly, other_social, other_social_details
-            ) VALUES (
-                :person_id, :loneliness, :isolation, :neglect, :recreational,
-                :senior_friendly, :other_social, :other_social_details
-            )
-        ");
-        
-        $stmt_social->execute([
-            ':person_id' => $person_id,
-            ':loneliness' => isset($data['problem_loneliness']) ? 1 : 0,
-            ':isolation' => isset($data['problem_isolation']) ? 1 : 0,
-            ':neglect' => isset($data['problem_neglect']) ? 1 : 0,
-            ':recreational' => isset($data['problem_recreational']) ? 1 : 0,
-            ':senior_friendly' => isset($data['problem_senior_friendly']) ? 1 : 0,
-            ':other_social' => isset($data['problem_social_others']) ? 1 : 0,
-            ':other_social_details' => $data['problem_social_others_specify'] ?? null
-        ]);
+        $has_social_problems = 
+            (isset($data['problem_neglect_rejection']) && $data['problem_neglect_rejection'] == 1) ||
+            (isset($data['problem_helplessness']) && $data['problem_helplessness'] == 1) ||
+            (isset($data['problem_loneliness']) && $data['problem_loneliness'] == 1) ||
+            (isset($data['problem_recreational']) && $data['problem_recreational'] == 1) ||
+            (isset($data['problem_senior_friendly']) && $data['problem_senior_friendly'] == 1) ||
+            (isset($data['problem_social_others']) && $data['problem_social_others'] == 1) ||
+            !empty($data['problem_social_others_specify']);
+            
+        if ($has_social_problems) {
+            $stmt_social = $pdo->prepare("
+                INSERT INTO person_social_problems (
+                    person_id, loneliness, isolation, neglect, recreational,
+                    senior_friendly, other_social, other_social_details
+                ) VALUES (
+                    :person_id, :loneliness, :isolation, :neglect, :recreational,
+                    :senior_friendly, :other_social, :other_social_details
+                )
+            ");
+            
+            $stmt_social->execute([
+                ':person_id' => $person_id,
+                ':loneliness' => isset($data['problem_loneliness']) && $data['problem_loneliness'] == 1 ? 1 : 0,
+                ':isolation' => isset($data['problem_helplessness']) && $data['problem_helplessness'] == 1 ? 1 : 0,
+                ':neglect' => isset($data['problem_neglect_rejection']) && $data['problem_neglect_rejection'] == 1 ? 1 : 0,
+                ':recreational' => isset($data['problem_recreational']) && $data['problem_recreational'] == 1 ? 1 : 0,
+                ':senior_friendly' => isset($data['problem_senior_friendly']) && $data['problem_senior_friendly'] == 1 ? 1 : 0,
+                ':other_social' => isset($data['problem_social_others']) && $data['problem_social_others'] == 1 ? 1 : 0,
+                ':other_social_details' => $data['problem_social_others_specify'] ?? null
+            ]);
+        }
         
         // Health Problems
-        $stmt_health_problems = $pdo->prepare("
-            INSERT INTO person_health_problems (
-                person_id, condition_illness, condition_illness_details,
-                high_cost_medicine, lack_medical_professionals, lack_sanitation,
-                lack_health_insurance, inadequate_health_services,
-                other_health, other_health_details
-            ) VALUES (
-                :person_id, :condition_illness, :condition_illness_details,
-                :high_cost_medicine, :lack_medical_professionals, :lack_sanitation,
-                :lack_health_insurance, :inadequate_health_services,
-                :other_health, :other_health_details
-            )
-        ");
-        
-        $stmt_health_problems->execute([
-            ':person_id' => $person_id,
-            ':condition_illness' => isset($data['problem_condition_illness']) ? 1 : 0,
-            ':condition_illness_details' => $data['problem_condition_illness_specify'] ?? null,
-            ':high_cost_medicine' => isset($data['problem_high_cost_medicine']) ? 1 : 0,
-            ':lack_medical_professionals' => isset($data['problem_lack_medical_professionals']) ? 1 : 0,
-            ':lack_sanitation' => isset($data['problem_lack_sanitation']) ? 1 : 0,
-            ':lack_health_insurance' => isset($data['problem_lack_health_insurance']) ? 1 : 0,
-            ':inadequate_health_services' => isset($data['problem_inadequate_health_services']) ? 1 : 0,
-            ':other_health' => isset($data['problem_health_others']) ? 1 : 0,
-            ':other_health_details' => $data['problem_health_others_specify'] ?? null
-        ]);
+        $has_health_problems = 
+            (isset($data['problem_condition_illness']) && $data['problem_condition_illness'] == 1) ||
+            (isset($data['problem_high_cost_medicine']) && $data['problem_high_cost_medicine'] == 1) ||
+            (isset($data['problem_lack_medical_professionals']) && $data['problem_lack_medical_professionals'] == 1) ||
+            (isset($data['problem_lack_sanitation']) && $data['problem_lack_sanitation'] == 1) ||
+            (isset($data['problem_lack_health_insurance']) && $data['problem_lack_health_insurance'] == 1) ||
+            (isset($data['problem_inadequate_health_services']) && $data['problem_inadequate_health_services'] == 1) ||
+            (isset($data['problem_health_others']) && $data['problem_health_others'] == 1) ||
+            !empty($data['problem_condition_illness_specify']) ||
+            !empty($data['problem_health_others_specify']);
+            
+        if ($has_health_problems) {
+            $stmt_health_problems = $pdo->prepare("
+                INSERT INTO person_health_problems (
+                    person_id, condition_illness, condition_illness_details,
+                    high_cost_medicine, lack_medical_professionals, lack_sanitation,
+                    lack_health_insurance, inadequate_health_services,
+                    other_health, other_health_details
+                ) VALUES (
+                    :person_id, :condition_illness, :condition_illness_details,
+                    :high_cost_medicine, :lack_medical_professionals, :lack_sanitation,
+                    :lack_health_insurance, :inadequate_health_services,
+                    :other_health, :other_health_details
+                )
+            ");
+            
+            $stmt_health_problems->execute([
+                ':person_id' => $person_id,
+                ':condition_illness' => isset($data['problem_condition_illness']) && $data['problem_condition_illness'] == 1 ? 1 : 0,
+                ':condition_illness_details' => $data['problem_condition_illness_specify'] ?? null,
+                ':high_cost_medicine' => isset($data['problem_high_cost_medicine']) && $data['problem_high_cost_medicine'] == 1 ? 1 : 0,
+                ':lack_medical_professionals' => isset($data['problem_lack_medical_professionals']) && $data['problem_lack_medical_professionals'] == 1 ? 1 : 0,
+                ':lack_sanitation' => isset($data['problem_lack_sanitation']) && $data['problem_lack_sanitation'] == 1 ? 1 : 0,
+                ':lack_health_insurance' => isset($data['problem_lack_health_insurance']) && $data['problem_lack_health_insurance'] == 1 ? 1 : 0,
+                ':inadequate_health_services' => isset($data['problem_inadequate_health_services']) && $data['problem_inadequate_health_services'] == 1 ? 1 : 0,
+                ':other_health' => isset($data['problem_health_others']) && $data['problem_health_others'] == 1 ? 1 : 0,
+                ':other_health_details' => $data['problem_health_others_specify'] ?? null
+            ]);
+        }
         
         // Housing Problems
-        $stmt_housing = $pdo->prepare("
-            INSERT INTO person_housing_problems (
-                person_id, overcrowding, no_permanent_housing, independent_living,
-                lost_privacy, squatters, other_housing, other_housing_details
-            ) VALUES (
-                :person_id, :overcrowding, :no_permanent_housing, :independent_living,
-                :lost_privacy, :squatters, :other_housing, :other_housing_details
-            )
-        ");
-        
-        $stmt_housing->execute([
-            ':person_id' => $person_id,
-            ':overcrowding' => isset($data['problem_overcrowding']) ? 1 : 0,
-            ':no_permanent_housing' => isset($data['problem_no_permanent_housing']) ? 1 : 0,
-            ':independent_living' => isset($data['problem_independent_living']) ? 1 : 0,
-            ':lost_privacy' => isset($data['problem_lost_privacy']) ? 1 : 0,
-            ':squatters' => isset($data['problem_squatters']) ? 1 : 0,
-            ':other_housing' => isset($data['problem_housing_others']) ? 1 : 0,
-            ':other_housing_details' => $data['problem_housing_others_specify'] ?? null
-        ]);
+        $has_housing_problems = 
+            (isset($data['problem_overcrowding']) && $data['problem_overcrowding'] == 1) ||
+            (isset($data['problem_no_permanent_housing']) && $data['problem_no_permanent_housing'] == 1) ||
+            (isset($data['problem_independent_living']) && $data['problem_independent_living'] == 1) ||
+            (isset($data['problem_lost_privacy']) && $data['problem_lost_privacy'] == 1) ||
+            (isset($data['problem_squatters']) && $data['problem_squatters'] == 1) ||
+            (isset($data['problem_housing_others']) && $data['problem_housing_others'] == 1) ||
+            !empty($data['problem_housing_others_specify']);
+            
+        if ($has_housing_problems) {
+            $stmt_housing = $pdo->prepare("
+                INSERT INTO person_housing_problems (
+                    person_id, overcrowding, no_permanent_housing, independent_living,
+                    lost_privacy, squatters, other_housing, other_housing_details
+                ) VALUES (
+                    :person_id, :overcrowding, :no_permanent_housing, :independent_living,
+                    :lost_privacy, :squatters, :other_housing, :other_housing_details
+                )
+            ");
+            
+            $stmt_housing->execute([
+                ':person_id' => $person_id,
+                ':overcrowding' => isset($data['problem_overcrowding']) && $data['problem_overcrowding'] == 1 ? 1 : 0,
+                ':no_permanent_housing' => isset($data['problem_no_permanent_housing']) && $data['problem_no_permanent_housing'] == 1 ? 1 : 0,
+                ':independent_living' => isset($data['problem_independent_living']) && $data['problem_independent_living'] == 1 ? 1 : 0,
+                ':lost_privacy' => isset($data['problem_lost_privacy']) && $data['problem_lost_privacy'] == 1 ? 1 : 0,
+                ':squatters' => isset($data['problem_squatters']) && $data['problem_squatters'] == 1 ? 1 : 0,
+                ':other_housing' => isset($data['problem_housing_others']) && $data['problem_housing_others'] == 1 ? 1 : 0,
+                ':other_housing_details' => $data['problem_housing_others_specify'] ?? null
+            ]);
+        }
         
         // Community Service Problems
-        $stmt_community = $pdo->prepare("
-            INSERT INTO person_community_problems (
-                person_id, desire_participate, skills_to_share,
-                other_community, other_community_details
-            ) VALUES (
-                :person_id, :desire_participate, :skills_to_share,
-                :other_community, :other_community_details
-            )
-        ");
-        
-        $stmt_community->execute([
-            ':person_id' => $person_id,
-            ':desire_participate' => isset($data['problem_desire_participate']) ? 1 : 0,
-            ':skills_to_share' => isset($data['problem_skills_to_share']) ? 1 : 0,
-            ':other_community' => isset($data['problem_community_others']) ? 1 : 0,
-            ':other_community_details' => $data['problem_community_others_specify'] ?? null
-        ]);
+        $has_community_problems = 
+            (isset($data['problem_desire_participate']) && $data['problem_desire_participate'] == 1) ||
+            (isset($data['problem_skills_to_share']) && $data['problem_skills_to_share'] == 1) ||
+            (isset($data['problem_community_others']) && $data['problem_community_others'] == 1) ||
+            !empty($data['problem_community_others_specify']);
+            
+        if ($has_community_problems) {
+            $stmt_community = $pdo->prepare("
+                INSERT INTO person_community_problems (
+                    person_id, desire_participate, skills_to_share,
+                    other_community, other_community_details
+                ) VALUES (
+                    :person_id, :desire_participate, :skills_to_share,
+                    :other_community, :other_community_details
+                )
+            ");
+            
+            $stmt_community->execute([
+                ':person_id' => $person_id,
+                ':desire_participate' => isset($data['problem_desire_participate']) && $data['problem_desire_participate'] == 1 ? 1 : 0,
+                ':skills_to_share' => isset($data['problem_skills_to_share']) && $data['problem_skills_to_share'] == 1 ? 1 : 0,
+                ':other_community' => isset($data['problem_community_others']) && $data['problem_community_others'] == 1 ? 1 : 0,
+                ':other_community_details' => $data['problem_community_others_specify'] ?? null
+            ]);
+        }
 
         // Insert government programs participation
         $stmt_govt = $pdo->prepare("
@@ -415,9 +514,9 @@ function saveResident($pdo, $data, $barangay_id) {
         
         $stmt_govt->execute([
             ':person_id' => $person_id,
-            ':nhts_pr_listahanan' => isset($data['nhts_pr_listahanan']) ? 1 : 0,
-            ':indigenous_people' => isset($data['indigenous_people']) ? 1 : 0,
-            ':pantawid_beneficiary' => isset($data['pantawid_beneficiary']) ? 1 : 0
+            ':nhts_pr_listahanan' => isset($data['nhts_pr_listahanan']) && $data['nhts_pr_listahanan'] == 1 ? 1 : 0,
+            ':indigenous_people' => isset($data['indigenous_people']) && $data['indigenous_people'] == 1 ? 1 : 0,
+            ':pantawid_beneficiary' => isset($data['pantawid_beneficiary']) && $data['pantawid_beneficiary'] == 1 ? 1 : 0
         ]);
 
         // Insert assets
@@ -474,19 +573,55 @@ function saveResident($pdo, $data, $barangay_id) {
         $income_fields = [
             'income_own_earnings' => null,
             'income_own_pension' => 'income_own_pension_amount',
-            'income_stocks' => null,
-            'income_dependent_children' => null,
+            'income_stocks_dividends' => null,
+            'income_dependent_on_children' => null,
             'income_spouse_salary' => null,
-            'income_insurance' => null,
+            'income_insurances' => null,
             'income_spouse_pension' => 'income_spouse_pension_amount',
-            'income_rentals' => null,
+            'income_rentals_sharecrops' => null,
             'income_savings' => null,
-            'income_livestock' => null
+            'income_livestock_orchards' => null
         ];
         
         foreach ($income_fields as $field => $amount_field) {
             if (isset($data[$field]) && $data[$field] == 1) {
+                // Map form field names to database field names
                 $type_name = str_replace('income_', '', $field);
+                
+                // Handle special cases to match the database exactly
+                switch ($type_name) {
+                    case 'own_earnings':
+                        $type_name = 'Own Earnings/Salaries/Wages';
+                        break;
+                    case 'stocks_dividends':
+                        $type_name = 'Stocks/Dividends';
+                        break;
+                    case 'dependent_on_children':
+                        $type_name = 'Dependent on Children/Relatives';
+                        break;
+                    case 'spouse_salary':
+                        $type_name = 'Spouse Salary';
+                        break;
+                    case 'insurances':
+                        $type_name = 'Insurances';
+                        break;
+                    case 'own_pension':
+                        $type_name = 'Own Pension';
+                        break;
+                    case 'spouse_pension':
+                        $type_name = 'Spouse Pension';
+                        break;
+                    case 'rentals_sharecrops':
+                        $type_name = 'Rentals/Sharecrops';
+                        break;
+                    case 'savings':
+                        $type_name = 'Savings';
+                        break;
+                    case 'livestock_orchards':
+                        $type_name = 'Livestock/Orchards';
+                        break;
+                }
+                
                 $type_id = getTypeIdByName($pdo, 'income_source_types', $type_name);
                 if ($type_id) {
                     $amount = null;
@@ -504,7 +639,7 @@ function saveResident($pdo, $data, $barangay_id) {
         
         // Handle "Others" field for income sources
         if (isset($data['income_others']) && $data['income_others'] == 1) {
-            $type_id = getTypeIdByName($pdo, 'income_source_types', 'others');
+            $type_id = getTypeIdByName($pdo, 'income_source_types', 'Others');
             if ($type_id) {
                 $income_sources[] = [
                     'type_id' => $type_id,
@@ -533,42 +668,57 @@ function saveResident($pdo, $data, $barangay_id) {
             }
         }
 
-        // Insert health information
-        $stmt_health = $pdo->prepare("
-            INSERT INTO person_health_info (
-                person_id, health_condition, has_maintenance, maintenance_details,
-                high_cost_medicines, lack_medical_professionals, lack_sanitation_access,
-                lack_health_insurance, lack_medical_facilities, other_health_concerns
-            ) VALUES (
-                :person_id, :health_condition, :has_maintenance, :maintenance_details,
-                :high_cost_medicines, :lack_medical_professionals, :lack_sanitation_access,
-                :lack_health_insurance, :lack_medical_facilities, :other_health_concerns
-            )
-        ");
+        // Delete and reinsert health information
+        $pdo->prepare("DELETE FROM person_health_info WHERE person_id = ?")->execute([$person_id]);
         
-        $stmt_health->execute([
-            ':person_id' => $person_id,
-            ':health_condition' => $data['health_condition'] ?? null,
-            ':has_maintenance' => isset($data['has_maintenance']) ? 1 : 0,
-            ':maintenance_details' => $data['maintenance_details'] ?? null,
-            ':high_cost_medicines' => isset($data['high_cost_medicines']) ? 1 : 0,
-            ':lack_medical_professionals' => isset($data['lack_medical_professionals']) ? 1 : 0,
-            ':lack_sanitation_access' => isset($data['lack_sanitation_access']) ? 1 : 0,
-            ':lack_health_insurance' => isset($data['lack_health_insurance']) ? 1 : 0,
-            ':lack_medical_facilities' => isset($data['lack_medical_facilities']) ? 1 : 0,
-            ':other_health_concerns' => $data['other_health_concerns'] ?? null
-        ]);
+        // Only insert health information if at least one checkbox is checked or text field is filled
+        $has_health_info = 
+            !empty($data['health_condition']) ||
+            (isset($data['has_maintenance']) && $data['has_maintenance'] == 1) ||
+            !empty($data['maintenance_details']) ||
+            (isset($data['high_cost_medicines']) && $data['high_cost_medicines'] == 1) ||
+            (isset($data['lack_medical_professionals']) && $data['lack_medical_professionals'] == 1) ||
+            (isset($data['lack_sanitation_access']) && $data['lack_sanitation_access'] == 1) ||
+            (isset($data['lack_health_insurance']) && $data['lack_health_insurance'] == 1) ||
+            (isset($data['lack_medical_facilities']) && $data['lack_medical_facilities'] == 1) ||
+            !empty($data['other_health_concerns']);
+            
+        if ($has_health_info) {
+            $stmt_health = $pdo->prepare("
+                INSERT INTO person_health_info (
+                    person_id, health_condition, has_maintenance, maintenance_details,
+                    high_cost_medicines, lack_medical_professionals, lack_sanitation_access,
+                    lack_health_insurance, lack_medical_facilities, other_health_concerns
+                ) VALUES (
+                    :person_id, :health_condition, :has_maintenance, :maintenance_details,
+                    :high_cost_medicines, :lack_medical_professionals, :lack_sanitation_access,
+                    :lack_health_insurance, :lack_medical_facilities, :other_health_concerns
+                )
+            ");
+            
+            $stmt_health->execute([
+                ':person_id' => $person_id,
+                ':health_condition' => $data['health_condition'] ?? null,
+                ':has_maintenance' => isset($data['has_maintenance']) && $data['has_maintenance'] == 1 ? 1 : 0,
+                ':maintenance_details' => $data['maintenance_details'] ?? null,
+                ':high_cost_medicines' => isset($data['high_cost_medicines']) && $data['high_cost_medicines'] == 1 ? 1 : 0,
+                ':lack_medical_professionals' => isset($data['lack_medical_professionals']) && $data['lack_medical_professionals'] == 1 ? 1 : 0, 
+                ':lack_sanitation_access' => isset($data['lack_sanitation_access']) && $data['lack_sanitation_access'] == 1 ? 1 : 0,
+                ':lack_health_insurance' => isset($data['lack_health_insurance']) && $data['lack_health_insurance'] == 1 ? 1 : 0,
+                ':lack_medical_facilities' => isset($data['lack_medical_facilities']) && $data['lack_medical_facilities'] == 1 ? 1 : 0,
+                ':other_health_concerns' => $data['other_health_concerns'] ?? null
+            ]);
+        }
 
         // Insert other needs (free-form text)
         if (!empty($data['other_specific_needs'])) {
             $stmt_other = $pdo->prepare("
                 INSERT INTO person_other_needs (
-                    person_id, need_type_id, details, status
+                    person_id, need_type_id, details
                 ) VALUES (
                     :person_id, 
                     (SELECT id FROM other_need_types WHERE name = 'Cultural Activities' LIMIT 1),
-                    :details, 
-                    'identified'
+                    :details
                 )
             ");
             
@@ -871,123 +1021,179 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
         $pdo->prepare("DELETE FROM person_health_problems WHERE person_id = ?")->execute([$person_id]);
         $pdo->prepare("DELETE FROM person_housing_problems WHERE person_id = ?")->execute([$person_id]);
         $pdo->prepare("DELETE FROM person_community_problems WHERE person_id = ?")->execute([$person_id]);
+        $pdo->prepare("DELETE FROM government_programs WHERE person_id = ?")->execute([$person_id]);
         
         // Economic Problems
-        $stmt_economic = $pdo->prepare("
-            INSERT INTO person_economic_problems (
-                person_id, loss_income, unemployment, high_cost_living, 
-                skills_training, skills_training_details, livelihood, livelihood_details,
-                other_economic, other_economic_details
-            ) VALUES (
-                :person_id, :loss_income, :unemployment, :high_cost_living,
-                :skills_training, :skills_training_details, :livelihood, :livelihood_details,
-                :other_economic, :other_economic_details
-            )
-        ");
-        
-        $stmt_economic->execute([
-            ':person_id' => $person_id,
-            ':loss_income' => isset($data['problem_loss_income']) ? 1 : 0,
-            ':unemployment' => isset($data['problem_unemployment']) ? 1 : 0,
-            ':high_cost_living' => isset($data['problem_high_cost_living']) ? 1 : 0,
-            ':skills_training' => isset($data['problem_skills_training']) ? 1 : 0,
-            ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
-            ':livelihood' => isset($data['problem_livelihood']) ? 1 : 0,
-            ':livelihood_details' => $data['problem_livelihood_specify'] ?? null,
-            ':other_economic' => isset($data['problem_economic_others']) ? 1 : 0,
-            ':other_economic_details' => $data['problem_economic_others_specify'] ?? null
-        ]);
+        $has_economic_problems = 
+            (isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1) ||
+            (isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1) ||
+            (isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1) ||
+            (isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1) ||
+            (isset($data['problem_economic_others']) && $data['problem_economic_others'] == 1) ||
+            !empty($data['problem_skills_training_specify']) ||
+            !empty($data['problem_livelihood_specify']) ||
+            !empty($data['problem_economic_others_specify']);
+            
+        if ($has_economic_problems) {
+            $stmt_economic = $pdo->prepare("
+                INSERT INTO person_economic_problems (
+                    person_id, loss_income, unemployment, high_cost_living, 
+                    skills_training, skills_training_details, livelihood, livelihood_details,
+                    other_economic, other_economic_details
+                ) VALUES (
+                    :person_id, :loss_income, :unemployment, :high_cost_living,
+                    :skills_training, :skills_training_details, :livelihood, :livelihood_details,
+                    :other_economic, :other_economic_details
+                )
+            ");
+            
+            $stmt_economic->execute([
+                ':person_id' => $person_id,
+                ':loss_income' => isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1 ? 1 : 0,
+                ':unemployment' => isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1 ? 1 : 0,
+                ':high_cost_living' => 0, // This field isn't in the form
+                ':skills_training' => isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1 ? 1 : 0,
+                ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
+                ':livelihood' => isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1 ? 1 : 0,
+                ':livelihood_details' => $data['problem_livelihood_specify'] ?? null,
+                ':other_economic' => isset($data['problem_economic_others']) && $data['problem_economic_others'] == 1 ? 1 : 0,
+                ':other_economic_details' => $data['problem_economic_others_specify'] ?? null
+            ]);
+        }
         
         // Social Problems
-        $stmt_social = $pdo->prepare("
-            INSERT INTO person_social_problems (
-                person_id, loneliness, isolation, neglect, recreational,
-                senior_friendly, other_social, other_social_details
-            ) VALUES (
-                :person_id, :loneliness, :isolation, :neglect, :recreational,
-                :senior_friendly, :other_social, :other_social_details
-            )
-        ");
-        
-        $stmt_social->execute([
-            ':person_id' => $person_id,
-            ':loneliness' => isset($data['problem_loneliness']) ? 1 : 0,
-            ':isolation' => isset($data['problem_isolation']) ? 1 : 0,
-            ':neglect' => isset($data['problem_neglect']) ? 1 : 0,
-            ':recreational' => isset($data['problem_recreational']) ? 1 : 0,
-            ':senior_friendly' => isset($data['problem_senior_friendly']) ? 1 : 0,
-            ':other_social' => isset($data['problem_social_others']) ? 1 : 0,
-            ':other_social_details' => $data['problem_social_others_specify'] ?? null
-        ]);
+        $has_social_problems = 
+            (isset($data['problem_neglect_rejection']) && $data['problem_neglect_rejection'] == 1) ||
+            (isset($data['problem_helplessness']) && $data['problem_helplessness'] == 1) ||
+            (isset($data['problem_loneliness']) && $data['problem_loneliness'] == 1) ||
+            (isset($data['problem_recreational']) && $data['problem_recreational'] == 1) ||
+            (isset($data['problem_senior_friendly']) && $data['problem_senior_friendly'] == 1) ||
+            (isset($data['problem_social_others']) && $data['problem_social_others'] == 1) ||
+            !empty($data['problem_social_others_specify']);
+            
+        if ($has_social_problems) {
+            $stmt_social = $pdo->prepare("
+                INSERT INTO person_social_problems (
+                    person_id, loneliness, isolation, neglect, recreational,
+                    senior_friendly, other_social, other_social_details
+                ) VALUES (
+                    :person_id, :loneliness, :isolation, :neglect, :recreational,
+                    :senior_friendly, :other_social, :other_social_details
+                )
+            ");
+            
+            $stmt_social->execute([
+                ':person_id' => $person_id,
+                ':loneliness' => isset($data['problem_loneliness']) && $data['problem_loneliness'] == 1 ? 1 : 0,
+                ':isolation' => isset($data['problem_helplessness']) && $data['problem_helplessness'] == 1 ? 1 : 0,
+                ':neglect' => isset($data['problem_neglect_rejection']) && $data['problem_neglect_rejection'] == 1 ? 1 : 0,
+                ':recreational' => isset($data['problem_recreational']) && $data['problem_recreational'] == 1 ? 1 : 0,
+                ':senior_friendly' => isset($data['problem_senior_friendly']) && $data['problem_senior_friendly'] == 1 ? 1 : 0,
+                ':other_social' => isset($data['problem_social_others']) && $data['problem_social_others'] == 1 ? 1 : 0,
+                ':other_social_details' => $data['problem_social_others_specify'] ?? null
+            ]);
+        }
         
         // Health Problems
-        $stmt_health_problems = $pdo->prepare("
-            INSERT INTO person_health_problems (
-                person_id, condition_illness, condition_illness_details,
-                high_cost_medicine, lack_medical_professionals, lack_sanitation,
-                lack_health_insurance, inadequate_health_services,
-                other_health, other_health_details
-            ) VALUES (
-                :person_id, :condition_illness, :condition_illness_details,
-                :high_cost_medicine, :lack_medical_professionals, :lack_sanitation,
-                :lack_health_insurance, :inadequate_health_services,
-                :other_health, :other_health_details
-            )
-        ");
-        
-        $stmt_health_problems->execute([
-            ':person_id' => $person_id,
-            ':condition_illness' => isset($data['problem_condition_illness']) ? 1 : 0,
-            ':condition_illness_details' => $data['problem_condition_illness_specify'] ?? null,
-            ':high_cost_medicine' => isset($data['problem_high_cost_medicine']) ? 1 : 0,
-            ':lack_medical_professionals' => isset($data['problem_lack_medical_professionals']) ? 1 : 0,
-            ':lack_sanitation' => isset($data['problem_lack_sanitation']) ? 1 : 0,
-            ':lack_health_insurance' => isset($data['problem_lack_health_insurance']) ? 1 : 0,
-            ':inadequate_health_services' => isset($data['problem_inadequate_health_services']) ? 1 : 0,
-            ':other_health' => isset($data['problem_health_others']) ? 1 : 0,
-            ':other_health_details' => $data['problem_health_others_specify'] ?? null
-        ]);
+        $has_health_problems = 
+            (isset($data['problem_condition_illness']) && $data['problem_condition_illness'] == 1) ||
+            (isset($data['problem_high_cost_medicine']) && $data['problem_high_cost_medicine'] == 1) ||
+            (isset($data['problem_lack_medical_professionals']) && $data['problem_lack_medical_professionals'] == 1) ||
+            (isset($data['problem_lack_sanitation']) && $data['problem_lack_sanitation'] == 1) ||
+            (isset($data['problem_lack_health_insurance']) && $data['problem_lack_health_insurance'] == 1) ||
+            (isset($data['problem_inadequate_health_services']) && $data['problem_inadequate_health_services'] == 1) ||
+            (isset($data['problem_health_others']) && $data['problem_health_others'] == 1) ||
+            !empty($data['problem_condition_illness_specify']) ||
+            !empty($data['problem_health_others_specify']);
+            
+        if ($has_health_problems) {
+            $stmt_health_problems = $pdo->prepare("
+                INSERT INTO person_health_problems (
+                    person_id, condition_illness, condition_illness_details,
+                    high_cost_medicine, lack_medical_professionals, lack_sanitation,
+                    lack_health_insurance, inadequate_health_services,
+                    other_health, other_health_details
+                ) VALUES (
+                    :person_id, :condition_illness, :condition_illness_details,
+                    :high_cost_medicine, :lack_medical_professionals, :lack_sanitation,
+                    :lack_health_insurance, :inadequate_health_services,
+                    :other_health, :other_health_details
+                )
+            ");
+            
+            $stmt_health_problems->execute([
+                ':person_id' => $person_id,
+                ':condition_illness' => isset($data['problem_condition_illness']) && $data['problem_condition_illness'] == 1 ? 1 : 0,
+                ':condition_illness_details' => $data['problem_condition_illness_specify'] ?? null,
+                ':high_cost_medicine' => isset($data['problem_high_cost_medicine']) && $data['problem_high_cost_medicine'] == 1 ? 1 : 0,
+                ':lack_medical_professionals' => isset($data['problem_lack_medical_professionals']) && $data['problem_lack_medical_professionals'] == 1 ? 1 : 0,
+                ':lack_sanitation' => isset($data['problem_lack_sanitation']) && $data['problem_lack_sanitation'] == 1 ? 1 : 0,
+                ':lack_health_insurance' => isset($data['problem_lack_health_insurance']) && $data['problem_lack_health_insurance'] == 1 ? 1 : 0,
+                ':inadequate_health_services' => isset($data['problem_inadequate_health_services']) && $data['problem_inadequate_health_services'] == 1 ? 1 : 0,
+                ':other_health' => isset($data['problem_health_others']) && $data['problem_health_others'] == 1 ? 1 : 0,
+                ':other_health_details' => $data['problem_health_others_specify'] ?? null
+            ]);
+        }
         
         // Housing Problems
-        $stmt_housing = $pdo->prepare("
-            INSERT INTO person_housing_problems (
-                person_id, overcrowding, no_permanent_housing, independent_living,
-                lost_privacy, squatters, other_housing, other_housing_details
-            ) VALUES (
-                :person_id, :overcrowding, :no_permanent_housing, :independent_living,
-                :lost_privacy, :squatters, :other_housing, :other_housing_details
-            )
-        ");
-        
-        $stmt_housing->execute([
-            ':person_id' => $person_id,
-            ':overcrowding' => isset($data['problem_overcrowding']) ? 1 : 0,
-            ':no_permanent_housing' => isset($data['problem_no_permanent_housing']) ? 1 : 0,
-            ':independent_living' => isset($data['problem_independent_living']) ? 1 : 0,
-            ':lost_privacy' => isset($data['problem_lost_privacy']) ? 1 : 0,
-            ':squatters' => isset($data['problem_squatters']) ? 1 : 0,
-            ':other_housing' => isset($data['problem_housing_others']) ? 1 : 0,
-            ':other_housing_details' => $data['problem_housing_others_specify'] ?? null
-        ]);
+        $has_housing_problems = 
+            (isset($data['problem_overcrowding']) && $data['problem_overcrowding'] == 1) ||
+            (isset($data['problem_no_permanent_housing']) && $data['problem_no_permanent_housing'] == 1) ||
+            (isset($data['problem_independent_living']) && $data['problem_independent_living'] == 1) ||
+            (isset($data['problem_lost_privacy']) && $data['problem_lost_privacy'] == 1) ||
+            (isset($data['problem_squatters']) && $data['problem_squatters'] == 1) ||
+            (isset($data['problem_housing_others']) && $data['problem_housing_others'] == 1) ||
+            !empty($data['problem_housing_others_specify']);
+            
+        if ($has_housing_problems) {
+            $stmt_housing = $pdo->prepare("
+                INSERT INTO person_housing_problems (
+                    person_id, overcrowding, no_permanent_housing, independent_living,
+                    lost_privacy, squatters, other_housing, other_housing_details
+                ) VALUES (
+                    :person_id, :overcrowding, :no_permanent_housing, :independent_living,
+                    :lost_privacy, :squatters, :other_housing, :other_housing_details
+                )
+            ");
+            
+            $stmt_housing->execute([
+                ':person_id' => $person_id,
+                ':overcrowding' => isset($data['problem_overcrowding']) && $data['problem_overcrowding'] == 1 ? 1 : 0,
+                ':no_permanent_housing' => isset($data['problem_no_permanent_housing']) && $data['problem_no_permanent_housing'] == 1 ? 1 : 0,
+                ':independent_living' => isset($data['problem_independent_living']) && $data['problem_independent_living'] == 1 ? 1 : 0,
+                ':lost_privacy' => isset($data['problem_lost_privacy']) && $data['problem_lost_privacy'] == 1 ? 1 : 0,
+                ':squatters' => isset($data['problem_squatters']) && $data['problem_squatters'] == 1 ? 1 : 0,
+                ':other_housing' => isset($data['problem_housing_others']) && $data['problem_housing_others'] == 1 ? 1 : 0,
+                ':other_housing_details' => $data['problem_housing_others_specify'] ?? null
+            ]);
+        }
         
         // Community Service Problems
-        $stmt_community = $pdo->prepare("
-            INSERT INTO person_community_problems (
-                person_id, desire_participate, skills_to_share,
-                other_community, other_community_details
-            ) VALUES (
-                :person_id, :desire_participate, :skills_to_share,
-                :other_community, :other_community_details
-            )
-        ");
-        
-        $stmt_community->execute([
-            ':person_id' => $person_id,
-            ':desire_participate' => isset($data['problem_desire_participate']) ? 1 : 0,
-            ':skills_to_share' => isset($data['problem_skills_to_share']) ? 1 : 0,
-            ':other_community' => isset($data['problem_community_others']) ? 1 : 0,
-            ':other_community_details' => $data['problem_community_others_specify'] ?? null
-        ]);
+        $has_community_problems = 
+            (isset($data['problem_desire_participate']) && $data['problem_desire_participate'] == 1) ||
+            (isset($data['problem_skills_to_share']) && $data['problem_skills_to_share'] == 1) ||
+            (isset($data['problem_community_others']) && $data['problem_community_others'] == 1) ||
+            !empty($data['problem_community_others_specify']);
+            
+        if ($has_community_problems) {
+            $stmt_community = $pdo->prepare("
+                INSERT INTO person_community_problems (
+                    person_id, desire_participate, skills_to_share,
+                    other_community, other_community_details
+                ) VALUES (
+                    :person_id, :desire_participate, :skills_to_share,
+                    :other_community, :other_community_details
+                )
+            ");
+            
+            $stmt_community->execute([
+                ':person_id' => $person_id,
+                ':desire_participate' => isset($data['problem_desire_participate']) && $data['problem_desire_participate'] == 1 ? 1 : 0,
+                ':skills_to_share' => isset($data['problem_skills_to_share']) && $data['problem_skills_to_share'] == 1 ? 1 : 0,
+                ':other_community' => isset($data['problem_community_others']) && $data['problem_community_others'] == 1 ? 1 : 0,
+                ':other_community_details' => $data['problem_community_others_specify'] ?? null
+            ]);
+        }
 
         // Insert government programs participation
         $stmt_govt = $pdo->prepare("
@@ -1000,9 +1206,9 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
         
         $stmt_govt->execute([
             ':person_id' => $person_id,
-            ':nhts_pr_listahanan' => isset($data['nhts_pr_listahanan']) ? 1 : 0,
-            ':indigenous_people' => isset($data['indigenous_people']) ? 1 : 0,
-            ':pantawid_beneficiary' => isset($data['pantawid_beneficiary']) ? 1 : 0
+            ':nhts_pr_listahanan' => isset($data['nhts_pr_listahanan']) && $data['nhts_pr_listahanan'] == 1 ? 1 : 0,
+            ':indigenous_people' => isset($data['indigenous_people']) && $data['indigenous_people'] == 1 ? 1 : 0,
+            ':pantawid_beneficiary' => isset($data['pantawid_beneficiary']) && $data['pantawid_beneficiary'] == 1 ? 1 : 0
         ]);
 
         // Insert assets
@@ -1059,19 +1265,55 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
         $income_fields = [
             'income_own_earnings' => null,
             'income_own_pension' => 'income_own_pension_amount',
-            'income_stocks' => null,
-            'income_dependent_children' => null,
+            'income_stocks_dividends' => null,
+            'income_dependent_on_children' => null,
             'income_spouse_salary' => null,
-            'income_insurance' => null,
+            'income_insurances' => null,
             'income_spouse_pension' => 'income_spouse_pension_amount',
-            'income_rentals' => null,
+            'income_rentals_sharecrops' => null,
             'income_savings' => null,
-            'income_livestock' => null
+            'income_livestock_orchards' => null
         ];
         
         foreach ($income_fields as $field => $amount_field) {
             if (isset($data[$field]) && $data[$field] == 1) {
+                // Map form field names to database field names
                 $type_name = str_replace('income_', '', $field);
+                
+                // Handle special cases to match the database exactly
+                switch ($type_name) {
+                    case 'own_earnings':
+                        $type_name = 'Own Earnings/Salaries/Wages';
+                        break;
+                    case 'stocks_dividends':
+                        $type_name = 'Stocks/Dividends';
+                        break;
+                    case 'dependent_on_children':
+                        $type_name = 'Dependent on Children/Relatives';
+                        break;
+                    case 'spouse_salary':
+                        $type_name = 'Spouse Salary';
+                        break;
+                    case 'insurances':
+                        $type_name = 'Insurances';
+                        break;
+                    case 'own_pension':
+                        $type_name = 'Own Pension';
+                        break;
+                    case 'spouse_pension':
+                        $type_name = 'Spouse Pension';
+                        break;
+                    case 'rentals_sharecrops':
+                        $type_name = 'Rentals/Sharecrops';
+                        break;
+                    case 'savings':
+                        $type_name = 'Savings';
+                        break;
+                    case 'livestock_orchards':
+                        $type_name = 'Livestock/Orchards';
+                        break;
+                }
+                
                 $type_id = getTypeIdByName($pdo, 'income_source_types', $type_name);
                 if ($type_id) {
                     $amount = null;
@@ -1089,7 +1331,7 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
         
         // Handle "Others" field for income sources
         if (isset($data['income_others']) && $data['income_others'] == 1) {
-            $type_id = getTypeIdByName($pdo, 'income_source_types', 'others');
+            $type_id = getTypeIdByName($pdo, 'income_source_types', 'Others');
             if ($type_id) {
                 $income_sources[] = [
                     'type_id' => $type_id,
@@ -1118,42 +1360,57 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
             }
         }
 
-        // Insert health information
-        $stmt_health = $pdo->prepare("
-            INSERT INTO person_health_info (
-                person_id, health_condition, has_maintenance, maintenance_details,
-                high_cost_medicines, lack_medical_professionals, lack_sanitation_access,
-                lack_health_insurance, lack_medical_facilities, other_health_concerns
-            ) VALUES (
-                :person_id, :health_condition, :has_maintenance, :maintenance_details,
-                :high_cost_medicines, :lack_medical_professionals, :lack_sanitation_access,
-                :lack_health_insurance, :lack_medical_facilities, :other_health_concerns
-            )
-        ");
+        // Delete and reinsert health information
+        $pdo->prepare("DELETE FROM person_health_info WHERE person_id = ?")->execute([$person_id]);
         
-        $stmt_health->execute([
-            ':person_id' => $person_id,
-            ':health_condition' => $data['health_condition'] ?? null,
-            ':has_maintenance' => isset($data['has_maintenance']) ? 1 : 0,
-            ':maintenance_details' => $data['maintenance_details'] ?? null,
-            ':high_cost_medicines' => isset($data['high_cost_medicines']) ? 1 : 0,
-            ':lack_medical_professionals' => isset($data['lack_medical_professionals']) ? 1 : 0,
-            ':lack_sanitation_access' => isset($data['lack_sanitation_access']) ? 1 : 0,
-            ':lack_health_insurance' => isset($data['lack_health_insurance']) ? 1 : 0,
-            ':lack_medical_facilities' => isset($data['lack_medical_facilities']) ? 1 : 0,
-            ':other_health_concerns' => $data['other_health_concerns'] ?? null
-        ]);
+        // Only insert health information if at least one checkbox is checked or text field is filled
+        $has_health_info = 
+            !empty($data['health_condition']) ||
+            (isset($data['has_maintenance']) && $data['has_maintenance'] == 1) ||
+            !empty($data['maintenance_details']) ||
+            (isset($data['high_cost_medicines']) && $data['high_cost_medicines'] == 1) ||
+            (isset($data['lack_medical_professionals']) && $data['lack_medical_professionals'] == 1) ||
+            (isset($data['lack_sanitation_access']) && $data['lack_sanitation_access'] == 1) ||
+            (isset($data['lack_health_insurance']) && $data['lack_health_insurance'] == 1) ||
+            (isset($data['lack_medical_facilities']) && $data['lack_medical_facilities'] == 1) ||
+            !empty($data['other_health_concerns']);
+            
+        if ($has_health_info) {
+            $stmt_health = $pdo->prepare("
+                INSERT INTO person_health_info (
+                    person_id, health_condition, has_maintenance, maintenance_details,
+                    high_cost_medicines, lack_medical_professionals, lack_sanitation_access,
+                    lack_health_insurance, lack_medical_facilities, other_health_concerns
+                ) VALUES (
+                    :person_id, :health_condition, :has_maintenance, :maintenance_details,
+                    :high_cost_medicines, :lack_medical_professionals, :lack_sanitation_access,
+                    :lack_health_insurance, :lack_medical_facilities, :other_health_concerns
+                )
+            ");
+            
+            $stmt_health->execute([
+                ':person_id' => $person_id,
+                ':health_condition' => $data['health_condition'] ?? null,
+                ':has_maintenance' => isset($data['has_maintenance']) && $data['has_maintenance'] == 1 ? 1 : 0,
+                ':maintenance_details' => $data['maintenance_details'] ?? null,
+                ':high_cost_medicines' => isset($data['high_cost_medicines']) && $data['high_cost_medicines'] == 1 ? 1 : 0,
+                ':lack_medical_professionals' => isset($data['lack_medical_professionals']) && $data['lack_medical_professionals'] == 1 ? 1 : 0, 
+                ':lack_sanitation_access' => isset($data['lack_sanitation_access']) && $data['lack_sanitation_access'] == 1 ? 1 : 0,
+                ':lack_health_insurance' => isset($data['lack_health_insurance']) && $data['lack_health_insurance'] == 1 ? 1 : 0,
+                ':lack_medical_facilities' => isset($data['lack_medical_facilities']) && $data['lack_medical_facilities'] == 1 ? 1 : 0,
+                ':other_health_concerns' => $data['other_health_concerns'] ?? null
+            ]);
+        }
 
         // Insert other needs (free-form text)
         if (!empty($data['other_specific_needs'])) {
             $stmt_other = $pdo->prepare("
                 INSERT INTO person_other_needs (
-                    person_id, need_type_id, details, status
+                    person_id, need_type_id, details
                 ) VALUES (
                     :person_id, 
                     (SELECT id FROM other_need_types WHERE name = 'Cultural Activities' LIMIT 1),
-                    :details, 
-                    'identified'
+                    :details
                 )
             ");
             
@@ -1162,7 +1419,7 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
                 ':details' => $data['other_specific_needs']
             ]);
         }
-        
+
         // Log the action
         if (isset($_SESSION['user_id'])) {
             $stmt = $pdo->prepare("
@@ -1342,11 +1599,9 @@ function validatePersonData($data) {
     if (empty($data['civil_status'])) {
         $errors[] = "Civil status is required";
     }
-    if (empty($data['household_id'])) {
-        $errors[] = "Household ID is required";
-    }
-    if (empty($data['relationship'])) {
-        $errors[] = "Relationship to household head is required";
+    // Household ID is now optional
+    if (!empty($data['household_id']) && empty($data['relationship'])) {
+        $errors[] = "Relationship to household head is required when household is specified";
     }
 
     // Validate arrays of checkbox data

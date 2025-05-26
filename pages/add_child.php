@@ -80,16 +80,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'Last Name' => $last_name,
         'Birth Date' => $birth_date,
         'Gender' => $gender,
-        'Household ID' => $household_id,
+        // Household ID is optional
     ];
     foreach ($required as $label => $val) {
         if (!$val) $add_error .= "$label is required.<br>";
     }
-    $household_exists = false;
-    foreach ($households as $h) {
-        if ($h['household_id'] == $household_id) $household_exists = true;
+    
+    // Check if household exists only if a household ID was provided
+    if (!empty($household_id)) {
+        $household_exists = false;
+        foreach ($households as $h) {
+            if ($h['household_id'] == $household_id) $household_exists = true;
+        }
+        if (!$household_exists) $add_error .= "Selected household does not exist.<br>";
     }
-    if (!$household_exists) $add_error .= "Selected household does not exist.<br>";
 
     if (!$add_error) {
         try {
@@ -111,16 +115,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $person_id = $pdo->lastInsertId();
 
-            // Insert into household_members
-            $stmt = $pdo->prepare("INSERT INTO household_members 
-                (household_id, person_id, relationship_to_head, is_household_head)
-                VALUES (?, ?, ?, ?)");
-            $stmt->execute([
-                $household_id,
-                $person_id,
-                $relationship,
-                $is_household_head
-            ]);
+            // Insert into household_members (if household_id is provided)
+            if (!empty($household_id)) {
+                $stmt = $pdo->prepare("INSERT INTO household_members 
+                    (household_id, person_id, relationship_to_head, is_household_head)
+                    VALUES (?, ?, ?, ?)");
+                $stmt->execute([
+                    $household_id,
+                    $person_id,
+                    $relationship,
+                    $is_household_head
+                ]);
+            }
 
             // Insert into child_information
             $stmt = $pdo->prepare("INSERT INTO child_information (person_id) VALUES (?)");
@@ -214,8 +220,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <input type="text" name="region" value="III" class="mt-1 block w-full border rounded p-2" readonly>
                     </div>
                     <div class="md:col-span-1">
-                        <label class="block text-md font-semibold text-right">HOUSEHOLD NUMBER (HN)</label>
-                        <select name="household_id" required class="mt-1 block w-full border rounded p-2">
+                        <label class="block text-md font-semibold text-right">HOUSEHOLD NUMBER (HN) (Optional)</label>
+                        <select name="household_id" class="mt-1 block w-full border rounded p-2">
                             <option value="">-- SELECT HOUSEHOLD --</option>
                             <?php foreach ($households as $household): ?>
                                 <option value="<?= htmlspecialchars($household['household_id']) ?>">

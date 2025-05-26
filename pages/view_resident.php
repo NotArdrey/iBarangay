@@ -166,7 +166,8 @@ try {
 
     // Fetch other needs
     $stmt = $pdo->prepare("
-        SELECT pon.*, ont.name as need_name, ont.category as need_category
+        SELECT pon.id, pon.person_id, pon.need_type_id, pon.details, 
+               ont.name as need_name, ont.category as need_category
         FROM person_other_needs pon
         JOIN other_need_types ont ON pon.need_type_id = ont.id
         WHERE pon.person_id = ?
@@ -1081,7 +1082,10 @@ function displayCurrency($amount) {
                                     </svg>
                                 </div>
                                 <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2">Neglect</h4>
+                                    <h4 class="font-medium text-gray-800 mb-2">Other Health Concerns</h4>
+                                    <?php if (!empty($health_info['other_health_concerns'])): ?>
+                                        <p class="text-sm text-gray-600"><?= htmlspecialchars($health_info['other_health_concerns']) ?></p>
+                                    <?php endif; ?>
                                 </div>
                             </div>
                         </div>
@@ -1116,7 +1120,7 @@ function displayCurrency($amount) {
                         
                         if ($has_economic_data): ?>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <?php if (!empty($economic_problems['loss_of_income'])): ?>
+                            <?php if (!empty($economic_problems['loss_income'])): ?>
                             <div class="data-card hover:bg-white">
                                 <div class="flex items-start">
                                     <div class="mr-3 mt-1 text-red-500">
@@ -1147,7 +1151,7 @@ function displayCurrency($amount) {
                             </div>
                             <?php endif; ?>
                             
-                            <?php if (!empty($economic_problems['high_cost_of_living'])): ?>
+                            <?php if (!empty($economic_problems['high_cost_living'])): ?>
                             <div class="data-card hover:bg-white">
                                 <div class="flex items-start">
                                     <div class="mr-3 mt-1 text-red-500">
@@ -1267,7 +1271,7 @@ function displayCurrency($amount) {
                                     </svg>
                         </div>
                                 <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2">Isolation</h4>
+                                    <h4 class="font-medium text-gray-800 mb-2">Helplessness & Worthlessness</h4>
                                 </div>
                             </div>
                         </div>
@@ -1282,26 +1286,26 @@ function displayCurrency($amount) {
                                     </svg>
                             </div>
                                 <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2">Neglect</h4>
+                                    <h4 class="font-medium text-gray-800 mb-2">Neglect & Rejection</h4>
                                 </div>
                             </div>
                         </div>
                         <?php endif; ?>
                         
-                        <?php if (!empty($social_problems['recreation'])): ?>
-                        <div class="data-card hover:bg-white">
-                            <div class="flex items-start">
-                                <div class="mr-3 mt-1 text-yellow-500">
-                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path>
-                                    </svg>
-                                </div>
-                                <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2">Recreational Activities</h4>
+                                                    <?php if (!empty($social_problems['recreational'])): ?>
+                            <div class="data-card hover:bg-white">
+                                <div class="flex items-start">
+                                    <div class="mr-3 mt-1 text-yellow-500">
+                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                            <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clip-rule="evenodd"></path>
+                                        </svg>
+                                    </div>
+                                    <div class="flex-1">
+                                        <h4 class="font-medium text-gray-800 mb-2">Recreational Activities</h4>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                        <?php endif; ?>
+                            <?php endif; ?>
                         
                         <?php if (!empty($social_problems['senior_friendly'])): ?>
                         <div class="data-card hover:bg-white">
@@ -1694,21 +1698,11 @@ function displayCurrency($amount) {
                                 <div class="flex-1">
                                     <div class="flex justify-between items-start">
                                         <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($need['need_name']) ?></h4>
-                                        <div class="ml-2">
-                                    <span class="badge badge-yellow">
-                                        <?= htmlspecialchars(ucfirst($need['priority_level'])) ?>
-                                    </span>
-                                        </div>
                                     </div>
                                     <p class="text-sm text-gray-600 mb-2">Category: <?= htmlspecialchars(ucfirst($need['need_category'])) ?></p>
                                     <?php if (!empty($need['details'])): ?>
                                         <p class="text-sm text-gray-600 mb-2"><?= htmlspecialchars($need['details']) ?></p>
                                     <?php endif; ?>
-                                    <div class="mt-2">
-                                        <span class="badge badge-blue">
-                                            Status: <?= htmlspecialchars(ucfirst($need['status'])) ?>
-                                        </span>
-                                    </div>
                                 </div>
                             </div>
                         </div>
