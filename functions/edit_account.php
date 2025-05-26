@@ -18,9 +18,9 @@ function getDashboardUrl($role_id) {
 /**
  * Loads the barangay name for a given user based on email.
  *
- * @param PDO $pdo The database connection object.
- * @param string $email The user's email.
- * @return string|null The barangay name if found, or null otherwise.
+ * @param PDO $pdo 
+ * @param string $email 
+ * @return string|null 
  */
 function loadBarangayInfo($pdo, $email) {
     // Retrieve the barangay_id from the Users table

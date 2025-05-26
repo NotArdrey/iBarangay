@@ -5,7 +5,7 @@
  *  ▸ automatic filters (table name, role, user, date range)
  *  ▸ table renamed to #auditTrailTable, “Table” → “Table Name”
  */
-require_once "../pages/header.php";
+require_once "../components/header.php";
 require "../config/dbconn.php";
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {

@@ -488,7 +488,7 @@ $roleStmt = $pdo->prepare("SELECT id as role_id, name as role_name FROM roles WH
 $roleStmt->execute($allowedRoles);
 $roles = $roleStmt->fetchAll(PDO::FETCH_ASSOC);
 
-require_once __DIR__ . "/../pages/header.php";
+require_once __DIR__ . "/../components/header.php";
 ?>
 
 <!DOCTYPE html>

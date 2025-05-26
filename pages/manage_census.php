@@ -46,7 +46,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $stmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
 $stmt->execute([$barangay_id]);
 $barangay = $stmt->fetch(PDO::FETCH_ASSOC);
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // --- ADD RESIDENT LOGIC ---
 $add_error = '';

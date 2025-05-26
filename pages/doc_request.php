@@ -345,7 +345,7 @@ if (isset($_GET['action'])) {
 // ----------------------------------------------------
 // 3. Only include header + HTML if no specific action
 // ----------------------------------------------------
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // EXAMPLE: Hard-coded barangay_id=1 to filter requests
 
