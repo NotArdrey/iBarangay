@@ -745,6 +745,50 @@ function saveResident($pdo, $data, $barangay_id) {
             ]);
         }
         
+        // Save family composition data
+        if (isset($data['family_member_name']) && is_array($data['family_member_name'])) {
+            $stmt_family = $pdo->prepare("
+                INSERT INTO family_composition (
+                    household_id, person_id, name, relationship, age, 
+                    civil_status, occupation, monthly_income
+                ) VALUES (
+                    :household_id, :person_id, :name, :relationship, :age,
+                    :civil_status, :occupation, :monthly_income
+                )
+            ");
+            
+            foreach ($data['family_member_name'] as $key => $name) {
+                // Skip empty rows
+                if (empty($name)) {
+                    continue;
+                }
+                
+                // Get values for this family member
+                $relationship = $data['family_member_relationship'][$key] ?? '';
+                $age = $data['family_member_age'][$key] ?? null;
+                $civil_status = $data['family_member_civil_status'][$key] ?? '';
+                $occupation = $data['family_member_occupation'][$key] ?? '';
+                $income = $data['family_member_income'][$key] ?? null;
+                
+                // Convert income to numeric if not empty
+                if (!empty($income)) {
+                    $income = str_replace(['₱', ','], '', $income);
+                    $income = is_numeric($income) ? (float)$income : null;
+                }
+                
+                $stmt_family->execute([
+                    ':household_id' => $data['household_id'] ?? null,
+                    ':person_id' => $person_id,
+                    ':name' => trim($name),
+                    ':relationship' => trim($relationship),
+                    ':age' => $age,
+                    ':civil_status' => trim($civil_status),
+                    ':occupation' => trim($occupation),
+                    ':monthly_income' => $income
+                ]);
+            }
+        }
+        
         $pdo->commit();
         return [
             'success' => true,
@@ -1437,6 +1481,52 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
             ]);
         }
         
+        // Update family composition - first delete existing then insert new
+        $pdo->prepare("DELETE FROM family_composition WHERE person_id = ?")->execute([$person_id]);
+        
+        if (isset($data['family_member_name']) && is_array($data['family_member_name'])) {
+            $stmt_family = $pdo->prepare("
+                INSERT INTO family_composition (
+                    household_id, person_id, name, relationship, age, 
+                    civil_status, occupation, monthly_income
+                ) VALUES (
+                    :household_id, :person_id, :name, :relationship, :age,
+                    :civil_status, :occupation, :monthly_income
+                )
+            ");
+            
+            foreach ($data['family_member_name'] as $key => $name) {
+                // Skip empty rows
+                if (empty($name)) {
+                    continue;
+                }
+                
+                // Get values for this family member
+                $relationship = $data['family_member_relationship'][$key] ?? '';
+                $age = $data['family_member_age'][$key] ?? null;
+                $civil_status = $data['family_member_civil_status'][$key] ?? '';
+                $occupation = $data['family_member_occupation'][$key] ?? '';
+                $income = $data['family_member_income'][$key] ?? null;
+                
+                // Convert income to numeric if not empty
+                if (!empty($income)) {
+                    $income = str_replace(['₱', ','], '', $income);
+                    $income = is_numeric($income) ? (float)$income : null;
+                }
+                
+                $stmt_family->execute([
+                    ':household_id' => $data['household_id'] ?? null,
+                    ':person_id' => $person_id,
+                    ':name' => trim($name),
+                    ':relationship' => trim($relationship),
+                    ':age' => $age,
+                    ':civil_status' => trim($civil_status),
+                    ':occupation' => trim($occupation),
+                    ':monthly_income' => $income
+                ]);
+            }
+        }
+        
         $pdo->commit();
         
         return [
@@ -1535,6 +1625,7 @@ function deleteResident($pdo, $person_id) {
  * @return array|false Person details or false if not found
  */
 function getResidentById($pdo, $person_id) {
+    // Get the main person data
     $stmt = $pdo->prepare("
         SELECT 
             p.*,
@@ -1550,7 +1641,22 @@ function getResidentById($pdo, $person_id) {
     ");
     
     $stmt->execute([':person_id' => $person_id]);
-    return $stmt->fetch(PDO::FETCH_ASSOC);
+    $person = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if (!$person) {
+        return false;
+    }
+    
+    // Get family composition data
+    $stmt_family = $pdo->prepare("
+        SELECT * FROM family_composition
+        WHERE person_id = :person_id
+        ORDER BY id ASC
+    ");
+    $stmt_family->execute([':person_id' => $person_id]);
+    $person['family_members'] = $stmt_family->fetchAll(PDO::FETCH_ASSOC);
+    
+    return $person;
 }
 
 /**

@@ -207,6 +207,14 @@ try {
     $stmt->execute([$person_id]);
     $child_disabilities = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+    // Fetch family composition data
+    $stmt = $pdo->prepare("
+        SELECT * FROM family_composition 
+        WHERE person_id = ?
+    ");
+    $stmt->execute([$person_id]);
+    $family_members = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 } catch (Exception $e) {
     $_SESSION['error'] = "Error fetching resident data: " . $e->getMessage();
     header("Location: census_records.php");
@@ -713,6 +721,56 @@ function displayCurrency($amount) {
                         </div>
                     </div>
                 </div>
+            </div>
+
+            <!-- Family Composition Section -->
+            <div class="border-t border-gray-200 p-6">
+                <h2 class="section-header">Family Composition</h2>
+                
+                <?php if (!empty($family_members)): ?>
+                    <div class="overflow-x-auto mb-2">
+                        <table class="min-w-full bg-white border border-gray-200 text-sm">
+                            <thead class="bg-gray-100">
+                                <tr>
+                                    <th class="border border-gray-200 px-4 py-2 text-left">Name</th>
+                                    <th class="border border-gray-200 px-4 py-2 text-left">Relationship</th>
+                                    <th class="border border-gray-200 px-4 py-2 text-center">Age</th>
+                                    <th class="border border-gray-200 px-4 py-2 text-left">Civil Status</th>
+                                    <th class="border border-gray-200 px-4 py-2 text-left">Occupation</th>
+                                    <th class="border border-gray-200 px-4 py-2 text-right">Income</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <?php foreach ($family_members as $member): ?>
+                                    <tr class="hover:bg-gray-50">
+                                        <td class="border border-gray-200 px-4 py-2">
+                                            <?= htmlspecialchars($member['name']) ?>
+                                        </td>
+                                        <td class="border border-gray-200 px-4 py-2">
+                                            <?= htmlspecialchars($member['relationship']) ?>
+                                        </td>
+                                        <td class="border border-gray-200 px-4 py-2 text-center">
+                                            <?= htmlspecialchars($member['age']) ?>
+                                        </td>
+                                        <td class="border border-gray-200 px-4 py-2">
+                                            <?= htmlspecialchars($member['civil_status']) ?>
+                                        </td>
+                                        <td class="border border-gray-200 px-4 py-2">
+                                            <?= htmlspecialchars($member['occupation']) ?>
+                                        </td>
+                                        <td class="border border-gray-200 px-4 py-2 text-right">
+                                            <?= !empty($member['monthly_income']) ? displayCurrency($member['monthly_income']) : 'Not specified' ?>
+                                        </td>
+                                    </tr>
+                                <?php endforeach; ?>
+                            </tbody>
+                        </table>
+                    </div>
+                <?php else: ?>
+                    <div class="text-center py-4">
+                        <p class="text-gray-500 italic">No family members information available.</p>
+                    </div>
+                <?php endif; ?>
             </div>
 
             <!-- Government ID Section -->

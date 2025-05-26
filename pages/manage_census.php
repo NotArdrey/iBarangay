@@ -260,6 +260,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'health_others' => isset($_POST['health_others']) ? 1 : 0,
             'health_others_specify' => trim($_POST['health_others_specify'] ?? ''),
         ];
+        
+        // Add family member data as arrays
+        if (isset($_POST['family_member_name']) && is_array($_POST['family_member_name'])) {
+            $data['family_member_name'] = $_POST['family_member_name'];
+            $data['family_member_relationship'] = $_POST['family_member_relationship'] ?? [];
+            $data['family_member_age'] = $_POST['family_member_age'] ?? [];
+            $data['family_member_civil_status'] = $_POST['family_member_civil_status'] ?? [];
+            $data['family_member_occupation'] = $_POST['family_member_occupation'] ?? [];
+            $data['family_member_income'] = $_POST['family_member_income'] ?? [];
+        }
 
         // Store form data for repopulation
         $form_data = $data;
@@ -473,38 +483,6 @@ function isCheckboxChecked($form_data, $key)
             </div>
         </div>
 
-        <!-- Error/Success Messages -->
-        <?php if ($add_error): ?>
-            <div class="error-message transform transition-all duration-300">
-                <div class="bg-red-50 border-l-4 border-red-500 p-4 mb-6">
-                    <div class="flex">
-                        <div class="flex-shrink-0">
-                            <svg class="h-5 w-5 text-red-400" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clip-rule="evenodd" />
-                        </div>
-                        <div class="ml-3">
-                            <p class="text-sm text-red-700"><?= $add_error ?></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        <?php elseif ($add_success): ?>
-            <div class="success-message transform transition-all duration-300">
-                <div class="bg-green-50 border-l-4 border-green-500 p-4 mb-6">
-                    <div class="flex">
-                        <div class="flex-shrink-0">
-                            <svg class="h-5 w-5 text-green-400" fill="currentColor" viewBox="0 0 20 20">
-                                <path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clip-rule="evenodd" />
-                            </svg>
-                        </div>
-                        <div class="ml-3">
-                            <p class="text-sm text-green-700"><?= $add_success ?></p>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        <?php endif; ?>
-
         <!-- Regular Resident Form -->
         <div id="add-resident" class="tab-content active bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800">Add New Resident</h2>
@@ -543,7 +521,7 @@ function isCheckboxChecked($form_data, $key)
                     <div>
                         <label class="block text-sm font-medium">Suffix</label>
                         <input type="text" name="suffix" placeholder="Jr, Sr, III, etc." value="<?= getFormValue('suffix', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" maxlength="5">
                     </div>
 
                     <!-- Citizenship -->
@@ -686,10 +664,11 @@ function isCheckboxChecked($form_data, $key)
 
                     <div>
                         <label class="block text-sm font-medium">Years of Residency *</label>
-                        <input type="number" name="years_of_residency" required min="0" max="150" 
+                        <input type="number" name="years_of_residency" id="years_of_residency" required min="0" max="150" 
                             value="<?= getFormValue('years_of_residency', $form_data) ?>"
                             class="mt-1 block w-full border rounded p-2" 
                             placeholder="Enter number of years">
+                        <small class="text-gray-500" id="residency_age_validation"></small>
                     </div>
 
                     
@@ -729,19 +708,19 @@ function isCheckboxChecked($form_data, $key)
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
                                 <input type="text" name="present_municipality" value="<?= getFormValue('present_municipality', $form_data) ?: 'SAN RAFAEL' ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
                                 <input type="text" name="present_province" value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
                             
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
                                 <input type="text" name="present_region" value="<?= getFormValue('present_region', $form_data) ?: 'III' ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
                         </div>
                     </div>
@@ -1018,6 +997,7 @@ function isCheckboxChecked($form_data, $key)
                                         <th class="border border-gray-200 px-4 py-2 text-sm">Civil Status</th>
                                         <th class="border border-gray-200 px-4 py-2 text-sm">Occupation</th>
                                         <th class="border border-gray-200 px-4 py-2 text-sm">Income</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody id="familyMembersTable">
@@ -1046,6 +1026,13 @@ function isCheckboxChecked($form_data, $key)
                                         </td>
                                         <td class="border border-gray-200 px-2 py-2">
                                             <input type="text" name="family_member_income[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        </td>
+                                        <td class="border border-gray-200 px-2 py-2 text-center">
+                                            <button type="button" class="delete-family-member text-red-500 hover:text-red-700" title="Delete member">
+                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                </svg>
+                                            </button>
                                         </td>
                                     </tr>
                                 </tbody>
@@ -1633,39 +1620,341 @@ function isCheckboxChecked($form_data, $key)
     </div>
     
     <script>
-        <?php if (isset($person_id)): ?>
             document.addEventListener('DOMContentLoaded', function() {
-                // Code for person_id related functionality
+            // Display SweetAlert for success and error messages
+            <?php if ($add_success): ?>
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success',
+                    text: '<?= addslashes($add_success) ?>',
+                    confirmButtonColor: '#3085d6'
             });
         <?php endif; ?>
 
-        // Auto-hide success/error messages after 5 seconds (fallback)
-        document.addEventListener('DOMContentLoaded', function() {
-            const errorMsg = document.querySelector('.error-message');
-            const successMsg = document.querySelector('.success-message');
+            <?php if ($add_error): ?>
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error',
+                    text: '<?= addslashes($add_error) ?>',
+                    confirmButtonColor: '#3085d6'
+                });
+            <?php endif; ?>
+            
+        <?php if (isset($person_id)): ?>
+            // Code for person_id related functionality
+        <?php endif; ?>
 
-            if (errorMsg) {
-                setTimeout(() => {
-                    errorMsg.style.transition = 'opacity 0.5s';
-                    errorMsg.style.opacity = '0';
-                    setTimeout(() => errorMsg.remove(), 500);
-                }, 5000);
+        // Auto-capitalize all inputs
+        document.querySelectorAll('input[type="text"]').forEach(input => {
+            input.addEventListener('input', function() {
+                this.value = this.value.toUpperCase();
+            });
+        });
+        
+        // Years of residency cannot exceed age constraint
+        const birthDateInput = document.getElementById('birth_date');
+        const residencyInput = document.getElementById('years_of_residency');
+        const validationMsg = document.getElementById('residency_age_validation');
+        
+        function updateResidencyMaximum() {
+            if (birthDateInput && birthDateInput.value && residencyInput) {
+                // Calculate age based on birth date
+                const birthDate = new Date(birthDateInput.value);
+                const today = new Date();
+                let age = today.getFullYear() - birthDate.getFullYear();
+                const monthDiff = today.getMonth() - birthDate.getMonth();
+                
+                // Adjust age if birthday hasn't occurred yet this year
+                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                    age--;
+                }
+                
+                // Update max attribute of years_of_residency
+                residencyInput.setAttribute('max', age);
+                
+                // Check if current value exceeds age
+                if (parseInt(residencyInput.value) > age) {
+                    residencyInput.value = age;
+                    validationMsg.textContent = `Maximum years of residency is ${age} (cannot exceed age)`;
+                } else {
+                    validationMsg.textContent = ``;
+                }
             }
-
-            if (successMsg) {
-                setTimeout(() => {
-                    successMsg.style.transition = 'opacity 0.5s';
-                    successMsg.style.opacity = '0';
-                    setTimeout(() => successMsg.remove(), 500);
-                }, 5000);
+        }
+        
+        // Add event listeners
+        if (birthDateInput && residencyInput) {
+            birthDateInput.addEventListener('change', updateResidencyMaximum);
+            residencyInput.addEventListener('input', function() {
+                updateResidencyMaximum();
+            });
+            
+            // Run on page load to initialize
+            updateResidencyMaximum();
+        }
+        
+        // Toggle text fields next to checkboxes
+        function setupCheckboxTextFieldPair(checkboxName, textFieldName) {
+            const checkbox = document.querySelector(`input[name="${checkboxName}"]`);
+            const textField = document.querySelector(`input[name="${textFieldName}"]`);
+            
+            if (checkbox && textField) {
+                // Set initial state
+                textField.disabled = !checkbox.checked;
+                
+                // Add event listener
+                checkbox.addEventListener('change', function() {
+                    textField.disabled = !this.checked;
+                    if (!this.checked) {
+                        textField.value = '';
+                    }
+                });
+            }
+        }
+        
+        // Toggle text fields based on radio button selection
+        function setupRadioTextFieldPair(radioGroupName, radioValue, textFieldName) {
+            const radioButtons = document.querySelectorAll(`input[name="${radioGroupName}"]`);
+            const textField = document.querySelector(`input[name="${textFieldName}"]`);
+            
+            if (radioButtons.length && textField) {
+                // Find the specific radio button that should enable the text field
+                const targetRadio = document.querySelector(`input[name="${radioGroupName}"][value="${radioValue}"]`);
+                
+                // Set initial state
+                const isEnabled = targetRadio && targetRadio.checked;
+                textField.disabled = !isEnabled;
+                
+                // Add event listeners to all radio buttons in the group
+                radioButtons.forEach(radio => {
+                    radio.addEventListener('change', function() {
+                        // Enable text field only when the specific radio value is selected
+                        const shouldEnable = this.value === radioValue;
+                        textField.disabled = !shouldEnable;
+                        
+                        // Clear the text field if it's being disabled
+                        if (!shouldEnable) {
+                            textField.value = '';
+                        }
+                    });
+                });
+            }
+        }
+        
+        // Setup all checkbox-text field pairs
+        // Income sources section
+        setupCheckboxTextFieldPair('income_own_pension', 'income_own_pension_amount');
+        setupCheckboxTextFieldPair('income_spouse_pension', 'income_spouse_pension_amount');
+        setupCheckboxTextFieldPair('income_others', 'income_others_specify');
+        
+        // Assets & Properties section
+        setupCheckboxTextFieldPair('asset_others', 'asset_others_specify');
+        
+        // Living/Residing With section
+        setupCheckboxTextFieldPair('living_others', 'living_others_specify');
+        
+        // Areas of Specialization/Skills section
+        setupCheckboxTextFieldPair('skill_others', 'skill_others_specify');
+        
+        // Involvement in Community Activities section
+        setupCheckboxTextFieldPair('involvement_others', 'involvement_others_specify');
+        
+        // Problem Categories sections
+        // Economic problems
+        setupCheckboxTextFieldPair('problem_skills_training', 'problem_skills_training_specify');
+        setupCheckboxTextFieldPair('problem_livelihood', 'problem_livelihood_specify');
+        setupCheckboxTextFieldPair('problem_economic_others', 'problem_economic_others_specify');
+        
+        // Other problem categories
+        setupCheckboxTextFieldPair('problem_social_others', 'problem_social_others_specify');
+        setupCheckboxTextFieldPair('problem_health_others', 'problem_health_others_specify');
+        setupCheckboxTextFieldPair('problem_housing_others', 'problem_housing_others_specify');
+        setupCheckboxTextFieldPair('problem_community_others', 'problem_community_others_specify');
+        
+        // Health Condition section
+        setupCheckboxTextFieldPair('problem_condition_illness', 'problem_condition_illness_specify');
+        setupRadioTextFieldPair('problem_with_maintenance', 'YES', 'problem_with_maintenance_specify');
+        
+        // Handle adding family members
+        const addFamilyMemberBtn = document.getElementById('addFamilyMember');
+        const familyMembersTable = document.getElementById('familyMembersTable');
+        
+        // Handle deleting family members
+        function setupFamilyMemberDeleteButtons() {
+            document.querySelectorAll('.delete-family-member').forEach(button => {
+                button.addEventListener('click', function() {
+                    const row = this.closest('tr');
+                    
+                    // Check if this is the only row in the table
+                    if (familyMembersTable.querySelectorAll('tr').length > 1) {
+                        // Delete without confirmation
+                        row.remove();
+                    } else {
+                        // If it's the last row, just clear the inputs instead of removing
+                        row.querySelectorAll('input').forEach(input => {
+                            input.value = '';
+                        });
+                        row.querySelectorAll('select').forEach(select => {
+                            select.selectedIndex = 0;
+                        });
+                        // Replace standard alert with SweetAlert
+                        Swal.fire({
+                            icon: 'info',
+                            title: 'Cannot Delete',
+                            text: 'At least one family member row must remain. Values have been cleared instead.',
+                            confirmButtonColor: '#3085d6'
+                        });
+                    }
+                });
+            });
+        }
+        
+        // Setup delete buttons on page load
+        setupFamilyMemberDeleteButtons();
+        
+        // Function to populate family member rows with existing data
+        function populateFamilyMemberRows(familyMembers) {
+            if (!familyMembers || !familyMembers.length || !familyMembersTable) return;
+            
+            // Clear existing rows except the first one (template)
+            const rows = familyMembersTable.querySelectorAll('tr');
+            if (rows.length > 1) {
+                for (let i = rows.length - 1; i > 0; i--) {
+                    rows[i].remove();
+                }
             }
             
-            // Auto-capitalize all inputs
-            document.querySelectorAll('input[type="text"]').forEach(input => {
+            // Clear the first row (template)
+            const firstRow = familyMembersTable.querySelector('.family-member-row');
+            if (firstRow) {
+                firstRow.querySelectorAll('input').forEach(input => {
+                    input.value = '';
+                });
+                firstRow.querySelectorAll('select').forEach(select => {
+                    select.selectedIndex = 0;
+                });
+            }
+            
+            // Add data to the first row
+            if (familyMembers.length > 0 && firstRow) {
+                const member = familyMembers[0];
+                
+                const nameInput = firstRow.querySelector('input[name="family_member_name[]"]');
+                const relationshipInput = firstRow.querySelector('input[name="family_member_relationship[]"]');
+                const ageInput = firstRow.querySelector('input[name="family_member_age[]"]');
+                const civilStatusSelect = firstRow.querySelector('select[name="family_member_civil_status[]"]');
+                const occupationInput = firstRow.querySelector('input[name="family_member_occupation[]"]');
+                const incomeInput = firstRow.querySelector('input[name="family_member_income[]"]');
+                
+                if (nameInput) nameInput.value = member.name || '';
+                if (relationshipInput) relationshipInput.value = member.relationship || '';
+                if (ageInput) ageInput.value = member.age || '';
+                if (civilStatusSelect) {
+                    Array.from(civilStatusSelect.options).forEach((option, index) => {
+                        if (option.value === member.civil_status) {
+                            civilStatusSelect.selectedIndex = index;
+                        }
+                    });
+                }
+                if (occupationInput) occupationInput.value = member.occupation || '';
+                if (incomeInput) incomeInput.value = member.monthly_income || '';
+            }
+            
+            // Add additional rows for remaining family members
+            for (let i = 1; i < familyMembers.length; i++) {
+                const member = familyMembers[i];
+                
+                // Clone the first row as a template
+                const newRow = firstRow.cloneNode(true);
+                
+                const nameInput = newRow.querySelector('input[name="family_member_name[]"]');
+                const relationshipInput = newRow.querySelector('input[name="family_member_relationship[]"]');
+                const ageInput = newRow.querySelector('input[name="family_member_age[]"]');
+                const civilStatusSelect = newRow.querySelector('select[name="family_member_civil_status[]"]');
+                const occupationInput = newRow.querySelector('input[name="family_member_occupation[]"]');
+                const incomeInput = newRow.querySelector('input[name="family_member_income[]"]');
+                
+                if (nameInput) nameInput.value = member.name || '';
+                if (relationshipInput) relationshipInput.value = member.relationship || '';
+                if (ageInput) ageInput.value = member.age || '';
+                if (civilStatusSelect) {
+                    Array.from(civilStatusSelect.options).forEach((option, index) => {
+                        if (option.value === member.civil_status) {
+                            civilStatusSelect.selectedIndex = index;
+                        }
+                    });
+                }
+                if (occupationInput) occupationInput.value = member.occupation || '';
+                if (incomeInput) incomeInput.value = member.monthly_income || '';
+                
+                // Add the new row to the table
+                familyMembersTable.appendChild(newRow);
+            }
+            
+            // Setup delete buttons for all rows
+            setupFamilyMemberDeleteButtons();
+        }
+        
+        // If family members data is available in PHP, populate the rows
+        <?php if (isset($form_data['family_members']) && is_array($form_data['family_members'])): ?>
+        populateFamilyMemberRows(<?= json_encode($form_data['family_members']) ?>);
+        <?php endif; ?>
+        
+        // Add family member with delete button functionality
+        if (addFamilyMemberBtn && familyMembersTable) {
+            addFamilyMemberBtn.addEventListener('click', function() {
+                // Clone the first row as a template
+                const firstRow = familyMembersTable.querySelector('.family-member-row');
+                const newRow = firstRow.cloneNode(true);
+                
+                // Clear input values in the new row
+                newRow.querySelectorAll('input').forEach(input => {
+                    input.value = '';
+                });
+                
+                // Reset select elements
+                newRow.querySelectorAll('select').forEach(select => {
+                    select.selectedIndex = 0;
+                });
+                
+                // Add an event listener for the uppercase conversion
+                newRow.querySelectorAll('input[type="text"]').forEach(input => {
                 input.addEventListener('input', function() {
                     this.value = this.value.toUpperCase();
                 });
             });
+                
+                // Add the new row to the table
+                familyMembersTable.appendChild(newRow);
+                
+                // Setup delete button for the new row
+                setupFamilyMemberDeleteButtons();
+            });
+        }
+        
+        // Same as Present Address checkbox functionality
+        const sameAsPresentCheckbox = document.getElementById('sameAsPresent');
+        if (sameAsPresentCheckbox) {
+            sameAsPresentCheckbox.addEventListener('change', function() {
+                if (this.checked) {
+                    // Copy present address fields to permanent address fields
+                    document.querySelector('input[name="permanent_house_no"]').value = document.querySelector('input[name="present_house_no"]').value;
+                    document.querySelector('input[name="permanent_street"]').value = document.querySelector('input[name="present_street"]').value;
+                    document.querySelector('input[name="permanent_barangay"]').value = document.querySelector('input[name="present_barangay"]').value;
+                    document.querySelector('input[name="permanent_municipality"]').value = document.querySelector('input[name="present_municipality"]').value;
+                    document.querySelector('input[name="permanent_province"]').value = document.querySelector('input[name="present_province"]').value;
+                    document.querySelector('input[name="permanent_region"]').value = document.querySelector('input[name="present_region"]').value;
+                } else {
+                    // Clear permanent address fields
+                    document.querySelector('input[name="permanent_house_no"]').value = '';
+                    document.querySelector('input[name="permanent_street"]').value = '';
+                    document.querySelector('input[name="permanent_barangay"]').value = '';
+                    document.querySelector('input[name="permanent_municipality"]').value = '';
+                    document.querySelector('input[name="permanent_province"]').value = '';
+                    document.querySelector('input[name="permanent_region"]').value = '';
+                }
+            });
+        }
         });
     </script>
 </body>
