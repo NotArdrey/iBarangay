@@ -246,54 +246,10 @@ INSERT INTO problem_categories (name, category_type) VALUES
     ('Senior Citizen Friendly Environment', 'social');
 
 -- Health concern types
-CREATE TABLE health_concern_types (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE,
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO health_concern_types (name) VALUES
-    ('High Blood Pressure'),
-    ('Diabetes'),
-    ('Heart Disease'),
-    ('Arthritis'),
-    ('Respiratory Problems'),
-    ('Vision Problems'),
-    ('Hearing Problems'),
-    ('Dental Problems'),
-    ('Mental Health Issues'),
-    ('Mobility Issues'),
-    ('Chronic Pain'),
-    ('Medication Management'),
-    ('Nutrition Concerns'),
-    ('Sleep Problems'),
-    ('Others');
+-- REMOVED: health_concern_types table
 
 -- Community service types
-CREATE TABLE community_service_types (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    name VARCHAR(100) NOT NULL UNIQUE,
-    description TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
-INSERT INTO community_service_types (name) VALUES
-    ('Medical Check-up'),
-    ('Dental Services'),
-    ('Eye Care'),
-    ('Physical Therapy'),
-    ('Mental Health Support'),
-    ('Home Care Assistance'),
-    ('Transportation Assistance'),
-    ('Meal Services'),
-    ('Social Activities'),
-    ('Legal Aid'),
-    ('Housing Assistance'),
-    ('Financial Counseling'),
-    ('Educational Programs'),
-    ('Emergency Response'),
-    ('Others');
+-- REMOVED: community_service_types table
 
 -- Other needs and concerns types
 CREATE TABLE other_need_types (
@@ -410,7 +366,7 @@ CREATE TABLE user_roles (
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE
 );
 
--- Official ID and image data
+-- Official ID
 CREATE TABLE person_identification (
     id INT AUTO_INCREMENT PRIMARY KEY,
     person_id INT NOT NULL UNIQUE,
@@ -640,33 +596,10 @@ CREATE TABLE person_health_info (
 );
 
 -- Person health concerns (linking to health_concern_types)
-CREATE TABLE person_health_concerns (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    person_id INT NOT NULL,
-    concern_type_id INT NOT NULL,
-    details TEXT,
-    is_active BOOLEAN DEFAULT TRUE,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
-    FOREIGN KEY (concern_type_id) REFERENCES health_concern_types(id) ON DELETE CASCADE,
-    UNIQUE KEY uk_person_health_concern (person_id, concern_type_id)
-);
+-- REMOVED: person_health_concerns table
 
 -- Person community service needs (linking to community_service_types)
-CREATE TABLE person_service_needs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    person_id INT NOT NULL,
-    service_type_id INT NOT NULL,
-    details TEXT,
-    is_urgent BOOLEAN DEFAULT FALSE,
-    status ENUM('pending', 'in_progress', 'completed', 'cancelled') DEFAULT 'pending',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
-    FOREIGN KEY (service_type_id) REFERENCES community_service_types(id) ON DELETE CASCADE,
-    UNIQUE KEY uk_person_service_need (person_id, service_type_id)
-);
+-- REMOVED: person_service_needs table
 
 -- Person other needs (linking to other_need_types)
 CREATE TABLE person_other_needs (
@@ -1540,24 +1473,10 @@ INSERT INTO person_health_info (person_id, health_condition, has_maintenance, ma
     (9, 'Osteoporosis', TRUE, 'Calcium supplements', FALSE);
 
 -- Insert sample person health concerns
-INSERT INTO person_health_concerns (person_id, concern_type_id, details, is_active) VALUES
-    (1, 1, 'Regular monitoring needed', TRUE),
-    (2, 2, 'Blood sugar monitoring', TRUE),
-    (3, 4, 'Joint pain management', TRUE),
-    (5, 1, 'Monthly checkup required', TRUE),
-    (6, 5, 'Breathing difficulties', TRUE),
-    (7, 3, 'Cardiac care', TRUE),
-    (9, 4, 'Bone density concerns', TRUE);
+-- REMOVED: person_health_concerns table
 
 -- Insert sample person service needs
-INSERT INTO person_service_needs (person_id, service_type_id, details, is_urgent, status) VALUES
-    (1, 1, 'Annual medical checkup', FALSE, 'pending'),
-    (2, 2, 'Dental cleaning', FALSE, 'pending'),
-    (3, 3, 'Eye checkup', TRUE, 'in_progress'),
-    (5, 4, 'Physical therapy', TRUE, 'in_progress'),
-    (6, 5, 'Mental health counseling', FALSE, 'pending'),
-    (7, 1, 'Heart specialist consultation', TRUE, 'in_progress'),
-    (9, 6, 'Home care assistance', TRUE, 'pending');
+-- REMOVED: person_service_needs table
 
 -- Insert sample person other needs
 INSERT INTO person_other_needs (person_id, need_type_id, details, priority_level, status) VALUES
@@ -1568,3 +1487,84 @@ INSERT INTO person_other_needs (person_id, need_type_id, details, priority_level
     (6, 5, 'Family counseling', 'high', 'assessed'),
     (7, 6, 'Home safety improvements', 'urgent', 'identified'),
     (9, 7, 'Environmental concerns', 'medium', 'monitoring');
+
+-- Economic Problems
+CREATE TABLE person_economic_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    loss_income BOOLEAN DEFAULT FALSE,
+    unemployment BOOLEAN DEFAULT FALSE,
+    high_cost_living BOOLEAN DEFAULT FALSE,
+    skills_training BOOLEAN DEFAULT FALSE,
+    skills_training_details TEXT,
+    livelihood BOOLEAN DEFAULT FALSE,
+    livelihood_details TEXT,
+    other_economic BOOLEAN DEFAULT FALSE,
+    other_economic_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
+
+-- Social Problems
+CREATE TABLE person_social_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    loneliness BOOLEAN DEFAULT FALSE,
+    isolation BOOLEAN DEFAULT FALSE,
+    neglect BOOLEAN DEFAULT FALSE,
+    recreational BOOLEAN DEFAULT FALSE,
+    senior_friendly BOOLEAN DEFAULT FALSE,
+    other_social BOOLEAN DEFAULT FALSE,
+    other_social_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
+
+-- Health Problems
+CREATE TABLE person_health_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    condition_illness BOOLEAN DEFAULT FALSE,
+    condition_illness_details TEXT,
+    high_cost_medicine BOOLEAN DEFAULT FALSE,
+    lack_medical_professionals BOOLEAN DEFAULT FALSE,
+    lack_sanitation BOOLEAN DEFAULT FALSE,
+    lack_health_insurance BOOLEAN DEFAULT FALSE,
+    inadequate_health_services BOOLEAN DEFAULT FALSE,
+    other_health BOOLEAN DEFAULT FALSE,
+    other_health_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
+
+-- Housing Problems
+CREATE TABLE person_housing_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    overcrowding BOOLEAN DEFAULT FALSE,
+    no_permanent_housing BOOLEAN DEFAULT FALSE,
+    independent_living BOOLEAN DEFAULT FALSE,
+    lost_privacy BOOLEAN DEFAULT FALSE,
+    squatters BOOLEAN DEFAULT FALSE,
+    other_housing BOOLEAN DEFAULT FALSE,
+    other_housing_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
+
+-- Community Service Problems
+CREATE TABLE person_community_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    desire_participate BOOLEAN DEFAULT FALSE,
+    skills_to_share BOOLEAN DEFAULT FALSE,
+    other_community BOOLEAN DEFAULT FALSE,
+    other_community_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
+);

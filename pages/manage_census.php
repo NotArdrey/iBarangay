@@ -98,6 +98,167 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0,
             'resident_type' => $_POST['resident_type'] ?? 'regular',
             'contact_number' => trim($_POST['contact_number'] ?? ''),
+            // Add ID fields
+            'osca_id' => trim($_POST['osca_id'] ?? ''),
+            'gsis_id' => trim($_POST['gsis_id'] ?? ''),
+            'sss_id' => trim($_POST['sss_id'] ?? ''),
+            'tin_id' => trim($_POST['tin_id'] ?? ''),
+            'philhealth_id' => trim($_POST['philhealth_id'] ?? ''),
+            'other_id_type' => trim($_POST['other_id_type'] ?? ''),
+            'other_id_number' => trim($_POST['other_id_number'] ?? ''),
+            'years_of_residency' => isset($_POST['years_of_residency']) ? (int)trim($_POST['years_of_residency']) : 0,
+            // Living arrangements
+            'living_alone' => isset($_POST['living_alone']) ? 1 : 0,
+            'living_spouse' => isset($_POST['living_spouse']) ? 1 : 0,
+            'living_children' => isset($_POST['living_children']) ? 1 : 0,
+            'living_grandchildren' => isset($_POST['living_grandchildren']) ? 1 : 0,
+            'living_in_laws' => isset($_POST['living_in_laws']) ? 1 : 0,
+            'living_relatives' => isset($_POST['living_relatives']) ? 1 : 0,
+            'living_househelps' => isset($_POST['living_househelps']) ? 1 : 0,
+            'living_care_institutions' => isset($_POST['living_care_institutions']) ? 1 : 0,
+            'living_common_law_spouse' => isset($_POST['living_common_law_spouse']) ? 1 : 0,
+            'living_others' => isset($_POST['living_others']) ? 1 : 0,
+            'living_others_specify' => trim($_POST['living_others_specify'] ?? ''),
+
+            // Skills
+            'skill_medical' => isset($_POST['skill_medical']) ? 1 : 0,
+            'skill_teaching' => isset($_POST['skill_teaching']) ? 1 : 0,
+            'skill_legal_services' => isset($_POST['skill_legal_services']) ? 1 : 0,
+            'skill_dental' => isset($_POST['skill_dental']) ? 1 : 0,
+            'skill_counseling' => isset($_POST['skill_counseling']) ? 1 : 0,
+            'skill_evangelization' => isset($_POST['skill_evangelization']) ? 1 : 0,
+            'skill_farming' => isset($_POST['skill_farming']) ? 1 : 0,
+            'skill_fishing' => isset($_POST['skill_fishing']) ? 1 : 0,
+            'skill_cooking' => isset($_POST['skill_cooking']) ? 1 : 0,
+            'skill_vocational' => isset($_POST['skill_vocational']) ? 1 : 0,
+            'skill_arts' => isset($_POST['skill_arts']) ? 1 : 0,
+            'skill_engineering' => isset($_POST['skill_engineering']) ? 1 : 0,
+            'skill_others' => isset($_POST['skill_others']) ? 1 : 0,
+            'skill_others_specify' => trim($_POST['skill_others_specify'] ?? ''),
+
+            // Community involvements
+            'involvement_medical' => isset($_POST['involvement_medical']) ? 1 : 0,
+            'involvement_resource_volunteer' => isset($_POST['involvement_resource_volunteer']) ? 1 : 0,
+            'involvement_community_beautification' => isset($_POST['involvement_community_beautification']) ? 1 : 0,
+            'involvement_community_leader' => isset($_POST['involvement_community_leader']) ? 1 : 0,
+            'involvement_dental' => isset($_POST['involvement_dental']) ? 1 : 0,
+            'involvement_friendly_visits' => isset($_POST['involvement_friendly_visits']) ? 1 : 0,
+            'involvement_neighborhood_support' => isset($_POST['involvement_neighborhood_support']) ? 1 : 0,
+            'involvement_religious' => isset($_POST['involvement_religious']) ? 1 : 0,
+            'involvement_counselling' => isset($_POST['involvement_counselling']) ? 1 : 0,
+            'involvement_sponsorship' => isset($_POST['involvement_sponsorship']) ? 1 : 0,
+            'involvement_legal_services' => isset($_POST['involvement_legal_services']) ? 1 : 0,
+            'involvement_others' => isset($_POST['involvement_others']) ? 1 : 0,
+            'involvement_others_specify' => trim($_POST['involvement_others_specify'] ?? ''),
+
+            // Government Programs
+            'nhts_pr_listahanan' => isset($_POST['nhts_pr_listahanan']) ? 1 : 0,
+            'indigenous_people' => isset($_POST['indigenous_people']) ? 1 : 0,
+            'pantawid_beneficiary' => isset($_POST['pantawid_beneficiary']) ? 1 : 0,
+
+            // Assets
+            'asset_house' => isset($_POST['asset_house']) ? 1 : 0,
+            'asset_house_lot' => isset($_POST['asset_house_lot']) ? 1 : 0,
+            'asset_farmland' => isset($_POST['asset_farmland']) ? 1 : 0,
+            'asset_commercial' => isset($_POST['asset_commercial']) ? 1 : 0,
+            'asset_lot' => isset($_POST['asset_lot']) ? 1 : 0,
+            'asset_fishpond' => isset($_POST['asset_fishpond']) ? 1 : 0,
+            'asset_others' => isset($_POST['asset_others']) ? 1 : 0,
+            'asset_others_specify' => trim($_POST['asset_others_specify'] ?? ''),
+
+            // Income Sources
+            'income_own_earnings' => isset($_POST['income_own_earnings']) ? 1 : 0,
+            'income_own_pension' => isset($_POST['income_own_pension']) ? 1 : 0,
+            'income_own_pension_amount' => trim($_POST['income_own_pension_amount'] ?? ''),
+            'income_stocks' => isset($_POST['income_stocks']) ? 1 : 0,
+            'income_dependent_children' => isset($_POST['income_dependent_children']) ? 1 : 0,
+            'income_spouse_salary' => isset($_POST['income_spouse_salary']) ? 1 : 0,
+            'income_insurance' => isset($_POST['income_insurance']) ? 1 : 0,
+            'income_spouse_pension' => isset($_POST['income_spouse_pension']) ? 1 : 0,
+            'income_spouse_pension_amount' => trim($_POST['income_spouse_pension_amount'] ?? ''),
+            'income_rentals' => isset($_POST['income_rentals']) ? 1 : 0,
+            'income_savings' => isset($_POST['income_savings']) ? 1 : 0,
+            'income_livestock' => isset($_POST['income_livestock']) ? 1 : 0,
+            'income_others' => isset($_POST['income_others']) ? 1 : 0,
+            'income_others_specify' => trim($_POST['income_others_specify'] ?? ''),
+
+            // Problems - Economic
+            'problem_loss_income' => isset($_POST['problem_loss_income']) ? 1 : 0,
+            'problem_unemployment' => isset($_POST['problem_unemployment']) ? 1 : 0,
+            'problem_high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
+            'problem_skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
+            'problem_skills_training_specify' => trim($_POST['problem_skills_training_specify'] ?? ''),
+            'problem_livelihood' => isset($_POST['problem_livelihood']) ? 1 : 0,
+            'problem_livelihood_specify' => trim($_POST['problem_livelihood_specify'] ?? ''),
+            'problem_economic_others' => isset($_POST['problem_economic_others']) ? 1 : 0,
+            'problem_economic_others_specify' => trim($_POST['problem_economic_others_specify'] ?? ''),
+
+            // Problems - Social
+            'problem_loneliness' => isset($_POST['problem_loneliness']) ? 1 : 0,
+            'problem_isolation' => isset($_POST['problem_isolation']) ? 1 : 0,
+            'problem_neglect' => isset($_POST['problem_neglect']) ? 1 : 0,
+            'problem_recreational' => isset($_POST['problem_recreational']) ? 1 : 0,
+            'problem_senior_friendly' => isset($_POST['problem_senior_friendly']) ? 1 : 0,
+            'problem_social_others' => isset($_POST['problem_social_others']) ? 1 : 0,
+            'problem_social_others_specify' => trim($_POST['problem_social_others_specify'] ?? ''),
+
+            // Problems - Health
+            'problem_condition_illness' => isset($_POST['problem_condition_illness']) ? 1 : 0,
+            'problem_condition_illness_specify' => trim($_POST['problem_condition_illness_specify'] ?? ''),
+            'problem_high_cost_medicine' => isset($_POST['problem_high_cost_medicine']) ? 1 : 0,
+            'problem_lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) ? 1 : 0,
+            'problem_lack_sanitation' => isset($_POST['problem_lack_sanitation']) ? 1 : 0,
+            'problem_lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) ? 1 : 0,
+            'problem_inadequate_health_services' => isset($_POST['problem_inadequate_health_services']) ? 1 : 0,
+            'problem_health_others' => isset($_POST['problem_health_others']) ? 1 : 0,
+            'problem_health_others_specify' => trim($_POST['problem_health_others_specify'] ?? ''),
+
+            // Problems - Housing
+            'problem_overcrowding' => isset($_POST['problem_overcrowding']) ? 1 : 0,
+            'problem_no_permanent_housing' => isset($_POST['problem_no_permanent_housing']) ? 1 : 0,
+            'problem_independent_living' => isset($_POST['problem_independent_living']) ? 1 : 0,
+            'problem_lost_privacy' => isset($_POST['problem_lost_privacy']) ? 1 : 0,
+            'problem_squatters' => isset($_POST['problem_squatters']) ? 1 : 0,
+            'problem_housing_others' => isset($_POST['problem_housing_others']) ? 1 : 0,
+            'problem_housing_others_specify' => trim($_POST['problem_housing_others_specify'] ?? ''),
+
+            // Problems - Community Service
+            'problem_desire_participate' => isset($_POST['problem_desire_participate']) ? 1 : 0,
+            'problem_skills_to_share' => isset($_POST['problem_skills_to_share']) ? 1 : 0,
+            'problem_community_others' => isset($_POST['problem_community_others']) ? 1 : 0,
+            'problem_community_others_specify' => trim($_POST['problem_community_others_specify'] ?? ''),
+
+            // F. Other Specific Needs
+            'other_specific_needs' => trim($_POST['other_specific_needs'] ?? ''),
+
+            // Health Conditions and Maintenance
+            'health_condition' => trim($_POST['problem_condition_illness_specify'] ?? ''),
+            'has_maintenance' => isset($_POST['problem_with_maintenance']) && $_POST['problem_with_maintenance'] === 'YES' ? 1 : 0,
+            'maintenance_details' => trim($_POST['problem_with_maintenance_specify'] ?? ''),
+            'high_cost_medicines' => isset($_POST['problem_high_cost_medicine']) ? 1 : 0,
+            'lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) ? 1 : 0,
+            'lack_sanitation_access' => isset($_POST['problem_lack_sanitation']) ? 1 : 0,
+            'lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) ? 1 : 0,
+            'lack_medical_facilities' => isset($_POST['problem_lack_medical_facilities']) ? 1 : 0,
+            'other_health_concerns' => trim($_POST['problem_health_others_specify'] ?? ''),
+
+            // Health Concerns
+            'health_high_blood' => isset($_POST['health_high_blood']) ? 1 : 0,
+            'health_diabetes' => isset($_POST['health_diabetes']) ? 1 : 0,
+            'health_heart' => isset($_POST['health_heart']) ? 1 : 0,
+            'health_arthritis' => isset($_POST['health_arthritis']) ? 1 : 0,
+            'health_respiratory' => isset($_POST['health_respiratory']) ? 1 : 0,
+            'health_vision' => isset($_POST['health_vision']) ? 1 : 0,
+            'health_hearing' => isset($_POST['health_hearing']) ? 1 : 0,
+            'health_dental' => isset($_POST['health_dental']) ? 1 : 0,
+            'health_mental' => isset($_POST['health_mental']) ? 1 : 0,
+            'health_mobility' => isset($_POST['health_mobility']) ? 1 : 0,
+            'health_chronic_pain' => isset($_POST['health_chronic_pain']) ? 1 : 0,
+            'health_medication' => isset($_POST['health_medication']) ? 1 : 0,
+            'health_nutrition' => isset($_POST['health_nutrition']) ? 1 : 0,
+            'health_sleep' => isset($_POST['health_sleep']) ? 1 : 0,
+            'health_others' => isset($_POST['health_others']) ? 1 : 0,
+            'health_others_specify' => trim($_POST['health_others_specify'] ?? ''),
         ];
 
         // Store form data for repopulation
@@ -1448,436 +1609,64 @@ function isCheckboxChecked($form_data, $key)
                         </div>
                         
                         <!-- Other Specific Needs -->
-                        <div>
-                            <h4 class="font-semibold text-md mb-3">F. Identify Other Specific Needs</h4>
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">F. Other Specific Needs</h4>
                             <div class="pl-4">
-                                <textarea name="other_specific_needs" rows="4" class="w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()"><?= getFormValue('other_specific_needs', $form_data) ?></textarea>
+                                <textarea name="other_specific_needs" rows="3" class="w-full border rounded p-2 uppercase" 
+                                    oninput="this.value = this.value.toUpperCase()"><?= getFormValue('other_specific_needs', $form_data) ?></textarea>
                             </div>
                         </div>
-                    </div>
-
-                    <div class="mt-6">
-                        <button type="submit" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">
-                            Save Resident Data
-                        </button>
-                    </div>
-                </div>
-            </form>
-        </div>
-
-        <script>
-            // Show/hide extra fields for Senior/PWD
-            document.addEventListener('DOMContentLoaded', function() {
-                const select = document.getElementById('residentTypeSelect');
-                const form = document.getElementById('residentForm');
-
-                // Handle "Same as Present Address" checkbox
-                const sameAsPresent = document.getElementById('sameAsPresent');
-                const permanentFields = document.getElementById('permanentAddressFields');
-
-                function copyPresentToPermanent() {
-                    if (sameAsPresent.checked) {
-                        // Copy values from present to permanent address fields
-                        const fieldMappings = [
-                            ['house_no', 'permanent_house_no'],
-                            ['street', 'permanent_street'],
-                            ['barangay', 'permanent_barangay'],
-                            ['municipality', 'permanent_municipality'],
-                            ['province', 'permanent_province'],
-                            ['region', 'permanent_region']
-                        ];
-
-                        fieldMappings.forEach(([presentField, permanentField]) => {
-                            const presentValue = document.querySelector(`[name="present_${presentField}"]`).value;
-                            const permanentInput = document.querySelector(`[name="${permanentField}"]`);
-                            permanentInput.value = presentValue;
-                            permanentInput.disabled = true;
-                        });
-                    } else {
-                        // Enable permanent address fields
-                        permanentFields.querySelectorAll('input').forEach(input => {
-                            input.disabled = false;
-                        });
-                    }
-                }
-
-                sameAsPresent.addEventListener('change', copyPresentToPermanent);
-                
-                // Handle Family Members table
-                const addFamilyMemberBtn = document.getElementById('addFamilyMember');
-                const familyMembersTable = document.getElementById('familyMembersTable');
-                
-                addFamilyMemberBtn.addEventListener('click', function() {
-                    const newRow = familyMembersTable.querySelector('.family-member-row').cloneNode(true);
-                    
-                    // Clear the values in the cloned row
-                    newRow.querySelectorAll('input').forEach(input => {
-                        input.value = '';
-                    });
-                    
-                    newRow.querySelectorAll('select').forEach(select => {
-                        select.selectedIndex = 0;
-                    });
-                    
-                    // Add a remove button
-                    const lastCell = document.createElement('td');
-                    lastCell.className = 'border border-gray-200 px-2 py-2';
-                    
-                    const removeBtn = document.createElement('button');
-                    removeBtn.type = 'button';
-                    removeBtn.className = 'text-red-500 hover:text-red-700';
-                    removeBtn.innerHTML = '&times;';
-                    removeBtn.addEventListener('click', function() {
-                        newRow.remove();
-                    });
-                    
-                    lastCell.appendChild(removeBtn);
-                    newRow.appendChild(lastCell);
-                    
-                    familyMembersTable.appendChild(newRow);
-                });
-                
-                // Handle "Others" option for religion
-                const religionSelect = document.querySelector('select[name="religion"]');
-                const otherReligionContainer = document.getElementById('other_religion_container');
-                
-                function toggleOtherReligionField() {
-                    if (religionSelect.value === 'OTHERS') {
-                        otherReligionContainer.style.display = 'block';
-                    } else {
-                        otherReligionContainer.style.display = 'none';
-                    }
-                }
-                
-                // Initialize on page load
-                toggleOtherReligionField();
-                religionSelect.addEventListener('change', toggleOtherReligionField);
-
-                function updateResidentType() {
-                    let existing = form.querySelector('input[name="resident_type"]');
-                    if (!existing) {
-                        existing = document.createElement('input');
-                        existing.type = 'hidden';
-                        existing.name = 'resident_type';
-                        form.appendChild(existing);
-                    }
-                    existing.value = select.value;
-                }
-
-                select.addEventListener('change', updateResidentType);
-                updateResidentType(); // Initialize on page load
-
-                // Show SweetAlert for success/error messages
-                <?php if ($add_error): ?>
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error!',
-                        html: '<?= addslashes($add_error) ?>',
-                        confirmButtonText: 'OK',
-                        confirmButtonColor: '#dc2626'
-                    });
-                <?php elseif ($add_success): ?>
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Success!',
-                        text: '<?= addslashes($add_success) ?>',
-                        confirmButtonText: 'OK',
-                        confirmButtonColor: '#16a34a',
-                        timer: 5000,
-                        timerProgressBar: true
-                    });
-                <?php endif; ?>
-
-                // Auto-hide success/error messages after 5 seconds (fallback)
-                const errorMsg = document.querySelector('.error-message');
-                const successMsg = document.querySelector('.success-message');
-
-                if (errorMsg) {
-                    setTimeout(() => {
-                        errorMsg.style.transition = 'opacity 0.5s';
-                        errorMsg.style.opacity = '0';
-                        setTimeout(() => errorMsg.remove(), 500);
-                    }, 5000);
-                }
-
-                if (successMsg) {
-                    setTimeout(() => {
-                        successMsg.style.transition = 'opacity 0.5s';
-                        successMsg.style.opacity = '0';
-                        setTimeout(() => successMsg.remove(), 500);
-                    }, 5000);
-                }
-                
-                // Auto-capitalize all inputs
-                document.querySelectorAll('input[type="text"]').forEach(input => {
-                    input.addEventListener('input', function() {
-                        this.value = this.value.toUpperCase();
-                    });
-                });
-
-                            // Initialize event handlers
-            document.addEventListener('DOMContentLoaded', function() {
-                // Initialize birth date handler
-                const birthDateInput = document.getElementById('birth_date');
-                if (birthDateInput) {
-                    birthDateInput.addEventListener('change', calculateAge);
-                    // Calculate initial age if birth date exists
-                    if (birthDateInput.value) {
-                        calculateAge();
-                    }
-                }
-
-                // Function to calculate age
-                function calculateAge() {
-                    const birthDateInput = document.getElementById('birth_date');
-                    const ageInput = document.getElementById('age');
-                    
-                    if (!birthDateInput || !ageInput) return;
-                    
-                    const birthDate = birthDateInput.value;
-                    if (birthDate) {
-                        const today = new Date();
-                        const birth = new Date(birthDate);
-                        let age = today.getFullYear() - birth.getFullYear();
-                        const monthDiff = today.getMonth() - birth.getMonth();
                         
-                        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
-                            age--;
-                        }
+                        <!-- Health Concerns and Service Needs sections removed -->
                         
-                        ageInput.value = age;
-                    } else {
-                        ageInput.value = '';
-                    }
-                }
-            });
-            });
-
-            // Form submission with loading state
-            document.getElementById('residentForm').addEventListener('submit', function(e) {
-                const submitBtn = this.querySelector('button[type="submit"]');
-                const originalText = submitBtn.innerHTML;
-
-                // Show loading state
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<svg class="animate-spin -ml-1 mr-3 h-5 w-5 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>Saving...';
-
-                // Reset button after a delay (in case form doesn't redirect)
-                setTimeout(() => {
-                    submitBtn.disabled = false;
-                    submitBtn.innerHTML = originalText;
-                }, 10000);
-            });
-
-            // Confirm delete function
-            function confirmDelete(personId) {
-                Swal.fire({
-                    title: 'Are you sure?',
-                    text: "This action cannot be undone. All related records will also be deleted.",
-                    icon: 'warning',
-                    showCancelButton: true,
-                    confirmButtonColor: '#dc2626',
-                    cancelButtonColor: '#6b7280',
-                    confirmButtonText: 'Yes, delete it!',
-                    cancelButtonText: 'Cancel'
-                }).then((result) => {
-                    if (result.isConfirmed) {
-                        // Show loading
-                        Swal.fire({
-                            title: 'Deleting...',
-                            text: 'Please wait while we delete the resident record.',
-                            allowOutsideClick: false,
-                            allowEscapeKey: false,
-                            showConfirmButton: false,
-                            didOpen: () => {
-                                Swal.showLoading();
-                            }
-                        });
-
-                        // Redirect to delete script
-                        window.location.href = `delete_resident.php?id=${personId}`;
-                    }
-                });
-            }
-
-            // Search functionality
-            document.getElementById('search-resident').addEventListener('input', function() {
-                const searchTerm = this.value.toLowerCase();
-                const rows = document.querySelectorAll('#census-list tbody tr');
-
-                rows.forEach(row => {
-                    const name = row.querySelector('td:first-child').textContent.toLowerCase();
-                    if (name.includes(searchTerm)) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-            });
-
-            // Category filter functionality
-            document.getElementById('btn-all').addEventListener('click', function() {
-                filterByCategory('all');
-                updateActiveButton(this);
-            });
-
-            document.getElementById('btn-seniors').addEventListener('click', function() {
-                filterByCategory('Senior');
-                updateActiveButton(this);
-            });
-
-            document.getElementById('btn-children').addEventListener('click', function() {
-                filterByCategory('Child');
-                updateActiveButton(this);
-            });
-
-            function filterByCategory(category) {
-                const rows = document.querySelectorAll('#census-list tbody tr');
-
-                rows.forEach(row => {
-                    if (category === 'all' || row.dataset.category === category) {
-                        row.style.display = '';
-                    } else {
-                        row.style.display = 'none';
-                    }
-                });
-            }
-
-            function updateActiveButton(activeBtn) {
-                // Remove active class from all buttons
-                document.querySelectorAll('#census-list .flex button').forEach(btn => {
-                    btn.classList.remove('bg-blue-600', 'text-white');
-                    btn.classList.add('bg-gray-200');
-                });
-
-                // Add active class to clicked button
-                activeBtn.classList.remove('bg-gray-200');
-                activeBtn.classList.add('bg-blue-600', 'text-white');
-            }
-
-            // Form validation
-            function validateForm() {
-                const form = document.getElementById('residentForm');
-                const requiredFields = form.querySelectorAll('[required]');
-                let isValid = true;
-
-                requiredFields.forEach(field => {
-                    if (!field.value.trim()) {
-                        field.classList.add('border-red-500');
-                        isValid = false;
-                    } else {
-                        field.classList.remove('border-red-500');
-                    }
-                });
-
-                return isValid;
-            }
-
-            // Add validation on form submission
-            document.getElementById('residentForm').addEventListener('submit', function(e) {
-                if (!validateForm()) {
-                    e.preventDefault();
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Validation Error',
-                        text: 'Please fill in all required fields.',
-                        confirmButtonColor: '#dc2626'
-                    });
-                }
-            });
-
-            // Real-time validation
-            document.querySelectorAll('#residentForm [required]').forEach(field => {
-                field.addEventListener('blur', function() {
-                    if (!this.value.trim()) {
-                        this.classList.add('border-red-500');
-                    } else {
-                        this.classList.remove('border-red-500');
-                    }
-                });
-            });
-        </script>
-
-        <!-- Census List -->
-        <div id="census-list" class="tab-content bg-white rounded-lg shadow-sm p-6">
-            <h2 class="text-2xl font-bold mb-4">Census Records</h2>
-            <div class="mb-4 flex justify-between items-center">
-                <div class="flex gap-2">
-                    <button id="btn-all" class="px-4 py-2 bg-blue-600 text-white rounded">All</button>
-                    <button id="btn-seniors" class="px-4 py-2 bg-gray-200 rounded">Seniors</button>
-                    <button id="btn-children" class="px-4 py-2 bg-gray-200 rounded">Children</button>
-                </div>
-                <div>
-                    <input type="text" id="search-resident" placeholder="Search by name..."
-                        class="px-4 py-2 border rounded w-64">
-                </div>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="min-w-full divide-y divide-gray-200">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Age</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gender</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Civil Status</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Household ID</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Relationship</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
-                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="bg-white divide-y divide-gray-200">
-                        <?php foreach ($residents as $resident):
-                            $age = $resident['age'] ?? (function ($birth_date) {
-                                return floor((time() - strtotime($birth_date)) / 31556926);
-                            })($resident['birth_date']);
-                            $category = '';
-                            if ($age >= 60) {
-                                $category = 'Senior';
-                            } elseif ($age < 18) {
-                                $category = 'Child';
-                            } else {
-                                $category = 'Adult';
-                            }
-                        ?>
-                            <tr data-category="<?= $category ?>">
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
-                                        ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
-                                        ($resident['suffix'] ? " {$resident['suffix']}" : ''))
-                                    ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap"><?= $age ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap"><?= $resident['gender'] ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap"><?= $resident['civil_status'] ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap"><?= $resident['household_id'] ?></td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <?= $resident['relationship_name'] ?>
-                                    <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <?= $resident['address'] ?? 'No address provided' ?>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap">
-                                    <span class="<?= $category === 'Senior' ? 'bg-purple-100 text-purple-800' : ($category === 'Child' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800') ?> 
-                                    px-2 py-1 rounded text-xs">
-                                        <?= $category ?>
-                                    </span>
-                                </td>
-                                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                    <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
-                                    <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-indigo-600 hover:text-indigo-900 mr-3">Edit</a>
-                                    <a href="javascript:void(0)" onclick="confirmDelete(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</a>
-                                </td>
-                            </tr>
-                        <?php endforeach; ?>
-                    </tbody>
-                </table>
+                        <!-- Submit Button -->
+                        <div class="mt-8 flex justify-center">
+                            <button type="submit" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-lg transition-colors">
+                                Save Resident
+                            </button>
+                        </div>
+                    </div>
+                </form>
             </div>
         </div>
     </div>
+    
+    <script>
+        <?php if (isset($person_id)): ?>
+            document.addEventListener('DOMContentLoaded', function() {
+                // Code for person_id related functionality
+            });
+        <?php endif; ?>
+
+        // Auto-hide success/error messages after 5 seconds (fallback)
+        document.addEventListener('DOMContentLoaded', function() {
+            const errorMsg = document.querySelector('.error-message');
+            const successMsg = document.querySelector('.success-message');
+
+            if (errorMsg) {
+                setTimeout(() => {
+                    errorMsg.style.transition = 'opacity 0.5s';
+                    errorMsg.style.opacity = '0';
+                    setTimeout(() => errorMsg.remove(), 500);
+                }, 5000);
+            }
+
+            if (successMsg) {
+                setTimeout(() => {
+                    successMsg.style.transition = 'opacity 0.5s';
+                    successMsg.style.opacity = '0';
+                    setTimeout(() => successMsg.remove(), 500);
+                }, 5000);
+            }
+            
+            // Auto-capitalize all inputs
+            document.querySelectorAll('input[type="text"]').forEach(input => {
+                input.addEventListener('input', function() {
+                    this.value = this.value.toUpperCase();
+                });
+            });
+        });
+    </script>
 </body>
 
 </html>
