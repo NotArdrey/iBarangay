@@ -7,13 +7,15 @@ require_once "../pages/header.php";
 $stmt = $pdo->prepare("
     SELECT 
         p.*, 
-        hm.household_id AS household_id, 
+        hm.household_id AS household_id,
+        h.household_number,
         hm.relationship_type_id,
         rt.name as relationship_name,
         hm.is_household_head,
         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age,
-        p.years_of_residency
+        p.years_of_residency,
+        p.resident_type
     FROM persons p
     LEFT JOIN household_members hm ON p.id = hm.person_id
     LEFT JOIN households h ON hm.household_id = h.id
@@ -100,20 +102,25 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Age</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gender</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Civil Status</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Household ID</th>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Household Number</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Relationship</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Years of Residency</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Category</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             <?php foreach ($residents as $resident):
               $age = $resident['age'] ?? calculateAge($resident['birth_date']);
-              $category = ($age >= 60) ? 'Senior' : (($age < 18) ? 'Child' : 'Adult');
+              $residentType = strtoupper($resident['resident_type'] ?? 'REGULAR');
+              // For children, we'll use age-based categorization
+              $category = ($age < 18) ? 'CHILD' : $residentType;
             ?>
-              <tr data-category="<?= $category ?>">
+              <tr class="resident-row" 
+                  data-category="<?= $category ?>" 
+                  data-name="<?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
+                    ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
+                    ($resident['suffix'] ? " {$resident['suffix']}" : '')) ?>">
                 <td class="px-6 py-4 whitespace-nowrap">
                   <?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
                     ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
@@ -122,18 +129,13 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <td class="px-6 py-4 whitespace-nowrap"><?= $age ?></td>
                 <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['gender']) ?></td>
                 <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['civil_status']) ?></td>
-                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['household_id']) ?></td>
+                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['household_number'] ?? 'Not assigned') ?></td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <?= htmlspecialchars($resident['relationship_name']) ?>
                   <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
                 </td>
                 <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['address'] ?? 'No address provided') ?></td>
                 <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['years_of_residency']) ?> years</td>
-                <td class="px-6 py-4 whitespace-nowrap">
-                  <span class="<?= $category === 'Senior' ? 'bg-purple-100 text-purple-800' : ($category === 'Child' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800') ?> px-2 py-1 rounded text-xs">
-                    <?= $category ?>
-                  </span>
-                </td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
                 </td>
@@ -172,7 +174,8 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
       // Function to filter residents
       function filterResidents(filterType) {
-        residentRows.forEach(row => {
+        const rows = document.querySelectorAll('tbody tr');
+        rows.forEach(row => {
           const category = row.getAttribute('data-category');
           let shouldShow = false;
 
@@ -181,26 +184,20 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
               shouldShow = true;
               break;
             case 'regular':
-              shouldShow = category === 'Adult';
+              shouldShow = category === 'REGULAR';
               break;
             case 'pwd':
-              // You'll need to add PWD data attribute to your PHP loop
-              // For now, this is just a placeholder
-              shouldShow = row.hasAttribute('data-pwd');
+              shouldShow = category === 'PWD';
               break;
             case 'seniors':
-              shouldShow = category === 'Senior';
+              shouldShow = category === 'SENIOR';
               break;
             case 'children':
-              shouldShow = category === 'Child';
+              shouldShow = category === 'CHILD';
               break;
           }
 
-          if (shouldShow) {
-            row.style.display = '';
-          } else {
-            row.style.display = 'none';
-          }
+          row.style.display = shouldShow ? '' : 'none';
         });
       }
 

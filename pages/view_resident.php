@@ -439,7 +439,7 @@ function displayCurrency($amount) {
     </style>
 </head>
 <body class="bg-gray-100">
-    <div class="container mx-auto p-4 max-w-5xl">
+    <div class="container mx-auto p-4 max-w-5xl w-full">
         <!-- Navigation buttons -->
         <div class="mb-4 flex flex-wrap gap-2 justify-end">
             <a href="census_records.php" class="btn btn-neutral">
@@ -495,7 +495,7 @@ function displayCurrency($amount) {
         </div>
 
         <!-- Main content -->
-        <div class="bg-white rounded-b-lg shadow-md border border-gray-200 border-t-0">
+        <div class="bg-white rounded-b-lg shadow-md border border-gray-200 border-t-0 max-w-5xl w-full mx-auto">
             <!-- Personal Information Section -->
             <div class="p-6">
                 <h2 class="section-header">Personal Information</h2>
@@ -619,6 +619,7 @@ function displayCurrency($amount) {
             </div>
             
             <!-- Address Section -->
+            <?php if (!empty($addresses)): ?>
             <div class="border-t border-gray-200 p-6">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="section-header mb-0">Address Information</h2>
@@ -631,74 +632,68 @@ function displayCurrency($amount) {
                     </div>
                     <?php endif; ?>
                 </div>
-                
-                <?php if (!empty($addresses)): ?>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <?php foreach ($addresses as $address): ?>
-                            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                                <div class="flex justify-between items-start mb-3">
-                                    <h4 class="text-md font-semibold text-gray-800 flex items-center">
-                                        <svg class="w-4 h-4 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
-                                        </svg>
-                                        <?= $address['is_primary'] ? 'Present Address' : 'Permanent Address' ?>
-                                    </h4>
-                                    <span class="badge <?= $address['is_primary'] ? 'badge-primary' : 'badge-blue' ?>">
-                                        <?= $address['is_primary'] ? 'Primary' : 'Secondary' ?>
-                                    </span>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <?php foreach ($addresses as $address): ?>
+                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                            <div class="flex justify-between items-start mb-3">
+                                <h4 class="text-md font-semibold text-gray-800 flex items-center">
+                                    <svg class="w-4 h-4 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
+                                        <path fill-rule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
+                                    </svg>
+                                    <?= $address['is_primary'] ? 'Present Address' : 'Permanent Address' ?>
+                                </h4>
+                                <span class="badge <?= $address['is_primary'] ? 'badge-primary' : 'badge-blue' ?>">
+                                    <?= $address['is_primary'] ? 'Primary' : 'Secondary' ?>
+                                </span>
+                            </div>
+                            
+                            <div class="space-y-2 text-sm">
+                                <?php if (!empty($address['house_no']) || !empty($address['street'])): ?>
+                                <div>
+                                    <span class="text-gray-600 font-medium">House/Street:</span> 
+                                    <?= htmlspecialchars($address['house_no'] ?? '') ?> <?= htmlspecialchars($address['street'] ?? '') ?>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($address['phase'])): ?>
+                                <div>
+                                    <span class="text-gray-600 font-medium">Phase:</span> 
+                                    <?= htmlspecialchars($address['phase']) ?>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <?php if (!empty($address['barangay_name'])): ?>
+                                <div>
+                                    <span class="text-gray-600 font-medium">Barangay:</span> 
+                                    <?= htmlspecialchars($address['barangay_name']) ?>
+                                </div>
+                                <?php endif; ?>
+                                
+                                <div>
+                                    <span class="text-gray-600 font-medium">Municipality:</span> 
+                                    <?= htmlspecialchars($address['municipality']) ?>
                                 </div>
                                 
-                                <div class="space-y-2 text-sm">
-                                    <?php if (!empty($address['house_no']) || !empty($address['street'])): ?>
-                                    <div>
-                                        <span class="text-gray-600 font-medium">House/Street:</span> 
-                                        <?= htmlspecialchars($address['house_no'] ?? '') ?> <?= htmlspecialchars($address['street'] ?? '') ?>
-                                    </div>
-                                    <?php endif; ?>
-                                    
-                                    <?php if (!empty($address['phase'])): ?>
-                                    <div>
-                                        <span class="text-gray-600 font-medium">Phase:</span> 
-                                        <?= htmlspecialchars($address['phase']) ?>
-                                    </div>
-                                    <?php endif; ?>
-                                    
-                                    <?php if (!empty($address['barangay_name'])): ?>
-                                    <div>
-                                        <span class="text-gray-600 font-medium">Barangay:</span> 
-                                        <?= htmlspecialchars($address['barangay_name']) ?>
-                                    </div>
-                                    <?php endif; ?>
-                                    
-                                    <div>
-                                        <span class="text-gray-600 font-medium">Municipality:</span> 
-                                        <?= htmlspecialchars($address['municipality']) ?>
-                                    </div>
-                                    
-                                    <div>
-                                        <span class="text-gray-600 font-medium">Province:</span> 
-                                        <?= htmlspecialchars($address['province']) ?>
-                                    </div>
-                                    
-                                    <div>
-                                        <span class="text-gray-600 font-medium">Region:</span> 
-                                        <?= htmlspecialchars($address['region']) ?>
-                                    </div>
+                                <div>
+                                    <span class="text-gray-600 font-medium">Province:</span> 
+                                    <?= htmlspecialchars($address['province']) ?>
+                                </div>
+                                
+                                <div>
+                                    <span class="text-gray-600 font-medium">Region:</span> 
+                                    <?= htmlspecialchars($address['region']) ?>
                                 </div>
                             </div>
-                        <?php endforeach; ?>
-                    </div>
-                <?php else: ?>
-                    <div class="text-center py-4">
-                        <p class="text-gray-500 italic">No address information available.</p>
-                    </div>
-                <?php endif; ?>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
             </div>
+            <?php endif; ?>
             
             <!-- Household Section -->
+            <?php if (!empty($person['household_number']) || !empty($person['relationship_name']) || $person['is_household_head']): ?>
             <div class="border-t border-gray-200 p-6">
                 <h2 class="section-header">Household Information</h2>
-                
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
                         <span class="text-sm text-gray-600 font-medium">Household Number</span>
@@ -728,311 +723,296 @@ function displayCurrency($amount) {
                     </div>
                 </div>
             </div>
+            <?php endif; ?>
 
             <!-- Family Composition Section -->
+            <?php if (!empty($family_members)): ?>
             <div class="border-t border-gray-200 p-6">
                 <h2 class="section-header">Family Composition</h2>
-                
-                <?php if (!empty($family_members)): ?>
-                    <div class="overflow-x-auto mb-2">
-                        <table class="min-w-full bg-white border border-gray-200 text-sm">
-                            <thead class="bg-gray-100">
-                                <tr>
-                                    <th class="border border-gray-200 px-4 py-2 text-left">Name</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-left">Relationship</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-center">Age</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-left">Civil Status</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-left">Occupation</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-right">Income</th>
+                <div class="overflow-x-auto mb-2">
+                    <table class="min-w-full bg-white border border-gray-200 text-sm">
+                        <thead class="bg-gray-100">
+                            <tr>
+                                <th class="border border-gray-200 px-4 py-2 text-left">Name</th>
+                                <th class="border border-gray-200 px-4 py-2 text-left">Relationship</th>
+                                <th class="border border-gray-200 px-4 py-2 text-center">Age</th>
+                                <th class="border border-gray-200 px-4 py-2 text-left">Civil Status</th>
+                                <th class="border border-gray-200 px-4 py-2 text-left">Occupation</th>
+                                <th class="border border-gray-200 px-4 py-2 text-right">Income</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <?php foreach ($family_members as $member): ?>
+                                <tr class="hover:bg-gray-50">
+                                    <td class="border border-gray-200 px-4 py-2">
+                                        <?= htmlspecialchars($member['name']) ?>
+                                    </td>
+                                    <td class="border border-gray-200 px-4 py-2">
+                                        <?= htmlspecialchars($member['relationship']) ?>
+                                    </td>
+                                    <td class="border border-gray-200 px-4 py-2 text-center">
+                                        <?= htmlspecialchars($member['age']) ?>
+                                    </td>
+                                    <td class="border border-gray-200 px-4 py-2">
+                                        <?= htmlspecialchars($member['civil_status']) ?>
+                                    </td>
+                                    <td class="border border-gray-200 px-4 py-2">
+                                        <?= htmlspecialchars($member['occupation']) ?>
+                                    </td>
+                                    <td class="border border-gray-200 px-4 py-2 text-right">
+                                        <?= !empty($member['monthly_income']) ? displayCurrency($member['monthly_income']) : 'Not specified' ?>
+                                    </td>
                                 </tr>
-                            </thead>
-                            <tbody>
-                                <?php foreach ($family_members as $member): ?>
-                                    <tr class="hover:bg-gray-50">
-                                        <td class="border border-gray-200 px-4 py-2">
-                                            <?= htmlspecialchars($member['name']) ?>
-                                        </td>
-                                        <td class="border border-gray-200 px-4 py-2">
-                                            <?= htmlspecialchars($member['relationship']) ?>
-                                        </td>
-                                        <td class="border border-gray-200 px-4 py-2 text-center">
-                                            <?= htmlspecialchars($member['age']) ?>
-                                        </td>
-                                        <td class="border border-gray-200 px-4 py-2">
-                                            <?= htmlspecialchars($member['civil_status']) ?>
-                                        </td>
-                                        <td class="border border-gray-200 px-4 py-2">
-                                            <?= htmlspecialchars($member['occupation']) ?>
-                                        </td>
-                                        <td class="border border-gray-200 px-4 py-2 text-right">
-                                            <?= !empty($member['monthly_income']) ? displayCurrency($member['monthly_income']) : 'Not specified' ?>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                <?php else: ?>
-                    <div class="text-center py-4">
-                        <p class="text-gray-500 italic">No family members information available.</p>
-                    </div>
-                <?php endif; ?>
+                            <?php endforeach; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
+            <?php endif; ?>
 
             <!-- Government ID Section -->
+            <?php if ($identification && ( !empty($identification['osca_id']) || !empty($identification['gsis_id']) || !empty($identification['sss_id']) || !empty($identification['tin_id']) || !empty($identification['philhealth_id']) || (!empty($identification['other_id_type']) && !empty($identification['other_id_number'])) )): ?>
             <div class="border-t border-gray-200 p-6">
                 <h2 class="section-header">Government Identification</h2>
-                
-                <?php if ($identification): ?>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <?php if (!empty($identification['osca_id'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">OSCA ID</span>
-                            <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['osca_id']) ?></div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($identification['gsis_id'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">GSIS ID</span>
-                            <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['gsis_id']) ?></div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($identification['sss_id'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">SSS ID</span>
-                            <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['sss_id']) ?></div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($identification['tin_id'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">TIN ID</span>
-                            <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['tin_id']) ?></div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($identification['philhealth_id'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">PhilHealth ID</span>
-                            <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['philhealth_id']) ?></div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($identification['other_id_type']) && !empty($identification['other_id_number'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium"><?= htmlspecialchars($identification['other_id_type']) ?></span>
-                            <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['other_id_number']) ?></div>
-                        </div>
-                        <?php endif; ?>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <?php if (!empty($identification['osca_id'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">OSCA ID</span>
+                        <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['osca_id']) ?></div>
                     </div>
-                <?php else: ?>
-                    <div class="text-center py-4">
-                        <p class="text-gray-500 italic">No government ID information available.</p>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($identification['gsis_id'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">GSIS ID</span>
+                        <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['gsis_id']) ?></div>
                     </div>
-                <?php endif; ?>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($identification['sss_id'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">SSS ID</span>
+                        <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['sss_id']) ?></div>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($identification['tin_id'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">TIN ID</span>
+                        <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['tin_id']) ?></div>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($identification['philhealth_id'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">PhilHealth ID</span>
+                        <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['philhealth_id']) ?></div>
+                    </div>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($identification['other_id_type']) && !empty($identification['other_id_number'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium"><?= htmlspecialchars($identification['other_id_type']) ?></span>
+                        <div class="mt-1 text-gray-900 font-medium"><?= htmlspecialchars($identification['other_id_number']) ?></div>
+                    </div>
+                    <?php endif; ?>
+                </div>
             </div>
-            
-
+            <?php endif; ?>
 
             <!-- Government Programs Section -->
+            <?php if ($government_programs && ( !empty($government_programs['nhts_pr_listahanan']) || !empty($government_programs['indigenous_people']) || !empty($government_programs['pantawid_beneficiary']) )): ?>
             <div class="border-t border-gray-200 p-6">
                 <h2 class="section-header">Government Programs Participation</h2>
-                
-                <?php if ($government_programs): ?>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <?php if (!empty($government_programs['nhts_pr_listahanan'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">NHTS-PR Listahanan</span>
-                            <div class="mt-1">
-                                <span class="badge badge-primary">Yes</span>
-                            </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <?php if (!empty($government_programs['nhts_pr_listahanan'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">NHTS-PR Listahanan</span>
+                        <div class="mt-1">
+                            <span class="badge badge-primary">Yes</span>
                         </div>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($government_programs['indigenous_people'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">Indigenous People</span>
-                            <div class="mt-1">
-                                <span class="badge badge-primary">Yes</span>
-                            </div>
-                        </div>
-                        <?php endif; ?>
-                        
-                        <?php if (!empty($government_programs['pantawid_beneficiary'])): ?>
-                        <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                            <span class="text-sm text-gray-600 font-medium">Pantawid Beneficiary</span>
-                            <div class="mt-1">
-                                <span class="badge badge-primary">Yes</span>
-                            </div>
-                        </div>
-                        <?php endif; ?>
                     </div>
-                <?php else: ?>
-                    <div class="text-center py-4">
-                        <p class="text-gray-500 italic">No government program information available.</p>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($government_programs['indigenous_people'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">Indigenous People</span>
+                        <div class="mt-1">
+                            <span class="badge badge-primary">Yes</span>
+                        </div>
                     </div>
-                <?php endif; ?>
+                    <?php endif; ?>
+                    
+                    <?php if (!empty($government_programs['pantawid_beneficiary'])): ?>
+                    <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                        <span class="text-sm text-gray-600 font-medium">Pantawid Beneficiary</span>
+                        <div class="mt-1">
+                            <span class="badge badge-primary">Yes</span>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+                </div>
             </div>
-            
+            <?php endif; ?>
+
         </div>
 
         <!-- Assets and Properties Section -->
-        <div class="section-card">
+        <?php if (!empty($assets)): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Assets and Properties</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-                <?php if (!empty($assets)): ?>
-                    <?php foreach ($assets as $asset): ?>
-                        <div class="data-card hover:bg-white">
-                            <div class="flex items-start">
-                                <div class="mr-3 mt-1 text-indigo-500">
-                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4zm3 1h6v4H7V5zm8 8v2h1v1H4v-1h1v-2H4v-1h16v1h-1z" clip-rule="evenodd"></path>
-                                    </svg>
-                                </div>
-                                <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($asset['asset_name']) ?></h4>
-                                    <?php if (!empty($asset['details'])): ?>
-                                        <p class="text-sm text-gray-600"><?= htmlspecialchars($asset['details']) ?></p>
-                                    <?php endif; ?>
-                                </div>
+                <?php foreach ($assets as $asset): ?>
+                    <div class="data-card hover:bg-white">
+                        <div class="flex items-start">
+                            <div class="mr-3 mt-1 text-indigo-500">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4 4a2 2 0 012-2h8a2 2 0 012 2v12a1 1 0 01-1 1H5a1 1 0 01-1-1V4zm3 1h6v4H7V5zm8 8v2h1v1H4v-1h1v-2H4v-1h16v1h-1z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($asset['asset_name']) ?></h4>
+                                <?php if (!empty($asset['details'])): ?>
+                                    <p class="text-sm text-gray-600"><?= htmlspecialchars($asset['details']) ?></p>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-                <?php else: ?>
-                    <p class="text-gray-500 col-span-2 py-4 text-center">No asset information available.</p>
-                <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Income Sources Section -->
-        <div class="section-card">
+        <?php if (!empty($income_sources)): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Income Sources</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            <?php if (!empty($income_sources)): ?>
-                    <?php foreach ($income_sources as $source): ?>
-                        <div class="data-card hover:bg-white">
-                            <div class="flex items-start">
-                                <div class="mr-3 mt-1 text-yellow-500">
-                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 002-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
-                                    </svg>
-                                </div>
-                                <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($source['source_name']) ?></h4>
-                                    <?php if ($source['amount']): ?>
-                                        <p class="text-sm text-green-600 font-medium">Amount: <?= displayCurrency($source['amount']) ?></p>
-                                    <?php endif; ?>
-                                    <?php if ($source['details']): ?>
-                                        <p class="text-sm text-gray-600 mt-1"><?= htmlspecialchars($source['details']) ?></p>
-                                    <?php endif; ?>
-                                </div>
+                <?php foreach ($income_sources as $source): ?>
+                    <div class="data-card hover:bg-white">
+                        <div class="flex items-start">
+                            <div class="mr-3 mt-1 text-yellow-500">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 002-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($source['source_name']) ?></h4>
+                                <?php if ($source['amount']): ?>
+                                    <p class="text-sm text-green-600 font-medium">Amount: <?= displayCurrency($source['amount']) ?></p>
+                                <?php endif; ?>
+                                <?php if ($source['details']): ?>
+                                    <p class="text-sm text-gray-600 mt-1"><?= htmlspecialchars($source['details']) ?></p>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-            <?php else: ?>
-                    <p class="text-gray-500 col-span-2 py-4 text-center">No income source information available.</p>
-            <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Living Arrangements Section -->
-        <div class="section-card">
+        <?php if (!empty($living_arrangements)): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Living Arrangements</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            <?php if (!empty($living_arrangements)): ?>
-                    <?php foreach ($living_arrangements as $arrangement): ?>
-                        <div class="data-card hover:bg-white">
-                            <div class="flex items-start">
-                                <div class="mr-3 mt-1 text-blue-500">
-                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
-                                    </svg>
-                                </div>
-                                <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($arrangement['arrangement_name']) ?></h4>
-                                    <?php if ($arrangement['details']): ?>
-                                        <p class="text-sm text-gray-600"><?= htmlspecialchars($arrangement['details']) ?></p>
-                                    <?php endif; ?>
-                                </div>
+                <?php foreach ($living_arrangements as $arrangement): ?>
+                    <div class="data-card hover:bg-white">
+                        <div class="flex items-start">
+                            <div class="mr-3 mt-1 text-blue-500">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M10.707 2.293a1 1 0 00-1.414 0l-7 7a1 1 0 001.414 1.414L4 10.414V17a1 1 0 001 1h2a1 1 0 001-1v-2a1 1 0 011-1h2a1 1 0 011 1v2a1 1 0 001 1h2a1 1 0 001-1v-6.586l.293.293a1 1 0 001.414-1.414l-7-7z"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($arrangement['arrangement_name']) ?></h4>
+                                <?php if ($arrangement['details']): ?>
+                                    <p class="text-sm text-gray-600"><?= htmlspecialchars($arrangement['details']) ?></p>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-            <?php else: ?>
-                    <p class="text-gray-500 col-span-2 py-4 text-center">No living arrangement information available.</p>
-            <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Skills and Capabilities Section -->
-        <div class="section-card">
+        <?php if (!empty($skills)): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Skills and Capabilities</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            <?php if (!empty($skills)): ?>
-                    <?php foreach ($skills as $skill): ?>
-                        <div class="data-card hover:bg-white">
-                            <div class="flex items-start">
-                                <div class="mr-3 mt-1 text-green-500">
-                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"></path>
-                                    </svg>
-                                </div>
-                                <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($skill['skill_name']) ?></h4>
-                                    <?php if ($skill['details']): ?>
-                                        <p class="text-sm text-gray-600"><?= htmlspecialchars($skill['details']) ?></p>
-                                    <?php endif; ?>
-                                </div>
+                <?php foreach ($skills as $skill): ?>
+                    <div class="data-card hover:bg-white">
+                        <div class="flex items-start">
+                            <div class="mr-3 mt-1 text-green-500">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($skill['skill_name']) ?></h4>
+                                <?php if ($skill['details']): ?>
+                                    <p class="text-sm text-gray-600"><?= htmlspecialchars($skill['details']) ?></p>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-            <?php else: ?>
-                    <p class="text-gray-500 col-span-2 py-4 text-center">No skill information available.</p>
-            <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Community Involvements Section -->
-        <div class="section-card">
+        <?php if (!empty($involvements)): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Community Involvements</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            <?php if (!empty($involvements)): ?>
-                    <?php foreach ($involvements as $involvement): ?>
-                        <div class="data-card hover:bg-white">
-                            <div class="flex items-start">
-                                <div class="mr-3 mt-1 text-purple-500">
-                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"></path>
-                                    </svg>
-                                </div>
-                                <div class="flex-1">
-                                    <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($involvement['involvement_name']) ?></h4>
-                                    <?php if ($involvement['details']): ?>
-                                        <p class="text-sm text-gray-600"><?= htmlspecialchars($involvement['details']) ?></p>
-                                    <?php endif; ?>
-                                </div>
+                <?php foreach ($involvements as $involvement): ?>
+                    <div class="data-card hover:bg-white">
+                        <div class="flex items-start">
+                            <div class="mr-3 mt-1 text-purple-500">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M13 6a3 3 0 11-6 0 3 3 0 016 0zM18 8a2 2 0 11-4 0 2 2 0 014 0zM14 15a4 4 0 00-8 0v3h8v-3zM6 8a2 2 0 11-4 0 2 2 0 014 0zM16 18v-3a5.972 5.972 0 00-.75-2.906A3.005 3.005 0 0119 15v3h-3zM4.75 12.094A5.973 5.973 0 004 15v3H1v-3a3 3 0 013.75-2.906z"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($involvement['involvement_name']) ?></h4>
+                                <?php if ($involvement['details']): ?>
+                                    <p class="text-sm text-gray-600"><?= htmlspecialchars($involvement['details']) ?></p>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-            <?php else: ?>
-                    <p class="text-gray-500 col-span-2 py-4 text-center">No community involvement information available.</p>
-            <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Health Information Section -->
-        <div class="section-card">
+        <?php 
+        $has_health_info = false;
+        if ($health_info) {
+            foreach ($health_info as $v) {
+                if (!empty($v) && $v !== '0') {
+                    $has_health_info = true;
+                    break;
+                }
+            }
+        }
+        ?>
+        <?php if ($has_health_info): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Health Information</h2>
             <div class="p-4">
-            <?php if ($health_info): ?>
-                    <?php if (!empty($health_info['health_condition'])): ?>
-                    <div class="data-card hover:bg-white mb-4">
-                        <div class="flex items-start">
-                            <div class="mr-3 mt-1 text-red-500">
-                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                    <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"></path>
-                                </svg>
+                <?php if (!empty($health_info['health_condition'])): ?>
+                <div class="data-card hover:bg-white mb-4">
+                    <div class="flex items-start">
+                        <div class="mr-3 mt-1 text-red-500">
+                            <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                <path fill-rule="evenodd" d="M3.172 5.172a4 4 0 015.656 0L10 6.343l1.172-1.171a4 4 0 115.656 5.656L10 17.657l-6.828-6.829a4 4 0 010-5.656z" clip-rule="evenodd"></path>
+                            </svg>
                     </div>
                             <div class="flex-1">
                                 <h4 class="font-medium text-gray-800 mb-3">Health Condition</h4>
@@ -1154,18 +1134,34 @@ function displayCurrency($amount) {
                             </div>
                         </div>
                     <?php endif; ?>
-            <?php else: ?>
-                    <p class="text-gray-500 py-4 text-center">No health information available.</p>
-            <?php endif; ?>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Problems and Concerns Section -->
-        <div class="section-card">
+        <?php 
+        $has_problems = false;
+        if ($economic_problems) {
+            foreach($economic_problems as $v) { if (!empty($v)) { $has_problems = true; break; } }
+        }
+        if ($social_problems && !$has_problems) {
+            foreach($social_problems as $v) { if (!empty($v)) { $has_problems = true; break; } }
+        }
+        if ($health_problems && !$has_problems) {
+            foreach($health_problems as $v) { if (!empty($v)) { $has_problems = true; break; } }
+        }
+        if ($housing_problems && !$has_problems) {
+            foreach($housing_problems as $v) { if (!empty($v)) { $has_problems = true; break; } }
+        }
+        if ($community_problems && !$has_problems) {
+            foreach($community_problems as $v) { if (!empty($v)) { $has_problems = true; break; } }
+        }
+        ?>
+        <?php if ($has_problems): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Problems and Concerns</h2>
             <div class="p-4">
-            <!-- Economic Problems -->
-            <?php if ($economic_problems): ?>
+                <!-- Economic Problems -->
                 <div class="mb-6">
                         <h3 class="text-lg font-semibold text-blue-700 mb-4 pb-1 border-b border-blue-100 flex items-center">
                             <svg class="w-5 h-5 mr-2 text-blue-600" fill="currentColor" viewBox="0 0 20 20">
@@ -1741,129 +1737,262 @@ function displayCurrency($amount) {
                 </div>
             <?php endif; ?>
 
-            <?php if (!$economic_problems && !$social_problems && !$health_problems && !$housing_problems && !$community_problems): ?>
-                <p class="text-gray-500">No problems and concerns information available.</p>
-            <?php endif; ?>
         </div>
 
         <!-- Other Needs and Concerns Section -->
-        <div class="section-card">
+        <?php if (!empty($other_needs)): ?>
+        <div class="section-card max-w-5xl w-full mx-auto">
             <h2 class="category-header">Other Needs and Concerns</h2>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-6 p-4">
-            <?php if (!empty($other_needs)): ?>
-                    <?php foreach ($other_needs as $need): ?>
-                        <div class="data-card hover:bg-white">
-                            <div class="flex items-start">
-                                <div class="mr-3 mt-1 text-red-500">
-                                    <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                        <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
-                                    </svg>
+                <?php foreach ($other_needs as $need): ?>
+                    <div class="data-card hover:bg-white">
+                        <div class="flex items-start">
+                            <div class="mr-3 mt-1 text-red-500">
+                                <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
+                                    <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7 4a1 1 0 11-2 0 1 1 0 012 0zm-1-9a1 1 0 00-1 1v4a1 1 0 102 0V6a1 1 0 00-1-1z" clip-rule="evenodd"></path>
+                                </svg>
+                            </div>
+                            <div class="flex-1">
+                                <div class="flex justify-between items-start">
+                                    <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($need['need_name']) ?></h4>
                                 </div>
-                                <div class="flex-1">
-                                    <div class="flex justify-between items-start">
-                                        <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($need['need_name']) ?></h4>
-                                    </div>
-                                    <p class="text-sm text-gray-600 mb-2">Category: <?= htmlspecialchars(ucfirst($need['need_category'])) ?></p>
-                                    <?php if (!empty($need['details'])): ?>
-                                        <p class="text-sm text-gray-600 mb-2"><?= htmlspecialchars($need['details']) ?></p>
-                                    <?php endif; ?>
-                                </div>
+                                <p class="text-sm text-gray-600 mb-2">Category: <?= htmlspecialchars(ucfirst($need['need_category'])) ?></p>
+                                <?php if (!empty($need['details'])): ?>
+                                    <p class="text-sm text-gray-600 mb-2"><?= htmlspecialchars($need['details']) ?></p>
+                                <?php endif; ?>
                             </div>
                         </div>
-                    <?php endforeach; ?>
-            <?php else: ?>
-                    <p class="text-gray-500 col-span-2 py-4 text-center">No other needs information available.</p>
-            <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             </div>
         </div>
+        <?php endif; ?>
 
         <!-- Child Information (if applicable) -->
         <?php if ($child_info): ?>
-            <div class="section-card">
-                <h2 class="category-header">Child-Specific Information</h2>
-                <div class="field-group">
-                    <div class="field-item">
-                        <label class="field-label">Is Malnourished</label>
-                        <div class="field-value"><?= displayBoolean($child_info['is_malnourished']) ?></div>
+        <div class="section-card max-w-5xl w-full mx-auto">
+            <h2 class="category-header flex items-center gap-2">
+                <svg class="w-6 h-6 text-blue-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422A12.083 12.083 0 0112 21.5a12.083 12.083 0 01-6.16-10.922L12 14z"/></svg>
+                Child-Specific Information
+            </h2>
+            <div class="p-6 space-y-8">
+                <!-- Educational Information -->
+                <?php if (
+                    $child_info['attending_school'] !== null ||
+                    !empty($child_info['school_type']) ||
+                    !empty($child_info['school_name']) ||
+                    !empty($child_info['grade_level']) ||
+                    !empty($child_info['occupation']) ||
+                    !empty($person['relationship_name'])
+                ): ?>
+                <div>
+                    <div class="flex items-center mb-4 gap-2">
+                        <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422A12.083 12.083 0 0112 21.5a12.083 12.083 0 01-6.16-10.922L12 14z"/></svg>
+                        <h3 class="text-lg font-semibold">Educational Information</h3>
                     </div>
-                    <div class="field-item">
-                        <label class="field-label">School Name</label>
-                        <div class="field-value"><?= htmlspecialchars($child_info['school_name'] ?? 'Not specified') ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Grade Level</label>
-                        <div class="field-value"><?= htmlspecialchars($child_info['grade_level'] ?? 'Not specified') ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">School Type</label>
-                        <div class="field-value"><?= htmlspecialchars($child_info['school_type']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Immunization Complete</label>
-                        <div class="field-value"><?= displayBoolean($child_info['immunization_complete']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Pantawid Beneficiary</label>
-                        <div class="field-value"><?= displayBoolean($child_info['is_pantawid_beneficiary']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Timbang Operation</label>
-                        <div class="field-value"><?= displayBoolean($child_info['has_timbang_operation']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Feeding Program</label>
-                        <div class="field-value"><?= displayBoolean($child_info['has_feeding_program']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Supplementary Feeding</label>
-                        <div class="field-value"><?= displayBoolean($child_info['has_supplementary_feeding']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">In Caring Institution</label>
-                        <div class="field-value"><?= displayBoolean($child_info['in_caring_institution']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Under Foster Care</label>
-                        <div class="field-value"><?= displayBoolean($child_info['is_under_foster_care']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Directly Entrusted</label>
-                        <div class="field-value"><?= displayBoolean($child_info['is_directly_entrusted']) ?></div>
-                    </div>
-                    <div class="field-item">
-                        <label class="field-label">Legally Adopted</label>
-                        <div class="field-value"><?= displayBoolean($child_info['is_legally_adopted']) ?></div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <?php if ($child_info['attending_school'] !== null): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Attending School</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['attending_school'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['attending_school'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($child_info['school_type'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">School Type</div>
+                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['school_type']) ?></div>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($child_info['school_name'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">School Name</div>
+                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['school_name']) ?></div>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($child_info['grade_level'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Grade/Level</div>
+                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['grade_level']) ?></div>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($child_info['occupation'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Occupation</div>
+                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['occupation']) ?></div>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (!empty($person['relationship_name'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Relationship to Household Head</div>
+                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($person['relationship_name']) ?></div>
+                        </div>
+                        <?php endif; ?>
                     </div>
                 </div>
-
-                <!-- Child Health Conditions -->
-                <?php if (!empty($child_health_conditions)): ?>
-                    <div class="mt-6">
-                        <h3 class="text-md font-semibold text-gray-800 mb-3">Health Conditions</h3>
-                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            <?php foreach ($child_health_conditions as $condition): ?>
-                                <div class="bg-red-50 text-red-800 px-3 py-2 rounded text-sm">
-                                    <?= htmlspecialchars($condition['condition_type']) ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
-                    </div>
                 <?php endif; ?>
 
-                <!-- Child Disabilities -->
-                <?php if (!empty($child_disabilities)): ?>
-                    <div class="mt-6">
-                        <h3 class="text-md font-semibold text-gray-800 mb-3">Disabilities</h3>
-                        <div class="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            <?php foreach ($child_disabilities as $disability): ?>
-                                <div class="bg-orange-50 text-orange-800 px-3 py-2 rounded text-sm">
-                                    <?= htmlspecialchars($disability['disability_type']) ?>
-                                </div>
-                            <?php endforeach; ?>
-                        </div>
+                <!-- Health/Nutrition -->
+                <?php if (
+                    isset($child_info['is_malnourished']) ||
+                    isset($child_info['immunization_complete']) ||
+                    isset($child_info['garantisadong_pambata']) ||
+                    isset($child_info['has_timbang_operation']) ||
+                    isset($child_info['has_supplementary_feeding']) ||
+                    isset($child_info['under_six_years']) ||
+                    isset($child_info['grade_school'])
+                ): ?>
+                <div>
+                    <div class="flex items-center mb-4 gap-2">
+                        <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                        <h3 class="text-lg font-semibold">Health & Nutrition</h3>
                     </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <?php if (isset($child_info['is_malnourished'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Malnourished</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_malnourished'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['is_malnourished'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['immunization_complete'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Immunization Complete</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['immunization_complete'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['immunization_complete'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['garantisadong_pambata'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Garantizadong Pambata</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['garantisadong_pambata'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['garantisadong_pambata'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['has_timbang_operation'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Operation Timbang</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['has_timbang_operation'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['has_timbang_operation'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['has_supplementary_feeding'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Supplementary Feeding</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['has_supplementary_feeding'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['has_supplementary_feeding'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['under_six_years'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">0-71 mos / Under 6 Years</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['under_six_years'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['under_six_years'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['grade_school'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Grade School</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['grade_school'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['grade_school'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Diseases -->
+                <?php if (!empty($child_health_conditions)): ?>
+                <div>
+                    <div class="flex items-center mb-4 gap-2">
+                        <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                        <h3 class="text-lg font-semibold">Diseases</h3>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <?php foreach ($child_health_conditions as $condition): ?>
+                            <span class="inline-block bg-red-100 text-red-800 px-3 py-1 rounded-full text-xs font-semibold">
+                                <?= htmlspecialchars($condition['condition_type']) ?>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Child Welfare Status -->
+                <?php if (
+                    isset($child_info['in_caring_institution']) ||
+                    isset($child_info['is_under_foster_care']) ||
+                    isset($child_info['is_directly_entrusted']) ||
+                    isset($child_info['is_legally_adopted'])
+                ): ?>
+                <div>
+                    <div class="flex items-center mb-4 gap-2">
+                        <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+                        <h3 class="text-lg font-semibold">Child Welfare Status</h3>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <?php if (isset($child_info['in_caring_institution'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Caring Institution</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['in_caring_institution'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['in_caring_institution'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['is_under_foster_care'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Under Foster Care</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_under_foster_care'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['is_under_foster_care'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['is_directly_entrusted'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Directly Entrusted</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_directly_entrusted'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['is_directly_entrusted'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                        <?php if (isset($child_info['is_legally_adopted'])): ?>
+                        <div>
+                            <div class="text-sm text-gray-600 font-medium">Legally Adopted</div>
+                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_legally_adopted'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                <?= $child_info['is_legally_adopted'] ? 'Yes' : 'No' ?>
+                            </span>
+                        </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+                <?php endif; ?>
+
+                <!-- Disabilities -->
+                <?php if (!empty($child_disabilities)): ?>
+                <div>
+                    <div class="flex items-center mb-4 gap-2">
+                        <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
+                        <h3 class="text-lg font-semibold">Disabilities</h3>
+                    </div>
+                    <div class="flex flex-wrap gap-2">
+                        <?php foreach ($child_disabilities as $disability): ?>
+                            <span class="inline-block bg-orange-100 text-orange-800 px-3 py-1 rounded-full text-xs font-semibold">
+                                <?= htmlspecialchars($disability['disability_type']) ?>
+                            </span>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
                 <?php endif; ?>
             </div>
+        </div>
         <?php endif; ?>
 
     </div>

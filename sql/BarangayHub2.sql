@@ -645,6 +645,7 @@ CREATE TABLE child_information (
     id INT AUTO_INCREMENT PRIMARY KEY,
     person_id INT NOT NULL UNIQUE,
     is_malnourished BOOLEAN DEFAULT FALSE,
+    attending_school BOOLEAN DEFAULT FALSE,
     school_name VARCHAR(255),
     grade_level VARCHAR(50),
     school_type ENUM('Public', 'Private', 'ALS', 'Day Care', 'SNP', 'Not Attending') DEFAULT 'Not Attending',

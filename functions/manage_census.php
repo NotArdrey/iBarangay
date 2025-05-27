@@ -24,6 +24,13 @@ function getTypeIdByName($pdo, $table_name, $type_name) {
  * @return array Result with success status and message
  */
 function saveResident($pdo, $data, $barangay_id) {
+    // Validate civil_status
+    if (!isValidCivilStatus($data['civil_status'] ?? '')) {
+        return [
+            'success' => false,
+            'message' => 'Invalid civil status value.'
+        ];
+    }
     try {
         $pdo->beginTransaction();
 
@@ -869,6 +876,13 @@ function saveResident($pdo, $data, $barangay_id) {
  * @return array Result with success status and message
  */
 function updateResident($pdo, $person_id, $data, $barangay_id) {
+    // Validate civil_status
+    if (!isValidCivilStatus($data['civil_status'] ?? '')) {
+        return [
+            'success' => false,
+            'message' => 'Invalid civil status value.'
+        ];
+    }
     try {
         $pdo->beginTransaction();
         
@@ -1960,5 +1974,10 @@ function searchResidents($pdo, $search_term, $barangay_id, $filters = []) {
     $stmt->execute($params);
     
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+function isValidCivilStatus($status) {
+    $allowed = ['SINGLE', 'MARRIED', 'WIDOW/WIDOWER', 'SEPARATED'];
+    return in_array($status, $allowed, true);
 }
 ?>

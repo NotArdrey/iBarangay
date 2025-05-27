@@ -176,13 +176,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Insert into child_information
             $stmt = $pdo->prepare("INSERT INTO child_information 
-                (person_id, is_malnourished, school_name, grade_level, school_type, 
+                (person_id, attending_school, is_malnourished, school_name, grade_level, school_type, 
                 immunization_complete, is_pantawid_beneficiary, has_timbang_operation, has_feeding_program,
                 has_supplementary_feeding, in_caring_institution, is_under_foster_care, is_directly_entrusted,
                 is_legally_adopted, occupation, garantisadong_pambata, under_six_years, grade_school)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $person_id,
+                $attending_school,
                 $is_malnourished ? 1 : 0,
                 $school_name,
                 $grade_level,
@@ -213,7 +214,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $pdo->prepare("INSERT INTO child_health_conditions (person_id, condition_type) VALUES (?, ?)");
             foreach ($health_conditions as $condition => $has_condition) {
-                if ($has_condition === '1') {
+                if ($has_condition && $has_condition !== '0' && $has_condition !== 0) {
                     $stmt->execute([$person_id, $condition]);
                 }
             }
@@ -230,7 +231,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             $stmt = $pdo->prepare("INSERT INTO child_disabilities (person_id, disability_type) VALUES (?, ?)");
             foreach ($disabilities as $disability => $has_disability) {
-                if ($has_disability === '1') {
+                if ($has_disability && $has_disability !== '0' && $has_disability !== 0) {
                     $stmt->execute([$person_id, $disability]);
                 }
             }
@@ -316,11 +317,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
         </div>
-        <?php if ($add_error): ?>
-            <div class="bg-red-100 text-red-700 px-4 py-2 rounded mb-4"><?= $add_error ?></div>
-        <?php elseif ($add_success): ?>
-            <div class="bg-green-100 text-green-700 px-4 py-2 rounded mb-4"><?= $add_success ?></div>
-        <?php endif; ?>
         <section id="add-child" class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800">CHILDREN 0-17 YEARS OLD</h2>
             <form method="POST" class="space-y-8" autocomplete="off">
@@ -978,7 +974,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         this.value = '';
                         ageInput.value = '';
-                        alert('Only children aged 0-17 years old are allowed.');
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Invalid Age',
+                            text: 'Only children aged 0-17 years old are allowed.',
+                            confirmButtonColor: '#3085d6'
+                        });
                     }
                 } else {
                     ageInput.value = '';
@@ -990,7 +991,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             form.addEventListener('submit', function(e) {
                 if (birthDateInput.value && !validateAge(birthDateInput.value)) {
                     e.preventDefault();
-                    alert('Only children aged 0-17 years old are allowed.');
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Invalid Age',
+                        text: 'Only children aged 0-17 years old are allowed.',
+                        confirmButtonColor: '#3085d6'
+                    });
                     birthDateInput.focus();
                 }
             });

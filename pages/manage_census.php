@@ -415,6 +415,8 @@ function isCheckboxChecked($form_data, $key)
         function calculateAge() {
             const birthDateInput = document.getElementById('birth_date');
             const ageInput = document.getElementById('age');
+            const residentTypeSelect = document.getElementById('residentTypeSelect');
+            const validationMsg = document.getElementById('residency_age_validation');
 
             if (!birthDateInput || !ageInput) return;
 
@@ -430,20 +432,54 @@ function isCheckboxChecked($form_data, $key)
                 }
 
                 ageInput.value = age;
+
+                // Validate age based on resident type
+                const residentType = residentTypeSelect.value;
+                let isValid = true;
+                let errorMessage = '';
+
+                if (residentType === 'REGULAR' || residentType === 'PWD') {
+                    if (age < 18 || age > 59) {
+                        isValid = false;
+                        errorMessage = 'Age must be between 18 and 59 for Regular/PWD residents';
+                    }
+                } else if (residentType === 'SENIOR') {
+                    if (age < 60) {
+                        isValid = false;
+                        errorMessage = 'Age must be 60 or above for Senior residents';
+                    }
+                }
+
+                if (!isValid) {
+                    validationMsg.textContent = errorMessage;
+                    validationMsg.style.color = 'red';
+                    // Clear the age input if invalid
+                    ageInput.value = '';
+                } else {
+                    validationMsg.textContent = '';
+                }
             } else {
                 ageInput.value = '';
+                validationMsg.textContent = '';
             }
         }
 
         // Initialize when document is ready
         document.addEventListener('DOMContentLoaded', function() {
             const birthDateInput = document.getElementById('birth_date');
+            const residentTypeSelect = document.getElementById('residentTypeSelect');
+            
             if (birthDateInput) {
                 birthDateInput.addEventListener('change', calculateAge);
                 // Calculate initial age if birth date exists
                 if (birthDateInput.value) {
                     calculateAge();
                 }
+            }
+
+            // Add event listener for resident type changes
+            if (residentTypeSelect) {
+                residentTypeSelect.addEventListener('change', calculateAge);
             }
         });
     </script>
