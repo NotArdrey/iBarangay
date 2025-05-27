@@ -40,16 +40,20 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
 
-    <!-- Navigation Buttons for Census Pages -->
-    <div class="flex flex-wrap gap-4 mb-6 mt-6">
-      <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
-      <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
-      <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
-      <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+    <!-- Navigation Buttons -->
+    <div class="flex flex-wrap gap-4 mb-6">
+      <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+        Add Resident
+      </a>
+      <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+        Add Child
+      </a>
+      <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+        Census Records
+      </a>
+      <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+        Manage Households
+      </a>
       <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
     </div>

@@ -657,6 +657,10 @@ CREATE TABLE child_information (
     is_under_foster_care BOOLEAN DEFAULT FALSE,
     is_directly_entrusted BOOLEAN DEFAULT FALSE,
     is_legally_adopted BOOLEAN DEFAULT FALSE,
+    occupation VARCHAR(255),
+    garantisadong_pambata BOOLEAN DEFAULT FALSE,
+    under_six_years BOOLEAN DEFAULT FALSE,
+    grade_school BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE

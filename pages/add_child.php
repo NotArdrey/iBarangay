@@ -3,9 +3,20 @@ require "../config/dbconn.php";
 require_once "../pages/header.php";
 
 // Fetch households for selection
-$stmt = $pdo->prepare("SELECT id AS household_id FROM households WHERE barangay_id = ? ORDER BY id");
+$stmt = $pdo->prepare("
+    SELECT h.id AS household_id, h.purok_id, p.name as purok_name, h.household_number
+    FROM households h
+    LEFT JOIN purok p ON h.purok_id = p.id
+    WHERE h.barangay_id = ? 
+    ORDER BY h.purok_id, h.household_number
+");
 $stmt->execute([$_SESSION['barangay_id']]);
 $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch puroks for selection
+$stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
+$stmt->execute([$_SESSION['barangay_id']]);
+$puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $add_error = '';
 $add_success = '';
@@ -35,39 +46,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     // Educational Information
     $attending_school = $_POST['attending_school'] ?? '0';
-    $school_type = $_POST['school_type'] ?? '';
+    $school_type = $_POST['school_type'] ?? 'Not Attending';
     $school_name = trim($_POST['school_name'] ?? '');
     $grade_level = trim($_POST['grade_level'] ?? '');
     $occupation = trim($_POST['occupation'] ?? '');
 
     // Health Information
-    $is_malnourished = $_POST['is_malnourished'] ?? '0';
-    $is_immunized = $_POST['is_immunized'] ?? '0';
-    $garantisadong_pambata = $_POST['garantisadong_pambata'] ?? '0';
-    $operation_timbang = $_POST['operation_timbang'] ?? '0';
-    $supplementary_feeding = $_POST['supplementary_feeding'] ?? '0';
-    $under_six_years = $_POST['under_six_years'] ?? '0';
-    $grade_school = $_POST['grade_school'] ?? '0';
+    $is_malnourished = isset($_POST['is_malnourished']) ? ($_POST['is_malnourished'] === '1') : false;
+    $is_immunized = isset($_POST['is_immunized']) ? ($_POST['is_immunized'] === '1') : false;
+    $garantisadong_pambata = isset($_POST['garantisadong_pambata']) ? ($_POST['garantisadong_pambata'] === '1') : false;
+    $operation_timbang = isset($_POST['operation_timbang']) ? ($_POST['operation_timbang'] === '1') : false;
+    $supplementary_feeding = isset($_POST['supplementary_feeding']) ? ($_POST['supplementary_feeding'] === '1') : false;
+    $under_six_years = isset($_POST['under_six_years']) ? ($_POST['under_six_years'] === '1') : false;
+    $grade_school = isset($_POST['grade_school']) ? ($_POST['grade_school'] === '1') : false;
 
     // Diseases
-    $has_malaria = $_POST['has_malaria'] ?? '0';
-    $has_dengue = $_POST['has_dengue'] ?? '0';
-    $has_pneumonia = $_POST['has_pneumonia'] ?? '0';
-    $has_tuberculosis = $_POST['has_tuberculosis'] ?? '0';
-    $has_diarrhea = $_POST['has_diarrhea'] ?? '0';
+    $has_malaria = isset($_POST['has_malaria']) ? ($_POST['has_malaria'] === '1') : false;
+    $has_dengue = isset($_POST['has_dengue']) ? ($_POST['has_dengue'] === '1') : false;
+    $has_pneumonia = isset($_POST['has_pneumonia']) ? ($_POST['has_pneumonia'] === '1') : false;
+    $has_tuberculosis = isset($_POST['has_tuberculosis']) ? ($_POST['has_tuberculosis'] === '1') : false;
+    $has_diarrhea = isset($_POST['has_diarrhea']) ? ($_POST['has_diarrhea'] === '1') : false;
 
     // Child Welfare Status
-    $caring_institution = $_POST['caring_institution'] ?? '0';
-    $foster_care = $_POST['foster_care'] ?? '0';
-    $directly_entrusted = $_POST['directly_entrusted'] ?? '0';
-    $legally_adopted = $_POST['legally_adopted'] ?? '0';
+    $caring_institution = isset($_POST['caring_institution']) ? ($_POST['caring_institution'] === '1') : false;
+    $foster_care = isset($_POST['foster_care']) ? ($_POST['foster_care'] === '1') : false;
+    $directly_entrusted = isset($_POST['directly_entrusted']) ? ($_POST['directly_entrusted'] === '1') : false;
+    $legally_adopted = isset($_POST['legally_adopted']) ? ($_POST['legally_adopted'] === '1') : false;
     // Disability
-    $visually_impaired = $_POST['visually_impaired'] ?? '0';
-    $hearing_impaired = $_POST['hearing_impaired'] ?? '0';
-    $speech_impaired = $_POST['speech_impaired'] ?? '0';
-    $orthopedic_disability = $_POST['orthopedic_disability'] ?? '0';
-    $intellectual_disability = $_POST['intellectual_disability'] ?? '0';
-    $psychosocial_disability = $_POST['psychosocial_disability'] ?? '0';
+    $visually_impaired = isset($_POST['visually_impaired']) ? ($_POST['visually_impaired'] === '1') : false;
+    $hearing_impaired = isset($_POST['hearing_impaired']) ? ($_POST['hearing_impaired'] === '1') : false;
+    $speech_impaired = isset($_POST['speech_impaired']) ? ($_POST['speech_impaired'] === '1') : false;
+    $orthopedic_disability = isset($_POST['orthopedic_disability']) ? ($_POST['orthopedic_disability'] === '1') : false;
+    $intellectual_disability = isset($_POST['intellectual_disability']) ? ($_POST['intellectual_disability'] === '1') : false;
+    $psychosocial_disability = isset($_POST['psychosocial_disability']) ? ($_POST['psychosocial_disability'] === '1') : false;
 
     // Certification Fields
     $form_accomplisher = trim($_POST['form_accomplisher'] ?? '');
@@ -86,6 +97,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$val) $add_error .= "$label is required.<br>";
     }
 
+    // Validate age (0-17 years)
+    if ($birth_date) {
+        $birth_date_obj = new DateTime($birth_date);
+        $today = new DateTime();
+        $age = $today->diff($birth_date_obj)->y;
+        
+        if ($age < 0 || $age > 17) {
+            $add_error .= "Only children aged 0-17 years old are allowed.<br>";
+        }
+    }
+
     // Check if household exists only if a household ID was provided
     if (!empty($household_id)) {
         $household_exists = false;
@@ -101,42 +123,125 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Insert into persons
             $stmt = $pdo->prepare("INSERT INTO persons 
-                (first_name, middle_name, last_name, suffix, birth_date, gender, civil_status, citizenship)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)");
+                (first_name, middle_name, last_name, suffix, birth_date, birth_place, gender, civil_status, citizenship)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
             $stmt->execute([
                 $first_name,
                 $middle_name,
                 $last_name,
                 $suffix,
                 $birth_date,
+                $place_of_birth,
                 $gender,
                 $civil_status,
                 $citizenship
             ]);
             $person_id = $pdo->lastInsertId();
 
+            // Insert address information
+            $stmt = $pdo->prepare("INSERT INTO addresses 
+                (person_id, barangay_id, house_no, street, phase, municipality, province, region, is_primary)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                $person_id,
+                $_SESSION['barangay_id'],
+                $address_number,
+                $address_street,
+                $address_sitio,
+                'SAN RAFAEL',
+                'BULACAN',
+                'III',
+                true
+            ]);
+
             // Insert into household_members (if household_id is provided)
             if (!empty($household_id)) {
-                $stmt = $pdo->prepare("INSERT INTO household_members 
-                    (household_id, person_id, relationship_to_head, is_household_head)
-                    VALUES (?, ?, ?, ?)");
-                $stmt->execute([
-                    $household_id,
-                    $person_id,
-                    $relationship,
-                    $is_household_head
-                ]);
+                // First, get the relationship_type_id based on the relationship name
+                $stmt = $pdo->prepare("SELECT id FROM relationship_types WHERE name = ?");
+                $stmt->execute([$relationship]);
+                $relationship_type = $stmt->fetch(PDO::FETCH_ASSOC);
+                
+                if ($relationship_type) {
+                    $stmt = $pdo->prepare("INSERT INTO household_members 
+                        (household_id, person_id, relationship_type_id, is_household_head)
+                        VALUES (?, ?, ?, ?)");
+                    $stmt->execute([
+                        $household_id,
+                        $person_id,
+                        $relationship_type['id'],
+                        $is_household_head
+                    ]);
+                }
             }
 
             // Insert into child_information
-            $stmt = $pdo->prepare("INSERT INTO child_information (person_id) VALUES (?)");
-            $stmt->execute([$person_id]);
+            $stmt = $pdo->prepare("INSERT INTO child_information 
+                (person_id, is_malnourished, school_name, grade_level, school_type, 
+                immunization_complete, is_pantawid_beneficiary, has_timbang_operation, has_feeding_program,
+                has_supplementary_feeding, in_caring_institution, is_under_foster_care, is_directly_entrusted,
+                is_legally_adopted, occupation, garantisadong_pambata, under_six_years, grade_school)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+            $stmt->execute([
+                $person_id,
+                $is_malnourished ? 1 : 0,
+                $school_name,
+                $grade_level,
+                $school_type,
+                $is_immunized ? 1 : 0,
+                0, // is_pantawid_beneficiary - not in form
+                $operation_timbang ? 1 : 0,
+                0, // has_feeding_program - not in form
+                $supplementary_feeding ? 1 : 0,
+                $caring_institution ? 1 : 0,
+                $foster_care ? 1 : 0,
+                $directly_entrusted ? 1 : 0,
+                $legally_adopted ? 1 : 0,
+                $occupation,
+                $garantisadong_pambata ? 1 : 0,
+                $under_six_years ? 1 : 0,
+                $grade_school ? 1 : 0
+            ]);
+
+            // Insert health conditions
+            $health_conditions = [
+                'Malaria' => $has_malaria,
+                'Dengue' => $has_dengue,
+                'Pneumonia' => $has_pneumonia,
+                'Tuberculosis' => $has_tuberculosis,
+                'Diarrhea' => $has_diarrhea
+            ];
+
+            $stmt = $pdo->prepare("INSERT INTO child_health_conditions (person_id, condition_type) VALUES (?, ?)");
+            foreach ($health_conditions as $condition => $has_condition) {
+                if ($has_condition === '1') {
+                    $stmt->execute([$person_id, $condition]);
+                }
+            }
+
+            // Insert disabilities
+            $disabilities = [
+                'Blind/Visually Impaired' => $visually_impaired,
+                'Hearing Impairment' => $hearing_impaired,
+                'Speech/Communication' => $speech_impaired,
+                'Orthopedic/Physical' => $orthopedic_disability,
+                'Intellectual/Learning' => $intellectual_disability,
+                'Psychosocial' => $psychosocial_disability
+            ];
+
+            $stmt = $pdo->prepare("INSERT INTO child_disabilities (person_id, disability_type) VALUES (?, ?)");
+            foreach ($disabilities as $disability => $has_disability) {
+                if ($has_disability === '1') {
+                    $stmt->execute([$person_id, $disability]);
+                }
+            }
 
             $pdo->commit();
             $add_success = "Child added successfully!";
         } catch (Exception $e) {
             $pdo->rollBack();
             $add_error = "Error adding child: " . htmlspecialchars($e->getMessage());
+            // Log the error for debugging
+            error_log("Error in add_child.php: " . $e->getMessage());
         }
     }
 }
@@ -194,16 +299,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
-        <!-- Navigation Buttons for Census Pages -->
-        <div class="flex flex-wrap gap-4 mb-6 mt-6">
-            <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
-            <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
-            <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
-            <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+        <!-- Navigation Buttons -->
+        <div class="flex flex-wrap gap-4 mb-6">
+            <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Add Resident
+            </a>
+            <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Add Child
+            </a>
+            <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Census Records
+            </a>
+            <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Manage Households
+            </a>
             <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
         </div>
@@ -217,17 +326,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <form method="POST" class="space-y-8" autocomplete="off">
                 <!-- Household Information Section -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 border border-gray-300 rounded-lg">
-                    <div class="md:col-span-2">
+                    <div class="md:col-span-1">
                         <label class="block text-md font-semibold">REGION</label>
                         <input type="text" name="region" value="III" class="mt-1 block w-full border rounded p-2" readonly>
                     </div>
                     <div class="md:col-span-1">
+                        <label class="block text-md font-semibold">PUROK</label>
+                        <select name="purok_id" id="purok_select" class="mt-1 block w-full border rounded p-2">
+                            <option value="">-- SELECT PUROK --</option>
+                            <?php foreach ($puroks as $purok): ?>
+                                <option value="<?= htmlspecialchars($purok['id']) ?>">
+                                    <?= htmlspecialchars($purok['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    <div class="md:col-span-1">
                         <label class="block text-md font-semibold text-right">HOUSEHOLD NUMBER (HN) (Optional)</label>
-                        <select name="household_id" class="mt-1 block w-full border rounded p-2">
+                        <select name="household_id" id="household_select" class="mt-1 block w-full border rounded p-2">
                             <option value="">-- SELECT HOUSEHOLD --</option>
                             <?php foreach ($households as $household): ?>
-                                <option value="<?= htmlspecialchars($household['household_id']) ?>">
-                                    <?= htmlspecialchars($household['household_id']) ?>
+                                <option value="<?= htmlspecialchars($household['household_id']) ?>" 
+                                        data-purok="<?= htmlspecialchars($household['purok_id']) ?>">
+                                    <?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -248,7 +369,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div>
                             <label class="block text-md font-semibold text-right">Suffix</label>
-                            <input type="text" name="suffix" class="mt-1 block w-full border rounded p-2">
+                            <input type="text" name="suffix" maxlength="5" class="mt-1 block w-full border rounded p-2">
                         </div>
                         <div class="md:col-span-2">
                             <label class="block text-md font-semibold">First Name</label>
@@ -295,7 +416,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         </div>
                         <div>
                             <label class="block text-md font-semibold">Citizenship</label>
-                            <input type="text" name="citizenship" value="FILIPINO" class="mt-1 block w-full border rounded p-2">
+                            <input type="text" name="citizenship" value="FILIPINO" class="mt-1 block w-full border rounded p-2" readonly>
                         </div>
                         <div>
                             <label class="block text-md font-semibold">Place of Birth</label>
@@ -318,19 +439,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <label class="block text-md font-semibold">Civil Status</label>
                             <div class="flex flex-wrap gap-2 mt-2">
                                 <label class="inline-flex items-center">
-                                    <input type="radio" name="civil_status" value="Single" checked class="form-radio">
+                                    <input type="radio" name="civil_status" value="SINGLE" checked class="form-radio">
                                     <span class="ml-2">SINGLE</span>
                                 </label>
                                 <label class="inline-flex items-center">
-                                    <input type="radio" name="civil_status" value="Married" class="form-radio">
+                                    <input type="radio" name="civil_status" value="MARRIED" class="form-radio">
                                     <span class="ml-2">MARRIED</span>
                                 </label>
                                 <label class="inline-flex items-center">
-                                    <input type="radio" name="civil_status" value="Widow/er" class="form-radio">
+                                    <input type="radio" name="civil_status" value="WIDOW/WIDOWER" class="form-radio">
                                     <span class="ml-2">WIDOW/ER</span>
                                 </label>
                                 <label class="inline-flex items-center">
-                                    <input type="radio" name="civil_status" value="Separated" class="form-radio">
+                                    <input type="radio" name="civil_status" value="SEPARATED" class="form-radio">
                                     <span class="ml-2">SEPARATED</span>
                                 </label>
                             </div>
@@ -374,6 +495,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="SNP" class="form-radio">
                                     <span class="ml-2">SNP</span>
+                                </label>
+                                <label class="inline-flex items-center">
+                                    <input type="radio" name="school_type" value="Not Attending" class="form-radio">
+                                    <span class="ml-2">Not Attending</span>
                                 </label>
                             </div>
                         </div>
@@ -772,16 +897,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 schoolTypeOptions.classList.remove('hidden');
                 schoolDetails.classList.remove('hidden');
             }
-        });
-        document.addEventListener('DOMContentLoaded', function() {
-            // Set today's date as default for date input
-            const today = new Date().toISOString().split('T')[0];
-            const dateInputs = document.querySelectorAll('input[type="date"]');
-            dateInputs.forEach(input => {
-                if (!input.value) {
-                    input.value = today;
-                }
-            });
+
+            // Purok and Household Selection Logic
+            const purokSelect = document.getElementById('purok_select');
+            const householdSelect = document.getElementById('household_select');
+            const originalHouseholdOption = householdSelect.querySelector('option[value=""]').cloneNode(true);
+
+            // Store all household options
+            const allHouseholdOptions = Array.from(householdSelect.querySelectorAll('option[data-purok]'));
+
+            function updateHouseholdOptions() {
+                const selectedPurokId = purokSelect.value;
+                
+                // Clear current options except the first one
+                householdSelect.innerHTML = '';
+                householdSelect.appendChild(originalHouseholdOption.cloneNode(true));
+
+                // Add households that match the selected purok
+                allHouseholdOptions.forEach(option => {
+                    if (option.dataset.purok === selectedPurokId) {
+                        householdSelect.appendChild(option.cloneNode(true));
+                    }
+                });
+            }
+
+            // Update household options when purok selection changes
+            purokSelect.addEventListener('change', updateHouseholdOptions);
+
+            // Initial update if a purok is pre-selected
+            if (purokSelect.value) {
+                updateHouseholdOptions();
+            }
 
             // Calculate age based on birth date
             const birthDateInput = document.getElementById('birth_date');
@@ -802,17 +948,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 return age;
             }
 
-            // Calculate initial age if birth date is already set
-            if (birthDateInput.value) {
-                ageInput.value = calculateAge(birthDateInput.value);
+            // Function to validate age (0-17 years)
+            function validateAge(birthDate) {
+                const age = calculateAge(birthDate);
+                if (age < 0 || age > 17) {
+                    return false;
+                }
+                return true;
             }
+
+            // Function to get minimum and maximum allowed birth dates
+            function getDateRange() {
+                const today = new Date();
+                const minDate = new Date(today.getFullYear() - 17, today.getMonth(), today.getDate());
+                const maxDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+                return { minDate, maxDate };
+            }
+
+            // Set date input constraints
+            const { minDate, maxDate } = getDateRange();
+            birthDateInput.min = minDate.toISOString().split('T')[0];
+            birthDateInput.max = maxDate.toISOString().split('T')[0];
 
             // Update age when birth date changes
             birthDateInput.addEventListener('change', function() {
                 if (this.value) {
-                    ageInput.value = calculateAge(this.value);
+                    if (validateAge(this.value)) {
+                        ageInput.value = calculateAge(this.value);
+                    } else {
+                        this.value = '';
+                        ageInput.value = '';
+                        alert('Only children aged 0-17 years old are allowed.');
+                    }
                 } else {
                     ageInput.value = '';
+                }
+            });
+
+            // Add form validation
+            const form = document.querySelector('form');
+            form.addEventListener('submit', function(e) {
+                if (birthDateInput.value && !validateAge(birthDateInput.value)) {
+                    e.preventDefault();
+                    alert('Only children aged 0-17 years old are allowed.');
+                    birthDateInput.focus();
                 }
             });
 

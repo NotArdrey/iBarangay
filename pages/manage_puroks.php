@@ -21,10 +21,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 // Insert new purok
                 $stmt = $pdo->prepare("INSERT INTO purok (barangay_id, name) VALUES (?, ?)");
                 $stmt->execute([$barangay_id, $purok_name]);
-                
+
                 // Get the new purok ID
                 $purok_id = $pdo->lastInsertId();
-                
+
                 // Log to audit trail
                 $stmt = $pdo->prepare("
                     INSERT INTO audit_trails (
@@ -38,7 +38,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                     $purok_id,
                     "Added new purok: {$purok_name}"
                 ]);
-                
+
                 $add_success = "Purok added successfully!";
             }
         } catch (Exception $e) {
@@ -52,7 +52,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
             $stmt = $pdo->prepare("SELECT name FROM purok WHERE id = ? AND barangay_id = ?");
             $stmt->execute([$_POST['purok_id'], $barangay_id]);
             $purok = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             if (!$purok) {
                 $add_error = "Purok not found.";
             } else {
@@ -60,13 +60,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM households WHERE purok_id = ?");
                 $stmt->execute([$_POST['purok_id']]);
                 $result = $stmt->fetch(PDO::FETCH_ASSOC);
-                
+
                 if ($result['count'] > 0) {
                     $add_error = "Cannot delete purok because it has households assigned to it.";
                 } else {
                     $stmt = $pdo->prepare("DELETE FROM purok WHERE id = ? AND barangay_id = ?");
                     $stmt->execute([$_POST['purok_id'], $barangay_id]);
-                    
+
                     // Log to audit trail
                     $stmt = $pdo->prepare("
                         INSERT INTO audit_trails (
@@ -80,7 +80,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         $_POST['purok_id'],
                         "Deleted purok: {$purok['name']}"
                     ]);
-                    
+
                     $add_success = "Purok deleted successfully!";
                 }
             }
@@ -91,13 +91,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
     // Edit purok logic
     else if ($_POST['action'] === 'edit' && isset($_POST['purok_id'])) {
         $purok_name = trim($_POST['purok_name']);
-        
+
         try {
             // Get old purok name for audit trail
             $stmt = $pdo->prepare("SELECT name FROM purok WHERE id = ? AND barangay_id = ?");
             $stmt->execute([$_POST['purok_id'], $barangay_id]);
             $old_purok = $stmt->fetch(PDO::FETCH_ASSOC);
-            
+
             if (!$old_purok) {
                 $add_error = "Purok not found.";
             } else {
@@ -109,7 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                 } else {
                     $stmt = $pdo->prepare("UPDATE purok SET name = ? WHERE id = ? AND barangay_id = ?");
                     $stmt->execute([$purok_name, $_POST['purok_id'], $barangay_id]);
-                    
+
                     // Log to audit trail
                     $stmt = $pdo->prepare("
                         INSERT INTO audit_trails (
@@ -123,7 +123,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
                         $_POST['purok_id'],
                         "Updated purok name from '{$old_purok['name']}' to '{$purok_name}'"
                     ]);
-                    
+
                     $add_success = "Purok updated successfully!";
                 }
             }
@@ -167,15 +167,19 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
         <!-- Navigation Buttons -->
-        <div class="flex flex-wrap gap-4 mb-6 mt-6">
-            <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
-            <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
-            <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
-            <a href="manage_households.php" class="w-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
-               font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+        <div class="flex flex-wrap gap-4 mb-6">
+            <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Add Resident
+            </a>
+            <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Add Child
+            </a>
+            <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Census Records
+            </a>
+            <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Manage Households
+            </a>
             <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
         </div>
@@ -290,7 +294,7 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
         function confirmDelete(event, purokName) {
             event.preventDefault();
             const form = event.target;
-            
+
             Swal.fire({
                 title: 'Are you sure?',
                 text: `Do you want to delete purok "${purokName}"?`,
@@ -309,7 +313,7 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                     form.submit();
                 }
             });
-            
+
             return false;
         }
 
@@ -351,10 +355,12 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
             font-weight: 500 !important;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
         }
+
         .swal2-confirm-button:hover {
             background-color: #2b7ac9 !important;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
         }
+
         .swal2-cancel-button {
             background-color: #d33 !important;
             color: white !important;
@@ -365,6 +371,7 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
             font-weight: 500 !important;
             box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
         }
+
         .swal2-cancel-button:hover {
             background-color: #c22 !important;
             box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
