@@ -558,14 +558,6 @@ $completedRequests = $stmtHist->fetchAll();
                       <button class="deleteDocRequestBtn p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50" data-id="<?= $req['document_request_id'] ?>">
                         <i class="fas fa-trash"></i> Delete
                       </button>
-                      <?php if ($req['user_id'] > 0 && $req['is_active']): ?>
-                        <button
-                          class="banUserBtn text-red-600 hover:text-red-900"
-                          data-id="<?= $req['user_id'] ?>"
-                        >
-                          <i class="fas fa-ban"></i> Ban
-                        </button>
-                      <?php endif; ?>
                     </div>
                   </td>
                 </tr>
@@ -895,41 +887,6 @@ $completedRequests = $stmtHist->fetchAll();
                 Swal.fire('Error', data.message || 'Unable to load details.', 'error');
               }
             });
-        });
-      });
-
-      document.querySelectorAll('.banUserBtn').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const userId = btn.dataset.id;
-          Swal.fire({
-            title: 'Ban this user?',
-            input: 'textarea',
-            inputPlaceholder: 'Reason for ban...',
-            showCancelButton: true,
-            confirmButtonText: 'Ban',
-            preConfirm: reason => {
-              if (!reason) Swal.showValidationMessage('You need to provide a reason');
-              return reason;
-            }
-          }).then(result => {
-            if (result.isConfirmed) {
-              Swal.showLoading();
-              fetch(`doc_request.php?action=ban_user&id=${userId}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                body: `remarks=${encodeURIComponent(result.value)}`
-              })
-              .then(r => r.json())
-              .then(data => {
-                Swal.close();
-                Swal.fire(
-                  data.success ? 'Banned!' : 'Error',
-                  data.message,
-                  data.success ? 'success' : 'error'
-                ).then(() => data.success && location.reload());
-              });
-            }
-          });
         });
       });
     });

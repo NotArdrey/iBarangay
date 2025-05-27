@@ -75,7 +75,7 @@ ALTER TABLE users ADD COLUMN govt_id_image LONGBLOB;
 -- Person information (personal data separate from users)
 CREATE TABLE persons (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NULL,
+    user_id INT UNIQUE, -- NULL for non-system users
     census_id VARCHAR(50) UNIQUE,
     first_name VARCHAR(50) NOT NULL,
     middle_name VARCHAR(50),
@@ -414,12 +414,13 @@ CREATE TABLE document_types (
 );
 
 INSERT INTO document_types (name, document_name, code, description, default_fee) VALUES
-    ('Barangay Clearance', 'Barangay Clearance', 'barangay_clearance', 'A clearance issued by the Barangay.', 50.00),
-    ('First Time Job Seeker', 'First Time Job Seeker', 'first_time_job_seeker', 'Certification for first‐time job seekers.', 0.00),
-    ('Proof of Residency', 'Proof of Residency', 'proof_of_residency', 'Official proof of residency certificate.', 30.00),
-    ('Barangay Indigency', 'Barangay Indigency', 'barangay_indigency', 'A document certifying indigency status.', 20.00),
-    ('Good Moral Certificate', 'Good Moral Certificate', 'good_moral_certificate', 'Certification of good moral character.', 30.00),
-    ('No Income Certification', 'No Income Certification', 'no_income_certification', 'Certification for individuals with no regular income.', 20.00);
+    ('Barangay Clearance', 'Barangay Clearance', 'barangay_clearance', 'Required for employment, business permits, and various transactions.', 50.00),
+    ('Certificate of Indigency', 'Certificate of Indigency', 'barangay_indigency', 'For accessing social welfare programs and financial assistance.', 20.00),
+    ('Certificate of Residency', 'Certificate of Residency', 'proof_of_residency', 'Official proof of residence in the barangay.', 30.00),
+    ('First Time Job Seeker', 'First Time Job Seeker', 'first_time_job_seeker', 'Certification for first-time job seekers.', 0.00),
+    ('Community Tax Certificate (Cedula)', 'Community Tax Certificate', 'cedula', 'Annual tax certificate required for government transactions.', 55.00),
+    ('Business Permit Clearance', 'Business Permit Clearance', 'business_permit_clearance', 'Barangay clearance required for business license applications.', 500.00),
+    ('Community Tax Certificate', 'Community Tax Certificate', 'community_tax_certificate', 'Annual tax certificate for residents and corporations.', 6000.00);
 
 
 
@@ -1091,11 +1092,63 @@ INSERT INTO events (title, description, start_datetime, end_datetime, location, 
     ('Clean-up Drive', 'Community clean-up activity', '2024-02-25 06:00:00', '2024-02-25 10:00:00', 'Various Streets', 'Environment Committee', 3, 3);
 
 
+CREATE TABLE barangay_document_prices (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    document_type_id INT NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_barangay_document (barangay_id, document_type_id),
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
+    FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE
+);
 
-
-
-
+ALTER TABLE document_requests 
+ADD COLUMN price DECIMAL(10,2) DEFAULT 0.00 AFTER document_type_id;
 -- Flush privileges
-FLUSH PRIVILEGES;
 
+ALTER TABLE document_requests 
+-- Personal Information (some may duplicate person table but needed for form completeness)
+ADD COLUMN first_name VARCHAR(50) AFTER barangay_id,
+ADD COLUMN middle_name VARCHAR(50) AFTER first_name,
+ADD COLUMN last_name VARCHAR(50) AFTER middle_name,
+ADD COLUMN qualifier VARCHAR(20) AFTER last_name,
+ADD COLUMN sex ENUM('Male', 'Female', 'Others') AFTER qualifier,
+ADD COLUMN civil_status ENUM('Single', 'Married', 'Widowed', 'Separated', 'Widow/Widower') AFTER sex,
+ADD COLUMN citizenship VARCHAR(100) AFTER civil_status,
+ADD COLUMN date_of_birth DATE AFTER citizenship,
+ADD COLUMN place_of_birth VARCHAR(255) AFTER date_of_birth,
+ADD COLUMN address_no VARCHAR(50) AFTER place_of_birth,
+ADD COLUMN street VARCHAR(100) AFTER address_no,
+
+-- Business Clearance specific fields
+ADD COLUMN business_name VARCHAR(255) AFTER street,
+ADD COLUMN business_location VARCHAR(255) AFTER business_name,
+ADD COLUMN business_nature VARCHAR(255) AFTER business_location,
+ADD COLUMN plate_number VARCHAR(50) AFTER business_nature,
+
+-- Indigency Certification specific fields
+ADD COLUMN relations VARCHAR(100) AFTER plate_number,
+ADD COLUMN beneficiary_name VARCHAR(100) AFTER relations,
+ADD COLUMN beneficiary_address_no VARCHAR(50) AFTER beneficiary_name,
+ADD COLUMN beneficiary_street VARCHAR(100) AFTER beneficiary_address_no,
+
+-- Residence Certification specific fields
+ADD COLUMN years_of_residence INT AFTER beneficiary_street,
+ADD COLUMN purpose TEXT AFTER years_of_residence,
+
+-- Building/Fencing Clearance specific fields
+ADD COLUMN construction_location VARCHAR(255) AFTER purpose,
+ADD COLUMN title_number VARCHAR(100) AFTER construction_location,
+
+-- Common document fields
+ADD COLUMN ctc_number VARCHAR(100) AFTER title_number,
+ADD COLUMN date_issued DATE AFTER ctc_number,
+ADD COLUMN place_issued VARCHAR(255) AFTER date_issued,
+ADD COLUMN or_number VARCHAR(100) AFTER place_issued,
+ADD COLUMN cp_number VARCHAR(100) AFTER or_number,
+ADD COLUMN amount DECIMAL(10,2) AFTER cp_number;
+FLUSH PRIVILEGES;
+SELECT * FROM document_requests;
 

@@ -5,16 +5,23 @@ use PHPMailer\PHPMailer\Exception;
 require "../config/dbconn.php";  // This file should define a valid $pdo instance.
 require_once __DIR__ . '/../vendor/autoload.php';
 
-// Load environment variables.
-$dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
-$dotenv->load();
-
 /**
  * Audit Trail logging function.
  */
 function logAuditTrail($pdo, $user_id, $action, $table_name = null, $record_id = null, $description = '') {
-    $stmt = $pdo->prepare("INSERT INTO AuditTrail (admin_user_id, action, table_name, record_id, description) VALUES (?, ?, ?, ?, ?)");
-    $stmt->execute([$user_id, $action, $table_name, $record_id, $description]);
+    try {
+        $stmt = $pdo->prepare("INSERT INTO audit_trails (user_id, action, table_name, record_id, description) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([
+            $user_id ?? 1, // Use 1 (system user) if no user_id is provided
+            $action,
+            $table_name,
+            $record_id,
+            $description
+        ]);
+    } catch (PDOException $e) {
+        error_log("Error logging audit trail: " . $e->getMessage());
+        // Don't throw the error - just log it and continue
+    }
 }
 
 /**
@@ -31,7 +38,7 @@ function sendPasswordReset($email, $pdo) {
     }
     
     // Look up the user in the database.
-    $stmt = $pdo->prepare("SELECT * FROM Users WHERE email = ?");
+    $stmt = $pdo->prepare("SELECT * FROM users WHERE email = ?");
     $stmt->execute([$email]);
     $user = $stmt->fetch(PDO::FETCH_ASSOC);
     
@@ -43,7 +50,7 @@ function sendPasswordReset($email, $pdo) {
     $token = bin2hex(random_bytes(16));
     
     // Update the user's record with the reset token and expiry time (1 hour from now)
-    $stmt = $pdo->prepare("UPDATE Users SET verification_token = ?, verification_expiry = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE email = ?");
+    $stmt = $pdo->prepare("UPDATE users SET verification_token = ?, verification_expiry = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE email = ?");
     $stmt->execute([$token, $email]);
     
     // Create the password reset link.
@@ -75,11 +82,12 @@ function sendPasswordReset($email, $pdo) {
         $mail->send();
         
         // Log the password reset request.
-        logAuditTrail($pdo, $user['user_id'], "PASSWORD RESET REQUEST", "Users", $user['user_id'], "Password reset email sent to $email.");
+        logAuditTrail($pdo, $user['id'], "PASSWORD RESET REQUEST", "users", $user['id'], "Password reset email sent to $email");
         
         return "A password reset link has been sent to your email.";
     } catch (Exception $e) {
-        return "Failed to send the password reset email. Please try again later. Mailer Error: {$mail->ErrorInfo}";
+        error_log("Failed to send password reset email: " . $mail->ErrorInfo);
+        return "Failed to send the password reset email. Please try again later.";
     }
 }
 
@@ -102,7 +110,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 title: 'Password Reset',
                 text: <?php echo json_encode($message); ?>
             }).then(() => {
-                window.location.href = '../pages/index.php';
+                window.location.href = '../pages/login.php';
             });
         </script>
     </body>

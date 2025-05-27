@@ -302,6 +302,30 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
         padding: 0.5rem;
       }
     }
+
+    /* Password Change Modal Specific Styles */
+    .password-step {
+      padding: 1rem;
+    }
+    
+    .password-step h3 {
+      margin-bottom: 1rem;
+      color: #0a2240;
+      font-size: 1.1rem;
+    }
+    
+    .password-step .form-group {
+      margin-bottom: 1rem;
+    }
+    
+    .password-step button {
+      margin-right: 0.5rem;
+    }
+    
+    .password-step p {
+      margin-bottom: 1rem;
+      color: #666;
+    }
   </style>
 </head>
 <body>
@@ -562,21 +586,13 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
         </div>
       </div>
 
-      <!-- Editable Section: Change Password -->
+      <!-- Change Password Button -->
       <div class="form-section">
         <h3>Change Password</h3>
-        <p>If you want to change your password, fill in the fields below.</p>
         <div class="form-group">
-          <label for="old_password">Old Password</label>
-          <input type="password" id="old_password" name="old_password">
-        </div>
-        <div class="form-group">
-          <label for="new_password">New Password</label>
-          <input type="password" id="new_password" name="new_password">
-        </div>
-        <div class="form-group">
-          <label for="confirm_password">Confirm New Password</label>
-          <input type="password" id="confirm_password" name="confirm_password">
+          <button type="button" class="btn cta-button" onclick="openPasswordChangeModal()">
+            <i class="fas fa-key"></i> Change Password
+          </button>
         </div>
       </div>
 
@@ -587,6 +603,53 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       </div>
     </form>
   </main>
+
+  <!-- Password Change Modal -->
+  <div id="passwordChangeModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Change Password</h2>
+        <button type="button" class="close" onclick="closePasswordChangeModal()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Step 1: Enter Old Password -->
+        <div id="step1" class="password-step">
+          <h3>Step 1: Verify Current Password</h3>
+          <div class="form-group">
+            <label for="modal_old_password">Current Password</label>
+            <input type="password" id="modal_old_password" name="modal_old_password">
+          </div>
+          <button type="button" class="btn cta-button" onclick="verifyOldPassword()">Continue</button>
+        </div>
+
+        <!-- Step 2: Email Verification -->
+        <div id="step2" class="password-step" style="display: none;">
+          <h3>Step 2: Email Verification</h3>
+          <p>A verification code has been sent to your email address.</p>
+          <div class="form-group">
+            <label for="verification_code">Enter Verification Code</label>
+            <input type="text" id="verification_code" name="verification_code">
+          </div>
+          <button type="button" class="btn cta-button" onclick="verifyCode()">Verify Code</button>
+          <button type="button" class="btn secondary-btn" onclick="resendCode()">Resend Code</button>
+        </div>
+
+        <!-- Step 3: New Password -->
+        <div id="step3" class="password-step" style="display: none;">
+          <h3>Step 3: Set New Password</h3>
+          <div class="form-group">
+            <label for="modal_new_password">New Password</label>
+            <input type="password" id="modal_new_password" name="modal_new_password">
+          </div>
+          <div class="form-group">
+            <label for="modal_confirm_password">Confirm New Password</label>
+            <input type="password" id="modal_confirm_password" name="modal_confirm_password">
+          </div>
+          <button type="button" class="btn cta-button" onclick="updatePassword()">Update Password</button>
+        </div>
+      </div>
+    </div>
+  </div>
 
   <!-- Footer -->
   <footer class="footer">
@@ -637,7 +700,22 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
 
     // Logout Confirmation
     function confirmLogout() {
-      return confirm('Are you sure you want to logout?');
+      Swal.fire({
+        title: 'Are you sure?',
+        text: "You will be logged out of your account.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, logout!'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          // If confirmed, redirect to logout script
+          window.location.href = '../functions/logout.php';
+        }
+      });
+      // Prevent default link behavior, as SweetAlert handles the navigation
+      return false;
     }
 
     // Mobile menu toggle
@@ -646,6 +724,172 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
     mobileMenuBtn.addEventListener('click', () => {
       navLinks.classList.toggle('active');
     });
-    </script>
+
+    // Password Change Modal Functions
+    function openPasswordChangeModal() {
+      const modal = document.getElementById('passwordChangeModal');
+      modal.style.display = 'block';
+      modal.offsetHeight; // Trigger reflow
+      modal.classList.add('show');
+      
+      // Reset steps
+      document.querySelectorAll('.password-step').forEach(step => step.style.display = 'none');
+      document.getElementById('step1').style.display = 'block';
+    }
+
+    function closePasswordChangeModal() {
+      const modal = document.getElementById('passwordChangeModal');
+      modal.classList.remove('show');
+      setTimeout(() => {
+        modal.style.display = 'none';
+      }, 200);
+    }
+
+    function verifyOldPassword() {
+      const oldPassword = document.getElementById('modal_old_password').value;
+      
+      fetch('../functions/verify_password.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `old_password=${encodeURIComponent(oldPassword)}`
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Show step 2 and hide step 1
+          document.getElementById('step1').style.display = 'none';
+          document.getElementById('step2').style.display = 'block';
+        } else {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Current password is incorrect'
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'An error occurred. Please try again.'
+        });
+      });
+    }
+
+    function verifyCode() {
+      const code = document.getElementById('verification_code').value;
+      
+      fetch('../functions/verify_code.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `verification_code=${encodeURIComponent(code)}`
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          // Show step 3 and hide step 2
+          document.getElementById('step2').style.display = 'none';
+          document.getElementById('step3').style.display = 'block';
+        } else {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Invalid verification code'
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'An error occurred. Please try again.'
+        });
+      });
+    }
+
+    function resendCode() {
+      fetch('../functions/resend_code.php', {
+        method: 'POST'
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: 'Verification code has been resent to your email'
+          });
+        } else {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to resend verification code'
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'An error occurred. Please try again.'
+        });
+      });
+    }
+
+    function updatePassword() {
+      const newPassword = document.getElementById('modal_new_password').value;
+      const confirmPassword = document.getElementById('modal_confirm_password').value;
+      
+      if (newPassword !== confirmPassword) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'Passwords do not match'
+        });
+        return;
+      }
+      
+      fetch('../functions/update_password.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `new_password=${encodeURIComponent(newPassword)}`
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: 'Password has been updated successfully'
+          }).then(() => {
+            closePasswordChangeModal();
+          });
+        } else {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: 'Failed to update password'
+          });
+        }
+      })
+      .catch(error => {
+        console.error('Error:', error);
+        Swal.fire({
+          icon: 'error',
+          title: 'Error',
+          text: 'An error occurred. Please try again.'
+        });
+      });
+    }
+  </script>
 </body>
 </html>
