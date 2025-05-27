@@ -161,6 +161,60 @@ function saveResident($pdo, $data, $barangay_id) {
                     ':household_id' => $data['household_id']
                 ]);
             }
+        } else if (!empty($data['purok_id'])) {
+            // Create new household if purok is specified but no household_id
+            $stmt = $pdo->prepare("
+                SELECT MAX(CAST(id AS UNSIGNED)) as max_id 
+                FROM households 
+                WHERE barangay_id = ? AND purok_id = ?
+            ");
+            $stmt->execute([$barangay_id, $data['purok_id']]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Generate new household ID
+            $next_number = ($result['max_id'] ?? 0) + 1;
+            $new_household_id = sprintf('%04d', $next_number);
+            
+            // Create new household
+            $stmt = $pdo->prepare("
+                INSERT INTO households (id, barangay_id, purok_id, household_head_person_id) 
+                VALUES (?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $new_household_id,
+                $barangay_id,
+                $data['purok_id'],
+                isset($data['is_household_head']) && $data['is_household_head'] ? $person_id : null
+            ]);
+            
+            // Add person to the new household
+            $stmt_household = $pdo->prepare("
+                INSERT INTO household_members (
+                    person_id, household_id, relationship_type_id, is_household_head
+                ) VALUES (
+                    :person_id, :household_id, :relationship_type_id, :is_household_head
+                )
+            ");
+            
+            // Get relationship type ID if string was provided
+            $relationship_type_id = null;
+            if (!empty($data['relationship'])) {
+                if (is_numeric($data['relationship'])) {
+                    $relationship_type_id = $data['relationship'];
+                } else {
+                    // Try to get relationship type ID from name
+                    $stmt_rel = $pdo->prepare("SELECT id FROM relationship_types WHERE LOWER(name) = LOWER(?)");
+                    $stmt_rel->execute([trim($data['relationship'])]);
+                    $relationship_type_id = $stmt_rel->fetchColumn() ?: null;
+                }
+            }
+            
+            $stmt_household->execute([
+                ':person_id' => $person_id,
+                ':household_id' => $new_household_id,
+                ':relationship_type_id' => $relationship_type_id,
+                ':is_household_head' => isset($data['is_household_head']) && $data['is_household_head'] ? 1 : 0
+            ]);
         }
         
         // Permanent address (if different from present)
@@ -943,6 +997,60 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
                     ':household_id' => $data['household_id']
                 ]);
             }
+        } else if (!empty($data['purok_id'])) {
+            // Create new household if purok is specified but no household_id
+            $stmt = $pdo->prepare("
+                SELECT MAX(CAST(id AS UNSIGNED)) as max_id 
+                FROM households 
+                WHERE barangay_id = ? AND purok_id = ?
+            ");
+            $stmt->execute([$barangay_id, $data['purok_id']]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Generate new household ID
+            $next_number = ($result['max_id'] ?? 0) + 1;
+            $new_household_id = sprintf('%04d', $next_number);
+            
+            // Create new household
+            $stmt = $pdo->prepare("
+                INSERT INTO households (id, barangay_id, purok_id, household_head_person_id) 
+                VALUES (?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $new_household_id,
+                $barangay_id,
+                $data['purok_id'],
+                isset($data['is_household_head']) && $data['is_household_head'] ? $person_id : null
+            ]);
+            
+            // Add person to the new household
+            $stmt_household = $pdo->prepare("
+                INSERT INTO household_members (
+                    person_id, household_id, relationship_type_id, is_household_head
+                ) VALUES (
+                    :person_id, :household_id, :relationship_type_id, :is_household_head
+                )
+            ");
+            
+            // Get relationship type ID if string was provided
+            $relationship_type_id = null;
+            if (!empty($data['relationship'])) {
+                if (is_numeric($data['relationship'])) {
+                    $relationship_type_id = $data['relationship'];
+                } else {
+                    // Try to get relationship type ID from name
+                    $stmt_rel = $pdo->prepare("SELECT id FROM relationship_types WHERE LOWER(name) = LOWER(?)");
+                    $stmt_rel->execute([trim($data['relationship'])]);
+                    $relationship_type_id = $stmt_rel->fetchColumn() ?: null;
+                }
+            }
+            
+            $stmt_household->execute([
+                ':person_id' => $person_id,
+                ':household_id' => $new_household_id,
+                ':relationship_type_id' => $relationship_type_id,
+                ':is_household_head' => isset($data['is_household_head']) && $data['is_household_head'] ? 1 : 0
+            ]);
         }
         
         // Update government IDs

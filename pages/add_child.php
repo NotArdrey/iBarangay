@@ -85,7 +85,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     foreach ($required as $label => $val) {
         if (!$val) $add_error .= "$label is required.<br>";
     }
-    
+
     // Check if household exists only if a household ID was provided
     if (!empty($household_id)) {
         $household_exists = false;
@@ -204,6 +204,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
             <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+            <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
         </div>
         <?php if ($add_error): ?>
             <div class="bg-red-100 text-red-700 px-4 py-2 rounded mb-4"><?= $add_error ?></div>
@@ -282,7 +284,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <input type="text" name="address_province" value="BULACAN" class="mt-1 block w-full border rounded p-2" readonly>
                                 </div>
                             </div>
-                        </div>                        <div>
+                        </div>
+                        <div>
                             <label class="block text-md font-semibold">Date of Birth (mm-dd-yyyy)</label>
                             <input type="date" name="birth_date" id="birth_date" required class="mt-1 block w-full border rounded p-2">
                         </div>
@@ -373,7 +376,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                     <span class="ml-2">SNP</span>
                                 </label>
                             </div>
-                        </div>                    </div>                    
+                        </div>
+                    </div>
                     <div id="school-details" class="md:col-span-3 hidden">
                         <div class="grid grid-cols-3 gap-4">
                             <div class="col-span-2">
@@ -733,7 +737,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </section>
     </div>
     <script>
-        document.addEventListener('DOMContentLoaded', function() {            const attendingYes = document.getElementById('attending-yes');
+        document.addEventListener('DOMContentLoaded', function() {
+            const attendingYes = document.getElementById('attending-yes');
             const attendingNo = document.getElementById('attending-no');
             const schoolTypeOptions = document.getElementById('school-type-options');
             const schoolDetails = document.getElementById('school-details');
@@ -744,29 +749,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     schoolTypeOptions.classList.remove('hidden');
                     schoolDetails.classList.remove('hidden');
                 }
-            });            attendingNo.addEventListener('change', function() {
+            });
+            attendingNo.addEventListener('change', function() {
                 if (this.checked) {
                     schoolTypeOptions.classList.add('hidden');
                     schoolDetails.classList.add('hidden');
-                    
+
                     // Clear any selected school type when OSY is selected
                     const schoolTypeRadios = document.getElementsByName('school_type');
                     schoolTypeRadios.forEach(radio => {
                         radio.checked = false;
                     });
-                    
+
                     // Clear school name and grade level inputs
                     document.querySelector('input[name="school_name"]').value = '';
                     document.querySelector('input[name="grade_level"]').value = '';
                 }
             });
-            
+
             // Check initial state when page loads
             if (attendingYes.checked) {
                 schoolTypeOptions.classList.remove('hidden');
                 schoolDetails.classList.remove('hidden');
             }
-        });        document.addEventListener('DOMContentLoaded', function() {
+        });
+        document.addEventListener('DOMContentLoaded', function() {
             // Set today's date as default for date input
             const today = new Date().toISOString().split('T')[0];
             const dateInputs = document.querySelectorAll('input[type="date"]');
@@ -775,31 +782,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     input.value = today;
                 }
             });
-            
+
             // Calculate age based on birth date
             const birthDateInput = document.getElementById('birth_date');
             const ageInput = document.getElementById('age');
-            
+
             // Function to calculate age
             function calculateAge(birthDate) {
                 const today = new Date();
                 const birthDateObj = new Date(birthDate);
                 let age = today.getFullYear() - birthDateObj.getFullYear();
                 const monthDiff = today.getMonth() - birthDateObj.getMonth();
-                
+
                 // Adjust age if birthday hasn't occurred yet this year
                 if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDateObj.getDate())) {
                     age--;
                 }
-                
+
                 return age;
             }
-            
+
             // Calculate initial age if birth date is already set
             if (birthDateInput.value) {
                 ageInput.value = calculateAge(birthDateInput.value);
             }
-            
+
             // Update age when birth date changes
             birthDateInput.addEventListener('change', function() {
                 if (this.value) {

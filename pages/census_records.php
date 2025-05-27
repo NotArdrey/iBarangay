@@ -28,6 +28,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -35,48 +36,51 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
 </head>
+
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
 
-        <!-- Navigation Buttons for Census Pages -->
-        <div class="flex flex-wrap gap-4 mb-6 mt-6">
-            <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+    <!-- Navigation Buttons for Census Pages -->
+    <div class="flex flex-wrap gap-4 mb-6 mt-6">
+      <a href="manage_census.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Add Resident</a>
-            <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
+      <a href="add_child.php" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
-            <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
+      <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
-            <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
+      <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
-        </div>
-        
+      <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+    </div>
+
     <section id="censusRecords" class="bg-white rounded-lg shadow-sm p-6">
       <h2 class="text-3xl font-bold text-blue-800">Census Records</h2>
       <div class="mb-4 flex justify-between items-center">
         <div class="flex gap-2">
-          <button id="btn-all" 
-                  class="filter-btn px-4 py-2 bg-blue-600 text-white rounded transition-colors duration-200" 
-                  data-filter="all">
+          <button id="btn-all"
+            class="filter-btn px-4 py-2 bg-blue-600 text-white rounded transition-colors duration-200"
+            data-filter="all">
             All
           </button>
-          <button id="btn-regular" 
-                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
-                  data-filter="regular">
+          <button id="btn-regular"
+            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
+            data-filter="regular">
             Regular
           </button>
-          <button id="btn-pwd" 
-                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
-                  data-filter="pwd">
+          <button id="btn-pwd"
+            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
+            data-filter="pwd">
             PWD
           </button>
-          <button id="btn-seniors" 
-                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
-                  data-filter="seniors">
+          <button id="btn-seniors"
+            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
+            data-filter="seniors">
             Seniors
           </button>
-          <button id="btn-children" 
-                  class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200" 
-                  data-filter="children">
+          <button id="btn-children"
+            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
+            data-filter="children">
             Children
           </button>
         </div>
@@ -101,35 +105,35 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
             </tr>
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
-            <?php foreach($residents as $resident): 
-                  $age = $resident['age'] ?? calculateAge($resident['birth_date']);
-                  $category = ($age >= 60) ? 'Senior' : (($age < 18) ? 'Child' : 'Adult');
+            <?php foreach ($residents as $resident):
+              $age = $resident['age'] ?? calculateAge($resident['birth_date']);
+              $category = ($age >= 60) ? 'Senior' : (($age < 18) ? 'Child' : 'Adult');
             ?>
-            <tr data-category="<?= $category ?>">
-              <td class="px-6 py-4 whitespace-nowrap">
-                <?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " . 
-                    ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') . 
+              <tr data-category="<?= $category ?>">
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
+                    ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
                     ($resident['suffix'] ? " {$resident['suffix']}" : '')) ?>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap"><?= $age ?></td>
-              <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['gender']) ?></td>
-              <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['civil_status']) ?></td>
-              <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['household_id']) ?></td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <?= htmlspecialchars($resident['relationship_name']) ?> 
-                <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['address'] ?? 'No address provided') ?></td>
-              <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['years_of_residency']) ?> years</td>
-              <td class="px-6 py-4 whitespace-nowrap">
-                <span class="<?= $category === 'Senior' ? 'bg-purple-100 text-purple-800' : ($category === 'Child' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800') ?> px-2 py-1 rounded text-xs">
-                  <?= $category ?>
-                </span>
-              </td>
-              <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
-              </td>
-            </tr>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap"><?= $age ?></td>
+                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['gender']) ?></td>
+                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['civil_status']) ?></td>
+                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['household_id']) ?></td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <?= htmlspecialchars($resident['relationship_name']) ?>
+                  <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['address'] ?? 'No address provided') ?></td>
+                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['years_of_residency']) ?> years</td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="<?= $category === 'Senior' ? 'bg-purple-100 text-purple-800' : ($category === 'Child' ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800') ?> px-2 py-1 rounded text-xs">
+                    <?= $category ?>
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                  <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+                </td>
+              </tr>
             <?php endforeach; ?>
           </tbody>
         </table>
@@ -141,17 +145,17 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
       const filterButtons = document.querySelectorAll('.filter-btn');
       const residentRows = document.querySelectorAll('.resident-row');
       const searchInput = document.getElementById('search-resident');
-      
+
       // Active and inactive button styles
       const activeClasses = ['bg-blue-600', 'text-white'];
       const inactiveClasses = ['bg-gray-200', 'text-gray-700', 'hover:bg-gray-300'];
-      
+
       // Function to update button styles
       function updateButtonStyles(activeButton) {
         filterButtons.forEach(btn => {
           // Remove all style classes
           btn.classList.remove(...activeClasses, ...inactiveClasses);
-          
+
           if (btn === activeButton) {
             // Apply active styles
             btn.classList.add(...activeClasses);
@@ -161,14 +165,14 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
           }
         });
       }
-      
+
       // Function to filter residents
       function filterResidents(filterType) {
         residentRows.forEach(row => {
           const category = row.getAttribute('data-category');
           let shouldShow = false;
-          
-          switch(filterType) {
+
+          switch (filterType) {
             case 'all':
               shouldShow = true;
               break;
@@ -187,7 +191,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
               shouldShow = category === 'Child';
               break;
           }
-          
+
           if (shouldShow) {
             row.style.display = '';
           } else {
@@ -195,15 +199,15 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
           }
         });
       }
-      
+
       // Function to search residents by name
       function searchResidents(searchTerm) {
         const lowercaseSearch = searchTerm.toLowerCase();
-        
+
         residentRows.forEach(row => {
           const name = row.getAttribute('data-name').toLowerCase();
           const isVisible = row.style.display !== 'none';
-          
+
           if (name.includes(lowercaseSearch)) {
             // Only show if it passes the current filter
             if (isVisible || searchTerm === '') {
@@ -214,18 +218,18 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
           }
         });
       }
-      
+
       // Add click event listeners to filter buttons
       filterButtons.forEach(button => {
         button.addEventListener('click', function() {
           const filterType = this.getAttribute('data-filter');
-          
+
           // Update button styles
           updateButtonStyles(this);
-          
+
           // Filter residents
           filterResidents(filterType);
-          
+
           // Re-apply search if there's a search term
           const searchTerm = searchInput.value.trim();
           if (searchTerm) {
@@ -233,11 +237,11 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
           }
         });
       });
-      
+
       // Add search functionality
       searchInput.addEventListener('input', function() {
         const searchTerm = this.value.trim();
-        
+
         if (searchTerm === '') {
           // If search is empty, just apply the current filter
           const activeButton = document.querySelector('.filter-btn.bg-blue-600');
@@ -251,7 +255,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
           searchResidents(searchTerm);
         }
       });
-      
+
       // Initialize with "All" filter active
       const allButton = document.getElementById('btn-all');
       updateButtonStyles(allButton);
@@ -259,4 +263,5 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
     });
   </script>
 </body>
+
 </html>

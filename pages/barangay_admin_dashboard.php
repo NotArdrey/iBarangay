@@ -12,6 +12,7 @@ $stmt->execute([':bid' => $barangay_id]);
 $totalResidents = (int) $stmt->fetchColumn();
 
 
+
 $sql = "SELECT COUNT(DISTINCT p.user_id) FROM addresses a 
         JOIN persons p ON a.person_id = p.id 
         JOIN users u ON p.user_id = u.id 

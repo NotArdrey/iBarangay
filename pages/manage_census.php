@@ -14,13 +14,19 @@ $barangay_id = $_SESSION['barangay_id'];
 
 // Fetch households for selection
 $stmt = $pdo->prepare("
-    SELECT id AS household_id, household_head_person_id 
-    FROM households 
-    WHERE barangay_id = ? 
-    ORDER BY id
+    SELECT h.id AS household_id, h.purok_id, p.name as purok_name
+    FROM households h
+    LEFT JOIN purok p ON h.purok_id = p.id
+    WHERE h.barangay_id = ? 
+    ORDER BY h.id
 ");
 $stmt->execute([$barangay_id]);
 $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch puroks for selection
+$stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
+$stmt->execute([$barangay_id]);
+$puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch existing census data with detailed information
 $stmt = $pdo->prepare("
@@ -54,6 +60,26 @@ require_once "../pages/header.php";
 $add_error = '';
 $add_success = '';
 $form_data = []; // Store form data for repopulation on error
+
+// Pre-fill form for editing
+if (isset($_GET['edit']) && is_numeric($_GET['edit'])) {
+    $edit_id = (int)$_GET['edit'];
+    // Fetch main person and household info
+    $stmt = $pdo->prepare("
+        SELECT p.*, hm.household_id, hm.relationship_type_id, hm.is_household_head, rt.name as relationship_name, h.purok_id
+        FROM persons p
+        LEFT JOIN household_members hm ON p.id = hm.person_id
+        LEFT JOIN households h ON hm.household_id = h.id
+        LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
+        WHERE p.id = ?
+    ");
+    $stmt->execute([$edit_id]);
+    $person = $stmt->fetch(PDO::FETCH_ASSOC);
+    if ($person) {
+        $form_data = $person;
+        // Optionally fetch and merge more data (e.g., addresses, IDs, etc.)
+    }
+}
 
 // Check for session messages (from redirects like delete operations)
 if (isset($_SESSION['error'])) {
@@ -259,8 +285,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'health_sleep' => isset($_POST['health_sleep']) ? 1 : 0,
             'health_others' => isset($_POST['health_others']) ? 1 : 0,
             'health_others_specify' => trim($_POST['health_others_specify'] ?? ''),
+            'purok_id' => $_POST['purok_id'] ?? '',
         ];
-        
+
         // Add family member data as arrays
         if (isset($_POST['family_member_name']) && is_array($_POST['family_member_name'])) {
             $data['family_member_name'] = $_POST['family_member_name'];
@@ -388,20 +415,20 @@ function isCheckboxChecked($form_data, $key)
         function calculateAge() {
             const birthDateInput = document.getElementById('birth_date');
             const ageInput = document.getElementById('age');
-            
+
             if (!birthDateInput || !ageInput) return;
-            
+
             const birthDate = birthDateInput.value;
             if (birthDate) {
                 const today = new Date();
                 const birth = new Date(birthDate);
                 let age = today.getFullYear() - birth.getFullYear();
                 const monthDiff = today.getMonth() - birth.getMonth();
-                
+
                 if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birth.getDate())) {
                     age--;
                 }
-                
+
                 ageInput.value = age;
             } else {
                 ageInput.value = '';
@@ -457,29 +484,19 @@ function isCheckboxChecked($form_data, $key)
             <!-- Navigation Buttons -->
             <div class="flex flex-wrap gap-4 mb-6">
                 <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6" />
-                    </svg>
                     Add Resident
                 </a>
                 <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4.354a4 4 0 110 5.292M15 21H3v-1a6 6 0 0112 0v1zm0 0h6v-1a6 6 0 00-9-5.197M13 7a4 4 0 11-8 0 4 4 0 018 0z" />
-                    </svg>
                     Add Child
                 </a>
                 <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
                     Census Records
                 </a>
                 <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
-                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
-                    </svg>
                     Manage Households
                 </a>
+                <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
             </div>
         </div>
 
@@ -521,7 +538,7 @@ function isCheckboxChecked($form_data, $key)
                     <div>
                         <label class="block text-sm font-medium">Suffix</label>
                         <input type="text" name="suffix" placeholder="Jr, Sr, III, etc." value="<?= getFormValue('suffix', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" maxlength="5">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" maxlength="5">
                     </div>
 
                     <!-- Citizenship -->
@@ -536,7 +553,7 @@ function isCheckboxChecked($form_data, $key)
                         <label class="block text-sm font-medium">Contact Number</label>
                         <input type="text" name="contact_number" value="<?= getFormValue('contact_number', $form_data) ?>"
                             placeholder="e.g. 09123456789"
-                            class="mt-1 block w-full border rounded p-2" 
+                            class="mt-1 block w-full border rounded p-2"
                             pattern="[0-9]{11}"
                             title="Please enter a valid 11-digit phone number"
                             oninput="this.value = this.value.replace(/[^0-9]/g, '')">
@@ -608,8 +625,8 @@ function isCheckboxChecked($form_data, $key)
                             <option value="OTHERS" <?= isSelected('OTHERS', $form_data, 'religion') ?>>OTHERS</option>
                         </select>
                         <div id="other_religion_container" style="display: none;" class="mt-2">
-                            <input type="text" name="other_religion" placeholder="Specify Religion" 
-                                value="<?= getFormValue('other_religion', $form_data) ?>" 
+                            <input type="text" name="other_religion" placeholder="Specify Religion"
+                                value="<?= getFormValue('other_religion', $form_data) ?>"
                                 class="w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                         </div>
                     </div>
@@ -664,14 +681,14 @@ function isCheckboxChecked($form_data, $key)
 
                     <div>
                         <label class="block text-sm font-medium">Years of Residency *</label>
-                        <input type="number" name="years_of_residency" id="years_of_residency" required min="0" max="150" 
+                        <input type="number" name="years_of_residency" id="years_of_residency" required min="0" max="150"
                             value="<?= getFormValue('years_of_residency', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2" 
+                            class="mt-1 block w-full border rounded p-2"
                             placeholder="Enter number of years">
                         <small class="text-gray-500" id="residency_age_validation"></small>
                     </div>
 
-                    
+
                 </div>
 
                 <!-- Address Information - Full Width Section -->
@@ -696,7 +713,7 @@ function isCheckboxChecked($form_data, $key)
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
-                            
+
 
                             <div>
                                 <label class="block text-sm font-medium">Barangay</label>
@@ -716,7 +733,7 @@ function isCheckboxChecked($form_data, $key)
                                 <input type="text" name="present_province" value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
                                 <input type="text" name="present_region" value="<?= getFormValue('present_region', $form_data) ?: 'III' ?>"
@@ -750,7 +767,7 @@ function isCheckboxChecked($form_data, $key)
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
-                            
+
 
                             <div>
                                 <label class="block text-sm font-medium">Barangay</label>
@@ -770,7 +787,7 @@ function isCheckboxChecked($form_data, $key)
                                 <input type="text" name="permanent_province" value="<?= getFormValue('permanent_province', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
                                 <input type="text" name="permanent_region" value="<?= getFormValue('permanent_region', $form_data) ?>"
@@ -785,13 +802,28 @@ function isCheckboxChecked($form_data, $key)
                     <h3 class="font-semibold text-lg">Household Information</h3>
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
-                            <label class="block text-sm font-medium">Household ID (Optional)</label>
-                            <select name="household_id" class="mt-1 block w-full border rounded p-2">
+                            <label class="block text-sm font-medium">Purok</label>
+                            <select name="purok_id" class="mt-1 block w-full border rounded p-2">
+                                <option value="">-- SELECT PUROK --</option>
+                                <?php foreach ($puroks as $purok): ?>
+                                    <option value="<?= htmlspecialchars($purok['id']) ?>"
+                                        <?= isSelected($purok['id'], $form_data, 'purok_id') ?>>
+                                        <?= htmlspecialchars($purok['name']) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="block text-sm font-medium">Household Number (Optional)</label>
+                            <select name="household_id" id="household_id_select" class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT HOUSEHOLD --</option>
                                 <?php foreach ($households as $household): ?>
                                     <option value="<?= htmlspecialchars($household['household_id']) ?>"
+                                        data-purok="<?= htmlspecialchars($household['purok_id']) ?>"
                                         <?= isSelected($household['household_id'], $form_data, 'household_id') ?>>
-                                        <?= htmlspecialchars($household['household_id']) ?>
+                                        <?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>
+                                        <?= $household['purok_name'] ? ' - ' . htmlspecialchars($household['purok_name']) : '' ?>
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -821,7 +853,7 @@ function isCheckboxChecked($form_data, $key)
                             </label>
                         </div>
                     </div>
-                    
+
                     <!-- Government Program Participation -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">Government Program Participation</h3>
@@ -846,51 +878,51 @@ function isCheckboxChecked($form_data, $key)
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- ID Numbers -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">ID Information</h3>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">OSCA ID Number</label>
-                                <input type="text" name="osca_id" value="<?= getFormValue('osca_id', $form_data) ?>" 
+                                <input type="text" name="osca_id" value="<?= getFormValue('osca_id', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">GSIS ID Number</label>
-                                <input type="text" name="gsis_id" value="<?= getFormValue('gsis_id', $form_data) ?>" 
+                                <input type="text" name="gsis_id" value="<?= getFormValue('gsis_id', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">SSS ID Number</label>
-                                <input type="text" name="sss_id" value="<?= getFormValue('sss_id', $form_data) ?>" 
+                                <input type="text" name="sss_id" value="<?= getFormValue('sss_id', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">TIN ID Number</label>
-                                <input type="text" name="tin_id" value="<?= getFormValue('tin_id', $form_data) ?>" 
+                                <input type="text" name="tin_id" value="<?= getFormValue('tin_id', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">PhilHealth ID Number</label>
-                                <input type="text" name="philhealth_id" value="<?= getFormValue('philhealth_id', $form_data) ?>" 
+                                <input type="text" name="philhealth_id" value="<?= getFormValue('philhealth_id', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                             <div class="grid grid-cols-2 gap-2">
                                 <div>
                                     <label class="block text-sm font-medium">Other ID Type</label>
-                                    <input type="text" name="other_id_type" value="<?= getFormValue('other_id_type', $form_data) ?>" 
+                                    <input type="text" name="other_id_type" value="<?= getFormValue('other_id_type', $form_data) ?>"
                                         class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium">Other ID Number</label>
-                                    <input type="text" name="other_id_number" value="<?= getFormValue('other_id_number', $form_data) ?>" 
+                                    <input type="text" name="other_id_number" value="<?= getFormValue('other_id_number', $form_data) ?>"
                                         class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Source of Income and Assistance -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">Source of Income & Assistance (Check all applicable)</h3>
@@ -901,79 +933,79 @@ function isCheckboxChecked($form_data, $key)
                                     <span class="ml-2 text-sm font-medium">Own Earnings, Salaries/Wages</span>
                                 </label>
                             </div>
-                            
+
                             <div class="flex items-center gap-2">
                                 <label class="inline-flex items-center whitespace-nowrap">
                                     <input type="checkbox" name="income_own_pension" value="1" <?= isCheckboxChecked($form_data, 'income_own_pension') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Own Pension</span>
                                 </label>
-                                <input type="text" name="income_own_pension_amount" placeholder="Amount" 
-                                    value="<?= getFormValue('income_own_pension_amount', $form_data) ?>" 
+                                <input type="text" name="income_own_pension_amount" placeholder="Amount"
+                                    value="<?= getFormValue('income_own_pension_amount', $form_data) ?>"
                                     class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="income_stocks_dividends" value="1" <?= isCheckboxChecked($form_data, 'income_stocks_dividends') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Stocks/Dividends</span>
                                 </label>
                             </div>
-                            
+
                             <div>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="income_dependent_on_children" value="1" <?= isCheckboxChecked($form_data, 'income_dependent_on_children') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Dependent on Children/Relatives</span>
                                 </label>
                             </div>
-                            
+
                             <div>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="income_spouse_salary" value="1" <?= isCheckboxChecked($form_data, 'income_spouse_salary') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Spouse's Salary</span>
                                 </label>
                             </div>
-                            
+
                             <div>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="income_insurances" value="1" <?= isCheckboxChecked($form_data, 'income_insurances') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Insurances</span>
                                 </label>
                             </div>
-                            
+
                             <div class="flex items-center gap-2">
                                 <label class="inline-flex items-center whitespace-nowrap">
                                     <input type="checkbox" name="income_spouse_pension" value="1" <?= isCheckboxChecked($form_data, 'income_spouse_pension') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Spouse's Pension</span>
                                 </label>
-                                <input type="text" name="income_spouse_pension_amount" placeholder="Amount" 
-                                    value="<?= getFormValue('income_spouse_pension_amount', $form_data) ?>" 
+                                <input type="text" name="income_spouse_pension_amount" placeholder="Amount"
+                                    value="<?= getFormValue('income_spouse_pension_amount', $form_data) ?>"
                                     class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div class="flex items-center gap-2">
                                 <label class="inline-flex items-center whitespace-nowrap">
                                     <input type="checkbox" name="income_others" value="1" <?= isCheckboxChecked($form_data, 'income_others') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Others</span>
                                 </label>
-                                <input type="text" name="income_others_specify" placeholder="Specify" 
-                                    value="<?= getFormValue('income_others_specify', $form_data) ?>" 
+                                <input type="text" name="income_others_specify" placeholder="Specify"
+                                    value="<?= getFormValue('income_others_specify', $form_data) ?>"
                                     class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
-                            
+
                             <div>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="income_rentals_sharecrops" value="1" <?= isCheckboxChecked($form_data, 'income_rentals_sharecrops') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Rentals/Sharecrops</span>
                                 </label>
                             </div>
-                            
+
                             <div>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="income_savings" value="1" <?= isCheckboxChecked($form_data, 'income_savings') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Savings</span>
                                 </label>
                             </div>
-                            
+
                             <div>
                                 <label class="inline-flex items-center">
                                     <input type="checkbox" name="income_livestock_orchards" value="1" <?= isCheckboxChecked($form_data, 'income_livestock_orchards') ?> class="form-checkbox">
@@ -982,11 +1014,11 @@ function isCheckboxChecked($form_data, $key)
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Family Composition -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">II. Family Composition</h3>
-                        
+
                         <div class="overflow-x-auto mb-4">
                             <table class="min-w-full bg-white border border-gray-200">
                                 <thead>
@@ -1038,12 +1070,12 @@ function isCheckboxChecked($form_data, $key)
                                 </tbody>
                             </table>
                         </div>
-                        
+
                         <button type="button" id="addFamilyMember" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded-md text-sm">
                             Add Family Member
                         </button>
                     </div>
-                    
+
                     <!-- Assets & Properties -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">Assets & Properties (Check all applicable)</h3>
@@ -1089,13 +1121,13 @@ function isCheckboxChecked($form_data, $key)
                                     <input type="checkbox" name="asset_others" value="1" <?= isCheckboxChecked($form_data, 'asset_others') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Others</span>
                                 </label>
-                                <input type="text" name="asset_others_specify" placeholder="Specify" 
-                                    value="<?= getFormValue('asset_others_specify', $form_data) ?>" 
+                                <input type="text" name="asset_others_specify" placeholder="Specify"
+                                    value="<?= getFormValue('asset_others_specify', $form_data) ?>"
                                     class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Living/Residing With -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">Living/Residing With (Check all applicable)</h3>
@@ -1159,13 +1191,13 @@ function isCheckboxChecked($form_data, $key)
                                     <input type="checkbox" name="living_others" value="1" <?= isCheckboxChecked($form_data, 'living_others') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Others</span>
                                 </label>
-                                <input type="text" name="living_others_specify" placeholder="Specify" 
-                                    value="<?= getFormValue('living_others_specify', $form_data) ?>" 
+                                <input type="text" name="living_others_specify" placeholder="Specify"
+                                    value="<?= getFormValue('living_others_specify', $form_data) ?>"
                                     class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Areas of Specialization/Skills -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">Areas of Specialization/Skills (Check all applicable)</h3>
@@ -1247,13 +1279,13 @@ function isCheckboxChecked($form_data, $key)
                                     <input type="checkbox" name="skill_others" value="1" <?= isCheckboxChecked($form_data, 'skill_others') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Others</span>
                                 </label>
-                                <input type="text" name="skill_others_specify" placeholder="Specify" 
-                                    value="<?= getFormValue('skill_others_specify', $form_data) ?>" 
+                                <input type="text" name="skill_others_specify" placeholder="Specify"
+                                    value="<?= getFormValue('skill_others_specify', $form_data) ?>"
                                     class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Involvement in Community Activities -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">Involvement in Community Activities (Check all applicable)</h3>
@@ -1329,17 +1361,17 @@ function isCheckboxChecked($form_data, $key)
                                     <input type="checkbox" name="involvement_others" value="1" <?= isCheckboxChecked($form_data, 'involvement_others') ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Others</span>
                                 </label>
-                                <input type="text" name="involvement_others_specify" placeholder="Specify" 
-                                    value="<?= getFormValue('involvement_others_specify', $form_data) ?>" 
+                                <input type="text" name="involvement_others_specify" placeholder="Specify"
+                                    value="<?= getFormValue('involvement_others_specify', $form_data) ?>"
                                     class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
                     </div>
-                    
+
                     <!-- Problems/Needs Commonly Encountered -->
                     <div class="mt-6 border-t border-gray-200 pt-4">
                         <h3 class="font-semibold text-lg mb-4">Problems/Needs Commonly Encountered (Check all applicable)</h3>
-                        
+
                         <!-- Economic -->
                         <div class="mb-6">
                             <h4 class="font-semibold text-md mb-3">A. Economic</h4>
@@ -1361,8 +1393,8 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="checkbox" name="problem_skills_training" value="1" <?= isCheckboxChecked($form_data, 'problem_skills_training') ?> class="form-checkbox">
                                         <span class="ml-2 text-sm font-medium">Skills/Capability Training</span>
                                     </label>
-                                    <input type="text" name="problem_skills_training_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_skills_training_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_skills_training_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_skills_training_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                                 <div class="flex items-center gap-2">
@@ -1370,8 +1402,8 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="checkbox" name="problem_livelihood" value="1" <?= isCheckboxChecked($form_data, 'problem_livelihood') ?> class="form-checkbox">
                                         <span class="ml-2 text-sm font-medium">Livelihood Opportunities</span>
                                     </label>
-                                    <input type="text" name="problem_livelihood_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_livelihood_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_livelihood_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_livelihood_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                                 <div class="flex items-center gap-2">
@@ -1379,13 +1411,13 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="checkbox" name="problem_economic_others" value="1" <?= isCheckboxChecked($form_data, 'problem_economic_others') ?> class="form-checkbox">
                                         <span class="ml-2 text-sm font-medium">Others</span>
                                     </label>
-                                    <input type="text" name="problem_economic_others_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_economic_others_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_economic_others_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_economic_others_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Social/Emotional -->
                         <div class="mb-6">
                             <h4 class="font-semibold text-md mb-3">B. Social/Emotional</h4>
@@ -1425,13 +1457,13 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="checkbox" name="problem_social_others" value="1" <?= isCheckboxChecked($form_data, 'problem_social_others') ?> class="form-checkbox">
                                         <span class="ml-2 text-sm font-medium">Others</span>
                                     </label>
-                                    <input type="text" name="problem_social_others_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_social_others_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_social_others_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_social_others_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Health -->
                         <div class="mb-6">
                             <h4 class="font-semibold text-md mb-3">C. Health</h4>
@@ -1441,11 +1473,11 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="checkbox" name="problem_condition_illness" value="1" <?= isCheckboxChecked($form_data, 'problem_condition_illness') ?> class="form-checkbox">
                                         <span class="ml-2 text-sm font-medium">Condition/Illness</span>
                                     </label>
-                                    <input type="text" name="problem_condition_illness_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_condition_illness_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_condition_illness_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_condition_illness_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
-                                
+
                                 <div class="flex items-center gap-2">
                                     <label class="inline-flex items-center whitespace-nowrap">
                                         <span class="text-sm font-medium">With Maintenance</span>
@@ -1454,15 +1486,15 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="radio" name="problem_with_maintenance" value="YES" <?= isChecked('YES', $form_data, 'problem_with_maintenance') ?> class="form-radio">
                                         <span class="ml-1 text-sm">YES</span>
                                     </label>
-                                    <input type="text" name="problem_with_maintenance_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_with_maintenance_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_with_maintenance_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_with_maintenance_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                     <label class="inline-flex items-center ml-2">
                                         <input type="radio" name="problem_with_maintenance" value="NO" <?= isChecked('NO', $form_data, 'problem_with_maintenance') ?> class="form-radio">
                                         <span class="ml-1 text-sm">NO</span>
                                     </label>
                                 </div>
-                                
+
                                 <div class="md:col-span-2">
                                     <label class="text-sm font-medium block mb-2">Concerns/Issues</label>
                                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -1507,15 +1539,15 @@ function isCheckboxChecked($form_data, $key)
                                                 <input type="checkbox" name="problem_health_others" value="1" <?= isCheckboxChecked($form_data, 'problem_health_others') ?> class="form-checkbox">
                                                 <span class="ml-2 text-sm font-medium">Others</span>
                                             </label>
-                                            <input type="text" name="problem_health_others_specify" placeholder="Specify" 
-                                                value="<?= getFormValue('problem_health_others_specify', $form_data) ?>" 
+                                            <input type="text" name="problem_health_others_specify" placeholder="Specify"
+                                                value="<?= getFormValue('problem_health_others_specify', $form_data) ?>"
                                                 class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                         </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Housing -->
                         <div class="mb-6">
                             <h4 class="font-semibold text-md mb-3">D. Housing</h4>
@@ -1561,13 +1593,13 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="checkbox" name="problem_housing_others" value="1" <?= isCheckboxChecked($form_data, 'problem_housing_others') ?> class="form-checkbox">
                                         <span class="ml-2 text-sm font-medium">Others</span>
                                     </label>
-                                    <input type="text" name="problem_housing_others_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_housing_others_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_housing_others_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_housing_others_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Community Service -->
                         <div class="mb-6">
                             <h4 class="font-semibold text-md mb-3">E. Community Service</h4>
@@ -1589,24 +1621,24 @@ function isCheckboxChecked($form_data, $key)
                                         <input type="checkbox" name="problem_community_others" value="1" <?= isCheckboxChecked($form_data, 'problem_community_others') ?> class="form-checkbox">
                                         <span class="ml-2 text-sm font-medium">Others</span>
                                     </label>
-                                    <input type="text" name="problem_community_others_specify" placeholder="Specify" 
-                                        value="<?= getFormValue('problem_community_others_specify', $form_data) ?>" 
+                                    <input type="text" name="problem_community_others_specify" placeholder="Specify"
+                                        value="<?= getFormValue('problem_community_others_specify', $form_data) ?>"
                                         class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                             </div>
                         </div>
-                        
+
                         <!-- Other Specific Needs -->
                         <div class="mb-6">
                             <h4 class="font-semibold text-md mb-3">F. Other Specific Needs</h4>
                             <div class="pl-4">
-                                <textarea name="other_specific_needs" rows="3" class="w-full border rounded p-2 uppercase" 
+                                <textarea name="other_specific_needs" rows="3" class="w-full border rounded p-2 uppercase"
                                     oninput="this.value = this.value.toUpperCase()"><?= getFormValue('other_specific_needs', $form_data) ?></textarea>
                             </div>
                         </div>
-                        
+
                         <!-- Health Concerns and Service Needs sections removed -->
-                        
+
                         <!-- Submit Button -->
                         <div class="mt-8 flex justify-center">
                             <button type="submit" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-lg transition-colors">
@@ -1614,13 +1646,13 @@ function isCheckboxChecked($form_data, $key)
                             </button>
                         </div>
                     </div>
-                </form>
-            </div>
+            </form>
         </div>
     </div>
-    
+    </div>
+
     <script>
-            document.addEventListener('DOMContentLoaded', function() {
+        document.addEventListener('DOMContentLoaded', function() {
             // Display SweetAlert for success and error messages
             <?php if ($add_success): ?>
                 Swal.fire({
@@ -1628,8 +1660,8 @@ function isCheckboxChecked($form_data, $key)
                     title: 'Success',
                     text: '<?= addslashes($add_success) ?>',
                     confirmButtonColor: '#3085d6'
-            });
-        <?php endif; ?>
+                });
+            <?php endif; ?>
 
             <?php if ($add_error): ?>
                 Swal.fire({
@@ -1639,322 +1671,360 @@ function isCheckboxChecked($form_data, $key)
                     confirmButtonColor: '#3085d6'
                 });
             <?php endif; ?>
-            
-        <?php if (isset($person_id)): ?>
-            // Code for person_id related functionality
-        <?php endif; ?>
 
-        // Auto-capitalize all inputs
-        document.querySelectorAll('input[type="text"]').forEach(input => {
-            input.addEventListener('input', function() {
-                this.value = this.value.toUpperCase();
-            });
-        });
-        
-        // Years of residency cannot exceed age constraint
-        const birthDateInput = document.getElementById('birth_date');
-        const residencyInput = document.getElementById('years_of_residency');
-        const validationMsg = document.getElementById('residency_age_validation');
-        
-        function updateResidencyMaximum() {
-            if (birthDateInput && birthDateInput.value && residencyInput) {
-                // Calculate age based on birth date
-                const birthDate = new Date(birthDateInput.value);
-                const today = new Date();
-                let age = today.getFullYear() - birthDate.getFullYear();
-                const monthDiff = today.getMonth() - birthDate.getMonth();
-                
-                // Adjust age if birthday hasn't occurred yet this year
-                if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-                    age--;
-                }
-                
-                // Update max attribute of years_of_residency
-                residencyInput.setAttribute('max', age);
-                
-                // Check if current value exceeds age
-                if (parseInt(residencyInput.value) > age) {
-                    residencyInput.value = age;
-                    validationMsg.textContent = `Maximum years of residency is ${age} (cannot exceed age)`;
-                } else {
-                    validationMsg.textContent = ``;
-                }
-            }
-        }
-        
-        // Add event listeners
-        if (birthDateInput && residencyInput) {
-            birthDateInput.addEventListener('change', updateResidencyMaximum);
-            residencyInput.addEventListener('input', function() {
-                updateResidencyMaximum();
-            });
-            
-            // Run on page load to initialize
-            updateResidencyMaximum();
-        }
-        
-        // Toggle text fields next to checkboxes
-        function setupCheckboxTextFieldPair(checkboxName, textFieldName) {
-            const checkbox = document.querySelector(`input[name="${checkboxName}"]`);
-            const textField = document.querySelector(`input[name="${textFieldName}"]`);
-            
-            if (checkbox && textField) {
-                // Set initial state
-                textField.disabled = !checkbox.checked;
-                
-                // Add event listener
-                checkbox.addEventListener('change', function() {
-                    textField.disabled = !this.checked;
-                    if (!this.checked) {
-                        textField.value = '';
-                    }
-                });
-            }
-        }
-        
-        // Toggle text fields based on radio button selection
-        function setupRadioTextFieldPair(radioGroupName, radioValue, textFieldName) {
-            const radioButtons = document.querySelectorAll(`input[name="${radioGroupName}"]`);
-            const textField = document.querySelector(`input[name="${textFieldName}"]`);
-            
-            if (radioButtons.length && textField) {
-                // Find the specific radio button that should enable the text field
-                const targetRadio = document.querySelector(`input[name="${radioGroupName}"][value="${radioValue}"]`);
-                
-                // Set initial state
-                const isEnabled = targetRadio && targetRadio.checked;
-                textField.disabled = !isEnabled;
-                
-                // Add event listeners to all radio buttons in the group
-                radioButtons.forEach(radio => {
-                    radio.addEventListener('change', function() {
-                        // Enable text field only when the specific radio value is selected
-                        const shouldEnable = this.value === radioValue;
-                        textField.disabled = !shouldEnable;
-                        
-                        // Clear the text field if it's being disabled
-                        if (!shouldEnable) {
-                            textField.value = '';
-                        }
-                    });
-                });
-            }
-        }
-        
-        // Setup all checkbox-text field pairs
-        // Income sources section
-        setupCheckboxTextFieldPair('income_own_pension', 'income_own_pension_amount');
-        setupCheckboxTextFieldPair('income_spouse_pension', 'income_spouse_pension_amount');
-        setupCheckboxTextFieldPair('income_others', 'income_others_specify');
-        
-        // Assets & Properties section
-        setupCheckboxTextFieldPair('asset_others', 'asset_others_specify');
-        
-        // Living/Residing With section
-        setupCheckboxTextFieldPair('living_others', 'living_others_specify');
-        
-        // Areas of Specialization/Skills section
-        setupCheckboxTextFieldPair('skill_others', 'skill_others_specify');
-        
-        // Involvement in Community Activities section
-        setupCheckboxTextFieldPair('involvement_others', 'involvement_others_specify');
-        
-        // Problem Categories sections
-        // Economic problems
-        setupCheckboxTextFieldPair('problem_skills_training', 'problem_skills_training_specify');
-        setupCheckboxTextFieldPair('problem_livelihood', 'problem_livelihood_specify');
-        setupCheckboxTextFieldPair('problem_economic_others', 'problem_economic_others_specify');
-        
-        // Other problem categories
-        setupCheckboxTextFieldPair('problem_social_others', 'problem_social_others_specify');
-        setupCheckboxTextFieldPair('problem_health_others', 'problem_health_others_specify');
-        setupCheckboxTextFieldPair('problem_housing_others', 'problem_housing_others_specify');
-        setupCheckboxTextFieldPair('problem_community_others', 'problem_community_others_specify');
-        
-        // Health Condition section
-        setupCheckboxTextFieldPair('problem_condition_illness', 'problem_condition_illness_specify');
-        setupRadioTextFieldPair('problem_with_maintenance', 'YES', 'problem_with_maintenance_specify');
-        
-        // Handle adding family members
-        const addFamilyMemberBtn = document.getElementById('addFamilyMember');
-        const familyMembersTable = document.getElementById('familyMembersTable');
-        
-        // Handle deleting family members
-        function setupFamilyMemberDeleteButtons() {
-            document.querySelectorAll('.delete-family-member').forEach(button => {
-                button.addEventListener('click', function() {
-                    const row = this.closest('tr');
-                    
-                    // Check if this is the only row in the table
-                    if (familyMembersTable.querySelectorAll('tr').length > 1) {
-                        // Delete without confirmation
-                        row.remove();
-                    } else {
-                        // If it's the last row, just clear the inputs instead of removing
-                        row.querySelectorAll('input').forEach(input => {
-                            input.value = '';
-                        });
-                        row.querySelectorAll('select').forEach(select => {
-                            select.selectedIndex = 0;
-                        });
-                        // Replace standard alert with SweetAlert
-                        Swal.fire({
-                            icon: 'info',
-                            title: 'Cannot Delete',
-                            text: 'At least one family member row must remain. Values have been cleared instead.',
-                            confirmButtonColor: '#3085d6'
-                        });
-                    }
-                });
-            });
-        }
-        
-        // Setup delete buttons on page load
-        setupFamilyMemberDeleteButtons();
-        
-        // Function to populate family member rows with existing data
-        function populateFamilyMemberRows(familyMembers) {
-            if (!familyMembers || !familyMembers.length || !familyMembersTable) return;
-            
-            // Clear existing rows except the first one (template)
-            const rows = familyMembersTable.querySelectorAll('tr');
-            if (rows.length > 1) {
-                for (let i = rows.length - 1; i > 0; i--) {
-                    rows[i].remove();
-                }
-            }
-            
-            // Clear the first row (template)
-            const firstRow = familyMembersTable.querySelector('.family-member-row');
-            if (firstRow) {
-                firstRow.querySelectorAll('input').forEach(input => {
-                    input.value = '';
-                });
-                firstRow.querySelectorAll('select').forEach(select => {
-                    select.selectedIndex = 0;
-                });
-            }
-            
-            // Add data to the first row
-            if (familyMembers.length > 0 && firstRow) {
-                const member = familyMembers[0];
-                
-                const nameInput = firstRow.querySelector('input[name="family_member_name[]"]');
-                const relationshipInput = firstRow.querySelector('input[name="family_member_relationship[]"]');
-                const ageInput = firstRow.querySelector('input[name="family_member_age[]"]');
-                const civilStatusSelect = firstRow.querySelector('select[name="family_member_civil_status[]"]');
-                const occupationInput = firstRow.querySelector('input[name="family_member_occupation[]"]');
-                const incomeInput = firstRow.querySelector('input[name="family_member_income[]"]');
-                
-                if (nameInput) nameInput.value = member.name || '';
-                if (relationshipInput) relationshipInput.value = member.relationship || '';
-                if (ageInput) ageInput.value = member.age || '';
-                if (civilStatusSelect) {
-                    Array.from(civilStatusSelect.options).forEach((option, index) => {
-                        if (option.value === member.civil_status) {
-                            civilStatusSelect.selectedIndex = index;
-                        }
-                    });
-                }
-                if (occupationInput) occupationInput.value = member.occupation || '';
-                if (incomeInput) incomeInput.value = member.monthly_income || '';
-            }
-            
-            // Add additional rows for remaining family members
-            for (let i = 1; i < familyMembers.length; i++) {
-                const member = familyMembers[i];
-                
-                // Clone the first row as a template
-                const newRow = firstRow.cloneNode(true);
-                
-                const nameInput = newRow.querySelector('input[name="family_member_name[]"]');
-                const relationshipInput = newRow.querySelector('input[name="family_member_relationship[]"]');
-                const ageInput = newRow.querySelector('input[name="family_member_age[]"]');
-                const civilStatusSelect = newRow.querySelector('select[name="family_member_civil_status[]"]');
-                const occupationInput = newRow.querySelector('input[name="family_member_occupation[]"]');
-                const incomeInput = newRow.querySelector('input[name="family_member_income[]"]');
-                
-                if (nameInput) nameInput.value = member.name || '';
-                if (relationshipInput) relationshipInput.value = member.relationship || '';
-                if (ageInput) ageInput.value = member.age || '';
-                if (civilStatusSelect) {
-                    Array.from(civilStatusSelect.options).forEach((option, index) => {
-                        if (option.value === member.civil_status) {
-                            civilStatusSelect.selectedIndex = index;
-                        }
-                    });
-                }
-                if (occupationInput) occupationInput.value = member.occupation || '';
-                if (incomeInput) incomeInput.value = member.monthly_income || '';
-                
-                // Add the new row to the table
-                familyMembersTable.appendChild(newRow);
-            }
-            
-            // Setup delete buttons for all rows
-            setupFamilyMemberDeleteButtons();
-        }
-        
-        // If family members data is available in PHP, populate the rows
-        <?php if (isset($form_data['family_members']) && is_array($form_data['family_members'])): ?>
-        populateFamilyMemberRows(<?= json_encode($form_data['family_members']) ?>);
-        <?php endif; ?>
-        
-        // Add family member with delete button functionality
-        if (addFamilyMemberBtn && familyMembersTable) {
-            addFamilyMemberBtn.addEventListener('click', function() {
-                // Clone the first row as a template
-                const firstRow = familyMembersTable.querySelector('.family-member-row');
-                const newRow = firstRow.cloneNode(true);
-                
-                // Clear input values in the new row
-                newRow.querySelectorAll('input').forEach(input => {
-                    input.value = '';
-                });
-                
-                // Reset select elements
-                newRow.querySelectorAll('select').forEach(select => {
-                    select.selectedIndex = 0;
-                });
-                
-                // Add an event listener for the uppercase conversion
-                newRow.querySelectorAll('input[type="text"]').forEach(input => {
+            <?php if (isset($person_id)): ?>
+                // Code for person_id related functionality
+            <?php endif; ?>
+
+            // Auto-capitalize all inputs
+            document.querySelectorAll('input[type="text"]').forEach(input => {
                 input.addEventListener('input', function() {
                     this.value = this.value.toUpperCase();
                 });
             });
-                
-                // Add the new row to the table
-                familyMembersTable.appendChild(newRow);
-                
-                // Setup delete button for the new row
-                setupFamilyMemberDeleteButtons();
-            });
-        }
-        
-        // Same as Present Address checkbox functionality
-        const sameAsPresentCheckbox = document.getElementById('sameAsPresent');
-        if (sameAsPresentCheckbox) {
-            sameAsPresentCheckbox.addEventListener('change', function() {
-                if (this.checked) {
-                    // Copy present address fields to permanent address fields
-                    document.querySelector('input[name="permanent_house_no"]').value = document.querySelector('input[name="present_house_no"]').value;
-                    document.querySelector('input[name="permanent_street"]').value = document.querySelector('input[name="present_street"]').value;
-                    document.querySelector('input[name="permanent_barangay"]').value = document.querySelector('input[name="present_barangay"]').value;
-                    document.querySelector('input[name="permanent_municipality"]').value = document.querySelector('input[name="present_municipality"]').value;
-                    document.querySelector('input[name="permanent_province"]').value = document.querySelector('input[name="present_province"]').value;
-                    document.querySelector('input[name="permanent_region"]').value = document.querySelector('input[name="present_region"]').value;
-                } else {
-                    // Clear permanent address fields
-                    document.querySelector('input[name="permanent_house_no"]').value = '';
-                    document.querySelector('input[name="permanent_street"]').value = '';
-                    document.querySelector('input[name="permanent_barangay"]').value = '';
-                    document.querySelector('input[name="permanent_municipality"]').value = '';
-                    document.querySelector('input[name="permanent_province"]').value = '';
-                    document.querySelector('input[name="permanent_region"]').value = '';
+
+            // Years of residency cannot exceed age constraint
+            const birthDateInput = document.getElementById('birth_date');
+            const residencyInput = document.getElementById('years_of_residency');
+            const validationMsg = document.getElementById('residency_age_validation');
+
+            function updateResidencyMaximum() {
+                if (birthDateInput && birthDateInput.value && residencyInput) {
+                    // Calculate age based on birth date
+                    const birthDate = new Date(birthDateInput.value);
+                    const today = new Date();
+                    let age = today.getFullYear() - birthDate.getFullYear();
+                    const monthDiff = today.getMonth() - birthDate.getMonth();
+
+                    // Adjust age if birthday hasn't occurred yet this year
+                    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+                        age--;
+                    }
+
+                    // Update max attribute of years_of_residency
+                    residencyInput.setAttribute('max', age);
+
+                    // Check if current value exceeds age
+                    if (parseInt(residencyInput.value) > age) {
+                        residencyInput.value = age;
+                        validationMsg.textContent = `Maximum years of residency is ${age} (cannot exceed age)`;
+                    } else {
+                        validationMsg.textContent = ``;
+                    }
                 }
-            });
-        }
+            }
+
+            // Add event listeners
+            if (birthDateInput && residencyInput) {
+                birthDateInput.addEventListener('change', updateResidencyMaximum);
+                residencyInput.addEventListener('input', function() {
+                    updateResidencyMaximum();
+                });
+
+                // Run on page load to initialize
+                updateResidencyMaximum();
+            }
+
+            // Toggle text fields next to checkboxes
+            function setupCheckboxTextFieldPair(checkboxName, textFieldName) {
+                const checkbox = document.querySelector(`input[name="${checkboxName}"]`);
+                const textField = document.querySelector(`input[name="${textFieldName}"]`);
+
+                if (checkbox && textField) {
+                    // Set initial state
+                    textField.disabled = !checkbox.checked;
+
+                    // Add event listener
+                    checkbox.addEventListener('change', function() {
+                        textField.disabled = !this.checked;
+                        if (!this.checked) {
+                            textField.value = '';
+                        }
+                    });
+                }
+            }
+
+            // Toggle text fields based on radio button selection
+            function setupRadioTextFieldPair(radioGroupName, radioValue, textFieldName) {
+                const radioButtons = document.querySelectorAll(`input[name="${radioGroupName}"]`);
+                const textField = document.querySelector(`input[name="${textFieldName}"]`);
+
+                if (radioButtons.length && textField) {
+                    // Find the specific radio button that should enable the text field
+                    const targetRadio = document.querySelector(`input[name="${radioGroupName}"][value="${radioValue}"]`);
+
+                    // Set initial state
+                    const isEnabled = targetRadio && targetRadio.checked;
+                    textField.disabled = !isEnabled;
+
+                    // Add event listeners to all radio buttons in the group
+                    radioButtons.forEach(radio => {
+                        radio.addEventListener('change', function() {
+                            // Enable text field only when the specific radio value is selected
+                            const shouldEnable = this.value === radioValue;
+                            textField.disabled = !shouldEnable;
+
+                            // Clear the text field if it's being disabled
+                            if (!shouldEnable) {
+                                textField.value = '';
+                            }
+                        });
+                    });
+                }
+            }
+
+            // Setup all checkbox-text field pairs
+            // Income sources section
+            setupCheckboxTextFieldPair('income_own_pension', 'income_own_pension_amount');
+            setupCheckboxTextFieldPair('income_spouse_pension', 'income_spouse_pension_amount');
+            setupCheckboxTextFieldPair('income_others', 'income_others_specify');
+
+            // Assets & Properties section
+            setupCheckboxTextFieldPair('asset_others', 'asset_others_specify');
+
+            // Living/Residing With section
+            setupCheckboxTextFieldPair('living_others', 'living_others_specify');
+
+            // Areas of Specialization/Skills section
+            setupCheckboxTextFieldPair('skill_others', 'skill_others_specify');
+
+            // Involvement in Community Activities section
+            setupCheckboxTextFieldPair('involvement_others', 'involvement_others_specify');
+
+            // Problem Categories sections
+            // Economic problems
+            setupCheckboxTextFieldPair('problem_skills_training', 'problem_skills_training_specify');
+            setupCheckboxTextFieldPair('problem_livelihood', 'problem_livelihood_specify');
+            setupCheckboxTextFieldPair('problem_economic_others', 'problem_economic_others_specify');
+
+            // Other problem categories
+            setupCheckboxTextFieldPair('problem_social_others', 'problem_social_others_specify');
+            setupCheckboxTextFieldPair('problem_health_others', 'problem_health_others_specify');
+            setupCheckboxTextFieldPair('problem_housing_others', 'problem_housing_others_specify');
+            setupCheckboxTextFieldPair('problem_community_others', 'problem_community_others_specify');
+
+            // Health Condition section
+            setupCheckboxTextFieldPair('problem_condition_illness', 'problem_condition_illness_specify');
+            setupRadioTextFieldPair('problem_with_maintenance', 'YES', 'problem_with_maintenance_specify');
+
+            // Handle adding family members
+            const addFamilyMemberBtn = document.getElementById('addFamilyMember');
+            const familyMembersTable = document.getElementById('familyMembersTable');
+
+            // Handle deleting family members
+            function setupFamilyMemberDeleteButtons() {
+                document.querySelectorAll('.delete-family-member').forEach(button => {
+                    button.addEventListener('click', function() {
+                        const row = this.closest('tr');
+
+                        // Check if this is the only row in the table
+                        if (familyMembersTable.querySelectorAll('tr').length > 1) {
+                            // Delete without confirmation
+                            row.remove();
+                        } else {
+                            // If it's the last row, just clear the inputs instead of removing
+                            row.querySelectorAll('input').forEach(input => {
+                                input.value = '';
+                            });
+                            row.querySelectorAll('select').forEach(select => {
+                                select.selectedIndex = 0;
+                            });
+                            // Replace standard alert with SweetAlert
+                            Swal.fire({
+                                icon: 'info',
+                                title: 'Cannot Delete',
+                                text: 'At least one family member row must remain. Values have been cleared instead.',
+                                confirmButtonColor: '#3085d6'
+                            });
+                        }
+                    });
+                });
+            }
+
+            // Setup delete buttons on page load
+            setupFamilyMemberDeleteButtons();
+
+            // Function to populate family member rows with existing data
+            function populateFamilyMemberRows(familyMembers) {
+                if (!familyMembers || !familyMembers.length || !familyMembersTable) return;
+
+                // Clear existing rows except the first one (template)
+                const rows = familyMembersTable.querySelectorAll('tr');
+                if (rows.length > 1) {
+                    for (let i = rows.length - 1; i > 0; i--) {
+                        rows[i].remove();
+                    }
+                }
+
+                // Clear the first row (template)
+                const firstRow = familyMembersTable.querySelector('.family-member-row');
+                if (firstRow) {
+                    firstRow.querySelectorAll('input').forEach(input => {
+                        input.value = '';
+                    });
+                    firstRow.querySelectorAll('select').forEach(select => {
+                        select.selectedIndex = 0;
+                    });
+                }
+
+                // Add data to the first row
+                if (familyMembers.length > 0 && firstRow) {
+                    const member = familyMembers[0];
+
+                    const nameInput = firstRow.querySelector('input[name="family_member_name[]"]');
+                    const relationshipInput = firstRow.querySelector('input[name="family_member_relationship[]"]');
+                    const ageInput = firstRow.querySelector('input[name="family_member_age[]"]');
+                    const civilStatusSelect = firstRow.querySelector('select[name="family_member_civil_status[]"]');
+                    const occupationInput = firstRow.querySelector('input[name="family_member_occupation[]"]');
+                    const incomeInput = firstRow.querySelector('input[name="family_member_income[]"]');
+
+                    if (nameInput) nameInput.value = member.name || '';
+                    if (relationshipInput) relationshipInput.value = member.relationship || '';
+                    if (ageInput) ageInput.value = member.age || '';
+                    if (civilStatusSelect) {
+                        Array.from(civilStatusSelect.options).forEach((option, index) => {
+                            if (option.value === member.civil_status) {
+                                civilStatusSelect.selectedIndex = index;
+                            }
+                        });
+                    }
+                    if (occupationInput) occupationInput.value = member.occupation || '';
+                    if (incomeInput) incomeInput.value = member.monthly_income || '';
+                }
+
+                // Add additional rows for remaining family members
+                for (let i = 1; i < familyMembers.length; i++) {
+                    const member = familyMembers[i];
+
+                    // Clone the first row as a template
+                    const newRow = firstRow.cloneNode(true);
+
+                    const nameInput = newRow.querySelector('input[name="family_member_name[]"]');
+                    const relationshipInput = newRow.querySelector('input[name="family_member_relationship[]"]');
+                    const ageInput = newRow.querySelector('input[name="family_member_age[]"]');
+                    const civilStatusSelect = newRow.querySelector('select[name="family_member_civil_status[]"]');
+                    const occupationInput = newRow.querySelector('input[name="family_member_occupation[]"]');
+                    const incomeInput = newRow.querySelector('input[name="family_member_income[]"]');
+
+                    if (nameInput) nameInput.value = member.name || '';
+                    if (relationshipInput) relationshipInput.value = member.relationship || '';
+                    if (ageInput) ageInput.value = member.age || '';
+                    if (civilStatusSelect) {
+                        Array.from(civilStatusSelect.options).forEach((option, index) => {
+                            if (option.value === member.civil_status) {
+                                civilStatusSelect.selectedIndex = index;
+                            }
+                        });
+                    }
+                    if (occupationInput) occupationInput.value = member.occupation || '';
+                    if (incomeInput) incomeInput.value = member.monthly_income || '';
+
+                    // Add the new row to the table
+                    familyMembersTable.appendChild(newRow);
+                }
+
+                // Setup delete buttons for all rows
+                setupFamilyMemberDeleteButtons();
+            }
+
+            // If family members data is available in PHP, populate the rows
+            <?php if (isset($form_data['family_members']) && is_array($form_data['family_members'])): ?>
+                populateFamilyMemberRows(<?= json_encode($form_data['family_members']) ?>);
+            <?php endif; ?>
+
+            // Add family member with delete button functionality
+            if (addFamilyMemberBtn && familyMembersTable) {
+                addFamilyMemberBtn.addEventListener('click', function() {
+                    // Clone the first row as a template
+                    const firstRow = familyMembersTable.querySelector('.family-member-row');
+                    const newRow = firstRow.cloneNode(true);
+
+                    // Clear input values in the new row
+                    newRow.querySelectorAll('input').forEach(input => {
+                        input.value = '';
+                    });
+
+                    // Reset select elements
+                    newRow.querySelectorAll('select').forEach(select => {
+                        select.selectedIndex = 0;
+                    });
+
+                    // Add an event listener for the uppercase conversion
+                    newRow.querySelectorAll('input[type="text"]').forEach(input => {
+                        input.addEventListener('input', function() {
+                            this.value = this.value.toUpperCase();
+                        });
+                    });
+
+                    // Add the new row to the table
+                    familyMembersTable.appendChild(newRow);
+
+                    // Setup delete button for the new row
+                    setupFamilyMemberDeleteButtons();
+                });
+            }
+
+            // Same as Present Address checkbox functionality
+            const sameAsPresentCheckbox = document.getElementById('sameAsPresent');
+            if (sameAsPresentCheckbox) {
+                sameAsPresentCheckbox.addEventListener('change', function() {
+                    if (this.checked) {
+                        // Copy present address fields to permanent address fields
+                        document.querySelector('input[name="permanent_house_no"]').value = document.querySelector('input[name="present_house_no"]').value;
+                        document.querySelector('input[name="permanent_street"]').value = document.querySelector('input[name="present_street"]').value;
+                        document.querySelector('input[name="permanent_barangay"]').value = document.querySelector('input[name="present_barangay"]').value;
+                        document.querySelector('input[name="permanent_municipality"]').value = document.querySelector('input[name="present_municipality"]').value;
+                        document.querySelector('input[name="permanent_province"]').value = document.querySelector('input[name="present_province"]').value;
+                        document.querySelector('input[name="permanent_region"]').value = document.querySelector('input[name="present_region"]').value;
+                    } else {
+                        // Clear permanent address fields
+                        document.querySelector('input[name="permanent_house_no"]').value = '';
+                        document.querySelector('input[name="permanent_street"]').value = '';
+                        document.querySelector('input[name="permanent_barangay"]').value = '';
+                        document.querySelector('input[name="permanent_municipality"]').value = '';
+                        document.querySelector('input[name="permanent_province"]').value = '';
+                        document.querySelector('input[name="permanent_region"]').value = '';
+                    }
+                });
+            }
+
+            // --- DYNAMIC HOUSEHOLD SELECT BASED ON PUROK ---
+            (function() {
+                // Build a mapping of purok_id to households
+                const householdsByPurok = {};
+                <?php foreach ($households as $household): ?>
+                    if (!householdsByPurok['<?= $household['purok_id'] ?>']) householdsByPurok['<?= $household['purok_id'] ?>'] = [];
+                    householdsByPurok['<?= $household['purok_id'] ?>'].push({
+                        id: '<?= htmlspecialchars($household['household_id']) ?>',
+                        number: '<?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>',
+                        purok_name: '<?= htmlspecialchars($household['purok_name']) ?>'
+                    });
+                <?php endforeach; ?>
+
+                const purokSelect = document.querySelector('select[name="purok_id"]');
+                const householdSelect = document.getElementById('household_id_select');
+                const originalOption = householdSelect.querySelector('option[value=""]');
+
+                function updateHouseholdOptions() {
+                    const purokId = purokSelect.value;
+                    // Remove all except the first option
+                    householdSelect.innerHTML = '';
+                    householdSelect.appendChild(originalOption.cloneNode(true));
+                    if (householdsByPurok[purokId]) {
+                        householdsByPurok[purokId].forEach(hh => {
+                            const opt = document.createElement('option');
+                            opt.value = hh.id;
+                            opt.textContent = hh.number + (hh.purok_name ? ' - ' + hh.purok_name : '');
+                            householdSelect.appendChild(opt);
+                        });
+                    }
+                }
+                if (purokSelect && householdSelect) {
+                    purokSelect.addEventListener('change', updateHouseholdOptions);
+                    // Optionally, update on page load if a purok is pre-selected
+                    if (purokSelect.value) updateHouseholdOptions();
+                }
+            })();
         });
     </script>
 </body>

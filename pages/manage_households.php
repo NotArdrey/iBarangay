@@ -3,54 +3,56 @@ require "../config/dbconn.php";
 require_once "../pages/header.php";
 
 // Function to generate Philippine HSN (Household Serial Number) based on actual PSA system
-function generateHouseholdId($pdo, $barangay_id) {
+function generateHouseholdId($pdo, $barangay_id, $purok_id) {
     try {
-        // Get barangay information
-        $stmt = $pdo->prepare("SELECT id, name FROM barangay WHERE id = ?");
-        $stmt->execute([$barangay_id]);
-        $barangay = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Get barangay and purok information
+        $stmt = $pdo->prepare("SELECT b.id, b.name as barangay_name, p.name as purok_name, p.id as purok_id 
+                              FROM barangay b 
+                              JOIN purok p ON b.id = p.barangay_id 
+                              WHERE b.id = ? AND p.id = ?");
+        $stmt->execute([$barangay_id, $purok_id]);
+        $info = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if (!$barangay) {
-            throw new Exception("Invalid barangay");
+        if (!$info) {
+            throw new Exception("Invalid barangay or purok");
         }
         
-        // Real Philippine HSN system: Sequential 4-digit numbers per enumeration area
-        // Each barangay is an enumeration area (or divided into EAs for large barangays)
-        // Format: HSN 0001, 0002, 0003... per enumeration area
-        
-        // Get current household count for this barangay/enumeration area
+        // Get the highest household number for this purok
         $stmt = $pdo->prepare("
-            SELECT COUNT(*) as household_count 
+            SELECT MAX(CAST(SUBSTRING(id, 2) AS UNSIGNED)) as max_id 
             FROM households 
-            WHERE barangay_id = ?
+            WHERE barangay_id = ? AND purok_id = ?
         ");
-        $stmt->execute([$barangay_id]);
+        $stmt->execute([$barangay_id, $purok_id]);
         $result = $stmt->fetch(PDO::FETCH_ASSOC);
-        $next_hsn = $result['household_count'] + 1;
         
-        // Philippine HSN format: 4-digit sequential number
-        // Example: 0001, 0002, 0003... (actual PSA format)
-        $household_id = sprintf('%04d', $next_hsn);
+        // Start with 1 if no households exist, otherwise increment the highest number
+        $next_hsn = ($result['max_id'] ?? 0) + 1;
         
-        // Check for special HSN ranges (avoid conflicts with special codes)
-        if ($next_hsn >= 7777) {
-            // If we reach special HSN ranges, use extended format
-            $household_id = sprintf('H%04d', $next_hsn);
-        }
+        // Format: P{number}-{household_number} (e.g., P1-0001, P2-0001)
+        $household_id = sprintf('P%d-%04d', $purok_id, $next_hsn);
         
-        // Ensure uniqueness within this barangay
-        $stmt = $pdo->prepare("SELECT id FROM households WHERE id = ? AND barangay_id = ?");
-        $stmt->execute([$household_id, $barangay_id]);
+        // Final check to ensure uniqueness
+        $stmt = $pdo->prepare("SELECT id FROM households WHERE id = ?");
+        $stmt->execute([$household_id]);
         if ($stmt->fetch()) {
-            // Fallback with timestamp if collision
-            $household_id = sprintf('%04d-%s', $next_hsn, date('His'));
+            // If ID exists, find the next available number
+            $stmt = $pdo->prepare("
+                SELECT MAX(CAST(SUBSTRING(id, 2) AS UNSIGNED)) as max_id 
+                FROM households 
+                WHERE barangay_id = ? AND purok_id = ?
+            ");
+            $stmt->execute([$barangay_id, $purok_id]);
+            $max_result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $next_hsn = ($max_result['max_id'] ?? 0) + 1;
+            $household_id = sprintf('P%d-%04d', $purok_id, $next_hsn);
         }
         
         return $household_id;
         
     } catch (Exception $e) {
-        // Fallback to simple sequential
-        return sprintf('%04d', time() % 10000);
+        // Fallback to timestamp-based ID if all else fails
+        return sprintf('P%d-T%d', $purok_id, time() % 10000);
     }
 }
 
@@ -62,52 +64,108 @@ function getBarangayPSGC($barangay_name) {
     return null; // Implement when PSGC data is available
 }
 
+// Function to generate household number
+function generateHouseholdNumber($pdo, $barangay_id, $purok_id) {
+    try {
+        // Get the highest household number for this purok
+        $stmt = $pdo->prepare("
+            SELECT MAX(CAST(household_number AS UNSIGNED)) as max_number 
+            FROM households 
+            WHERE barangay_id = ? AND purok_id = ?
+        ");
+        $stmt->execute([$barangay_id, $purok_id]);
+        $result = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Generate next number
+        $next_number = ($result['max_number'] ?? 0) + 1;
+        
+        // Format as 4-digit number with leading zeros
+        return str_pad($next_number, 4, '0', STR_PAD_LEFT);
+    } catch (Exception $e) {
+        error_log("Error generating household number: " . $e->getMessage());
+        // Fallback to timestamp-based ID if there's an error
+        return date('YmdHis');
+    }
+}
+
 // Add household logic
 $add_error = '';
 $add_success = '';
+
+// Check for session messages
+if (isset($_SESSION['error'])) {
+    $add_error = $_SESSION['error'];
+    unset($_SESSION['error']); // Clear the message after displaying
+} elseif (isset($_SESSION['success'])) {
+    $add_success = $_SESSION['success'];
+    unset($_SESSION['success']); // Clear the message after displaying
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $barangay_id = $_SESSION['barangay_id'];
+    $purok_id = $_POST['purok_id'] ?? null;
     $household_head_person_id = $_POST['household_head_person_id'] ?? null;
-    $manual_id = trim($_POST['manual_household_id'] ?? '');
+    $manual_number = trim($_POST['manual_household_id'] ?? '');
     $use_manual_id = isset($_POST['use_manual_id']) && $_POST['use_manual_id'] === '1';
 
     try {
-        // Generate or use manual household ID
-        if ($use_manual_id && !empty($manual_id)) {
-            // Check if manual ID already exists
-            $stmt = $pdo->prepare("SELECT id FROM households WHERE id = ?");
-            $stmt->execute([$manual_id]);
-            if ($stmt->fetch()) {
-                $add_error = "Household ID already exists.";
+        // Validate purok_id
+        if (!$purok_id) {
+            $add_error = "Please select a purok.";
+        } else {
+            // Generate or use manual household number
+            if ($use_manual_id && !empty($manual_number)) {
+                // Check if manual number already exists in the same purok
+                $stmt = $pdo->prepare("SELECT household_number FROM households WHERE household_number = ? AND purok_id = ?");
+                $stmt->execute([$manual_number, $purok_id]);
+                if ($stmt->fetch()) {
+                    $add_error = "Household number already exists in this purok.";
+                } else {
+                    $household_number = $manual_number;
+                }
             } else {
-                $household_id = $manual_id;
+                $household_number = generateHouseholdNumber($pdo, $barangay_id, $purok_id);
             }
-        } else {
-            // Auto-generate household ID using Philippine enumeration style
-            $household_id = generateHouseholdId($pdo, $barangay_id);
-        }
 
-        // --- Validate household_head_person_id ---
-        if ($household_head_person_id !== null && $household_head_person_id !== '') {
-            // Check if person exists
-            $stmt = $pdo->prepare("SELECT id FROM persons WHERE id = ?");
-            $stmt->execute([$household_head_person_id]);
-            if (!$stmt->fetch()) {
-                $add_error = "Selected Household Head Person ID does not exist.";
+            // --- Validate household_head_person_id ---
+            if ($household_head_person_id !== null && $household_head_person_id !== '') {
+                // Check if person exists
+                $stmt = $pdo->prepare("SELECT id FROM persons WHERE id = ?");
+                $stmt->execute([$household_head_person_id]);
+                if (!$stmt->fetch()) {
+                    $add_error = "Selected Household Head Person ID does not exist.";
+                }
+            } else {
+                $household_head_person_id = null;
             }
-        } else {
-            $household_head_person_id = null;
-        }
 
-        if (!$add_error) {
-            // Insert new household
-            $stmt = $pdo->prepare("INSERT INTO households (id, barangay_id, household_head_person_id) VALUES (?, ?, ?)");
-            $stmt->execute([
-                $household_id,
-                $barangay_id,
-                $household_head_person_id
-            ]);
-            $add_success = "Household added successfully! Household ID: " . $household_id;
+            if (!$add_error) {
+                // Insert new household
+                $stmt = $pdo->prepare("INSERT INTO households (household_number, barangay_id, purok_id, household_head_person_id) VALUES (?, ?, ?, ?)");
+                $stmt->execute([
+                    $household_number,
+                    $barangay_id,
+                    $purok_id,
+                    $household_head_person_id
+                ]);
+                $household_id = $pdo->lastInsertId();
+
+                // Log to audit trail
+                $stmt = $pdo->prepare("
+                    INSERT INTO audit_trails (
+                        user_id, action, table_name, record_id, description
+                    ) VALUES (?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([
+                    $_SESSION['user_id'],
+                    'INSERT',
+                    'households',
+                    $household_id,
+                    "Added new household number: {$household_number} in Purok ID: {$purok_id}"
+                ]);
+
+                $add_success = "Household added successfully! Household Number: ";
+            }
         }
     } catch (Exception $e) {
         $add_error = "Error adding household: " . htmlspecialchars($e->getMessage());
@@ -119,12 +177,15 @@ $stmt = $pdo->prepare("
     SELECT h.*, 
            p.first_name, 
            p.last_name,
-           b.name as barangay_name
+           b.name as barangay_name,
+           pu.name as purok_name,
+           (SELECT COUNT(*) FROM household_members hm WHERE hm.household_id = h.id) as member_count
     FROM households h 
     LEFT JOIN persons p ON h.household_head_person_id = p.id
     LEFT JOIN barangay b ON h.barangay_id = b.id
+    LEFT JOIN purok pu ON h.purok_id = pu.id
     WHERE h.barangay_id = ? 
-    ORDER BY h.created_at DESC
+    ORDER BY h.purok_id, h.household_number
 ");
 $stmt->execute([$_SESSION['barangay_id']]);
 $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -140,6 +201,11 @@ $stmt = $pdo->prepare("
 $stmt->execute([$_SESSION['barangay_id']]);
 $available_persons = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Get puroks for current barangay
+$stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
+$stmt->execute([$_SESSION['barangay_id']]);
+$puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
 // Get current barangay info for display
 $stmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
 $stmt->execute([$_SESSION['barangay_id']]);
@@ -152,6 +218,8 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Manage Households</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet" />
+  <!-- Add SweetAlert2 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
@@ -164,15 +232,11 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                font-medium rounded-lg text-sm px-5 py-2.5">Add Child</a>
             <a href="census_records.php" class="w-full sm:w-auto text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:ring-green-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Census Records</a>
-            <a href="manage_households.php" class="pw-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
+            <a href="manage_households.php" class="w-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Households</a>
+            <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
         </div>
-    
-    <?php if ($add_error): ?>
-        <div class="bg-red-100 text-red-700 px-4 py-2 rounded mb-4"><?= $add_error ?></div>
-    <?php elseif ($add_success): ?>
-        <div class="bg-green-100 text-green-700 px-4 py-2 rounded mb-4"><?= $add_success ?></div>
-    <?php endif; ?>
     
     <!-- Philippine HSN (Household Serial Number) System Information -->
     <div class="bg-blue-50 border-l-4 border-blue-400 p-4 mb-6">
@@ -192,16 +256,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                         <li><strong>HSN 0002</strong>: Second household enumerated</li>
                         <li><strong>HSN 0003</strong>: Third household enumerated, and so on...</li>
                     </ul>
-                    <p class="mt-2">Next HSN for <?= htmlspecialchars($current_barangay['name'] ?? 'Current Barangay') ?>: 
-                        <span class="font-mono bg-white px-2 py-1 rounded">
-                            <?php 
-                            $stmt = $pdo->prepare("SELECT COUNT(*) as count FROM households WHERE barangay_id = ?");
-                            $stmt->execute([$_SESSION['barangay_id']]);
-                            $count = $stmt->fetch(PDO::FETCH_ASSOC)['count'];
-                            echo sprintf('%04d', $count + 1);
-                            ?>
-                        </span>
-                    </p>
                     <div class="mt-2 p-2 bg-blue-100 rounded text-xs">
                         <strong>PSA Standard:</strong> Each barangay is an Enumeration Area (EA). HSNs 7777, 8888, 8889 are reserved for special cases (temporary residents, excluded persons, occasional use housing).
                     </div>
@@ -218,6 +272,19 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
         <div class="bg-gray-50 p-4 rounded-lg lg:w-96">
             <h3 class="text-lg font-semibold text-gray-800 mb-4">Add New Household</h3>
             <form method="POST" class="space-y-4">
+                <!-- Purok Selection -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Purok (Required)</label>
+                    <select name="purok_id" required class="w-full border rounded px-3 py-2 bg-white">
+                        <option value="">Select a purok...</option>
+                        <?php foreach($puroks as $purok): ?>
+                            <option value="<?= $purok['id'] ?>">
+                                <?= htmlspecialchars($purok['name']) ?>
+                            </option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+
                 <!-- Household Head Selection -->
                 <div>
                     <label class="block text-sm font-medium text-gray-700 mb-2">Household Head (Optional)</label>
@@ -267,6 +334,7 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
           <thead class="bg-gray-50">
             <tr>
               <th class="px-4 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">HSN</th>
+              <th class="px-4 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Purok</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Household Head</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Enumeration Date</th>
               <th class="px-4 py-3 text-left font-semibold text-gray-600 uppercase tracking-wider">Actions</th>
@@ -278,13 +346,18 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
               <tr class="hover:bg-blue-50 transition">
                 <td class="px-4 py-3">
                     <span class="font-mono text-blue-900 bg-blue-100 px-3 py-2 rounded text-lg font-bold">
-                        HSN <?= htmlspecialchars($household['id']) ?>
+                        HSN <?= htmlspecialchars($household['household_number']) ?>
                     </span>
-                    <?php if (preg_match('/^\d{4}$/', $household['id'])): ?>
+                    <?php if (preg_match('/^\d{4}$/', $household['household_number'])): ?>
                         <div class="text-xs text-green-600 mt-1">✓ PSA HSN Format</div>
                     <?php else: ?>
                         <div class="text-xs text-orange-600 mt-1">⚠ Non-standard format</div>
                     <?php endif; ?>
+                </td>
+                <td class="px-4 py-3">
+                    <span class="font-medium">
+                        <?= htmlspecialchars($household['purok_name']) ?>
+                    </span>
                 </td>
                 <td class="px-4 py-3">
                     <?php if($household['household_head_person_id']): ?>
@@ -292,6 +365,7 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                             <?= htmlspecialchars($household['first_name'] . ' ' . $household['last_name']) ?>
                         </span>
                         <span class="text-gray-500 text-xs block">ID: <?= $household['household_head_person_id'] ?></span>
+                        <span class="text-blue-600 text-xs block">Members: <?= $household['member_count'] ?></span>
                     <?php else: ?>
                         <span class="text-gray-400 italic">No head assigned</span>
                     <?php endif; ?>
@@ -303,17 +377,19 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                     </span>
                 </td>
                 <td class="px-4 py-3">
-                  <a href="edit_household.php?id=<?= urlencode($household['id']) ?>" 
-                     class="inline-block text-blue-600 hover:text-blue-800 font-medium mr-3">Edit</a>
-                  <a href="delete_household.php?id=<?= urlencode($household['id']) ?>" 
-                     class="inline-block text-red-600 hover:text-red-800 font-medium"
-                     onclick="return confirm('Are you sure you want to delete household <?= htmlspecialchars($household['id']) ?>?');">Delete</a>
+                    <a href="view_household_members.php?id=<?= urlencode($household['id']) ?>" 
+                       class="inline-block text-blue-600 hover:text-blue-800 font-medium mr-3">View Members</a>
+                    <a href="edit_household.php?id=<?= urlencode($household['id']) ?>" 
+                       class="inline-block text-blue-600 hover:text-blue-800 font-medium mr-3">Edit</a>
+                    <a href="delete_household.php?id=<?= urlencode($household['id']) ?>" 
+                       class="inline-block bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm transition-colors duration-200"
+                       onclick="return confirmDelete(event, '<?= htmlspecialchars($household['id']) ?>');">Delete</a>
                 </td>
               </tr>
               <?php endforeach; ?>
             <?php else: ?>
               <tr>
-                <td colspan="4" class="px-4 py-6 text-center text-gray-400 italic">
+                <td colspan="5" class="px-4 py-6 text-center text-gray-400 italic">
                     No households enumerated for <?= htmlspecialchars($current_barangay['name'] ?? 'this barangay') ?>.
                 </td>
               </tr>
@@ -350,6 +426,8 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
     </section>
   </div>
   
+  <!-- Add SweetAlert2 JS -->
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script>
     function toggleManualId(show) {
         const manualField = document.getElementById('manual-id-field');
@@ -363,6 +441,90 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
             flag.value = '0';
         }
     }
+
+    function confirmDelete(event, householdId) {
+        event.preventDefault();
+        const url = event.target.href;
+        
+        Swal.fire({
+            title: 'Are you sure?',
+            text: `Do you want to delete this household?`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, delete it!',
+            cancelButtonText: 'Cancel',
+            customClass: {
+                confirmButton: 'swal2-confirm-button',
+                cancelButton: 'swal2-cancel-button'
+            }
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = url;
+            }
+        });
+        
+        return false;
+    }
+
+    // Show success/error messages using SweetAlert2
+    <?php if ($add_error): ?>
+        Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: '<?= addslashes($add_error) ?>',
+            confirmButtonColor: '#3085d6',
+            confirmButtonText: 'OK',
+            buttonsStyling: true,
+            customClass: {
+                confirmButton: 'swal2-confirm-button'
+            }
+        });
+    <?php elseif ($add_success): ?>
+        Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: '<?= addslashes($add_success) ?>',
+            confirmButtonColor: '#3085d6',
+            confirmButtonText: 'OK',
+            buttonsStyling: true,
+            customClass: {
+                confirmButton: 'swal2-confirm-button'
+            }
+        });
+    <?php endif; ?>
   </script>
+  <style>
+    .swal2-confirm-button {
+      background-color: #3085d6 !important;
+      color: white !important;
+      border: none !important;
+      padding: 12px 30px !important;
+      border-radius: 5px !important;
+      font-size: 1.1em !important;
+      font-weight: 500 !important;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    }
+    .swal2-confirm-button:hover {
+      background-color: #2b7ac9 !important;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+    }
+    .swal2-cancel-button {
+      background-color: #d33 !important;
+      color: white !important;
+      border: none !important;
+      padding: 12px 30px !important;
+      border-radius: 5px !important;
+      font-size: 1.1em !important;
+      font-weight: 500 !important;
+      margin-left: 10px !important;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+    }
+    .swal2-cancel-button:hover {
+      background-color: #a00 !important;
+      box-shadow: 0 4px 8px rgba(0,0,0,0.2) !important;
+    }
+  </style>
 </body>
 </html>

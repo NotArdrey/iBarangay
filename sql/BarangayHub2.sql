@@ -416,22 +416,38 @@ CREATE TABLE emergency_contacts (
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
 );
 
+-- Purok table
+CREATE TABLE purok (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_barangay_purok (barangay_id, name)
+);
+
+
 -- Household information
 CREATE TABLE households (
-    id VARCHAR(50) PRIMARY KEY, -- Assuming this is a generated or meaningful ID like HH-BRGY-NUM
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    household_number VARCHAR(50) NOT NULL,
     barangay_id INT NOT NULL,
+    purok_id INT,
     household_head_person_id INT,
     household_size INT DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
-    FOREIGN KEY (household_head_person_id) REFERENCES persons(id) ON DELETE SET NULL
+    FOREIGN KEY (purok_id) REFERENCES purok(id) ON DELETE SET NULL,
+    FOREIGN KEY (household_head_person_id) REFERENCES persons(id) ON DELETE SET NULL,
+    UNIQUE KEY uk_household_number (household_number, barangay_id, purok_id)
 );
 
 -- Person-Household relationship
 CREATE TABLE household_members (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    household_id VARCHAR(50) NOT NULL,
+    household_id INT NOT NULL,
     person_id INT NOT NULL,
     relationship_type_id INT NOT NULL,
     is_household_head BOOLEAN DEFAULT FALSE,
@@ -482,9 +498,15 @@ INSERT INTO addresses (person_id, user_id, barangay_id, house_no, street, is_pri
     (8, NULL, 32, '321', 'Bonifacio Road', TRUE, FALSE),
     (9, NULL, 18, '654', 'Aguinaldo Street', TRUE, FALSE);
 
+-- Insert sample puroks
+INSERT INTO purok (id, barangay_id, name) VALUES
+    (1, 32, 'Purok 1'),
+    (2, 32, 'Purok 2'),
+    (3, 32, 'Purok 3');
+
 -- Insert sample households
-INSERT INTO households (id, barangay_id, household_head_person_id) VALUES
-    ('0001', 32, 5);  -- Juan's household in Tambubong
+INSERT INTO households (id, household_number, barangay_id, purok_id, household_head_person_id) VALUES
+    (1, '0001', 32, 1, 5);  -- Juan's household in Tambubong
 
 -- Insert sample household members
 INSERT INTO household_members (household_id, person_id, relationship_type_id, is_household_head) VALUES
@@ -1327,7 +1349,7 @@ FLUSH PRIVILEGES;
 -- Family composition table
 CREATE TABLE family_composition (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    household_id VARCHAR(50) NOT NULL,
+    household_id INT NOT NULL,
     person_id INT NOT NULL,
     name VARCHAR(150) NOT NULL,
     relationship VARCHAR(50) NOT NULL,
@@ -1407,8 +1429,8 @@ INSERT INTO person_income_sources (person_id, source_type_id, amount, details) V
     (7, 1, NULL, 'Driver income'),
     (8, 1, NULL, 'Nurse salary'),
     (9, 2, 20000.00, 'Retirement pension');
-
--- Insert sample person living arrangements data
+    
+ -- Insert sample person living arrangements data
 INSERT INTO person_living_arrangements (person_id, arrangement_type_id, details) VALUES
     (1, 2, 'Living with spouse'),
     (2, 4, 'Living with children'),
@@ -1564,3 +1586,4 @@ CREATE TABLE person_community_problems (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
 );
+
