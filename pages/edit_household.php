@@ -3,40 +3,6 @@ ob_start(); // Start output buffering
 require "../config/dbconn.php";
 require_once "../pages/header.php";
 
-// Handle form submission first, before any output
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $purok_id = $_POST['purok_id'] ?? $household['purok_id'];
-    $household_number = trim($_POST['household_number'] ?? $household['household_number']);
-    $household_head_person_id = $_POST['household_head_person_id'] ?? null;
-    $remove_members = $_POST['remove_member'] ?? [];
-    $errors = [];
-
-    // Validate
-    if (!$purok_id) $errors[] = "Purok is required.";
-    if (!$household_number) $errors[] = "Household number is required.";
-
-    if (empty($errors)) {
-        // Update household info
-        $stmt = $pdo->prepare("UPDATE households SET purok_id = ?, household_number = ?, household_head_person_id = ? WHERE id = ? AND barangay_id = ?");
-        $stmt->execute([$purok_id, $household_number, $household_head_person_id, $household_id, $barangay_id]);
-
-        // Remove selected members
-        if (!empty($remove_members)) {
-            $in = str_repeat('?,', count($remove_members) - 1) . '?';
-            $params = array_merge([$household_id], $remove_members);
-            $pdo->prepare("DELETE FROM household_members WHERE household_id = ? AND person_id IN ($in)")->execute($params);
-        }
-
-        $_SESSION['success'] = "Household updated successfully.";
-        header("Location: manage_households.php");
-        exit;
-    } else {
-        $_SESSION['error'] = implode("<br>", $errors);
-        header("Location: edit_household.php?id=$household_id");
-        exit;
-    }
-}
-
 // Validate household ID
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
     $_SESSION['error'] = "No household ID specified.";
@@ -60,6 +26,95 @@ if (!$household) {
     $_SESSION['error'] = "Household not found.";
     header("Location: manage_households.php");
     exit;
+}
+
+// Handle form submission
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $purok_id = $_POST['purok_id'] ?? null;
+    $household_number = trim($_POST['household_number'] ?? '');
+    $household_head_person_id = $_POST['household_head_person_id'] ?? null;
+    $remove_members = $_POST['remove_member'] ?? [];
+    $errors = [];
+
+    // Validate
+    if (!$purok_id) $errors[] = "Purok is required.";
+    if (!$household_number) $errors[] = "Household number is required.";
+
+    // Check if household number already exists in the same purok (excluding current household)
+    if ($household_number !== $household['household_number']) {
+        $stmt = $pdo->prepare("
+            SELECT id FROM households 
+            WHERE household_number = ? 
+            AND purok_id = ? 
+            AND id != ? 
+            AND barangay_id = ?
+        ");
+        $stmt->execute([$household_number, $purok_id, $household_id, $barangay_id]);
+        if ($stmt->fetch()) {
+            $errors[] = "Household number already exists in this purok.";
+        }
+    }
+
+    if (empty($errors)) {
+        try {
+            // Start transaction
+            $pdo->beginTransaction();
+
+            // Update household info
+            $stmt = $pdo->prepare("
+                UPDATE households 
+                SET purok_id = ?, 
+                    household_number = ?, 
+                    household_head_person_id = ? 
+                WHERE id = ? AND barangay_id = ?
+            ");
+            $stmt->execute([
+                $purok_id, 
+                $household_number, 
+                $household_head_person_id, 
+                $household_id, 
+                $barangay_id
+            ]);
+
+            // Remove selected members
+            if (!empty($remove_members)) {
+                $in = str_repeat('?,', count($remove_members) - 1) . '?';
+                $params = array_merge([$household_id], $remove_members);
+                $pdo->prepare("DELETE FROM household_members WHERE household_id = ? AND person_id IN ($in)")->execute($params);
+            }
+
+            // Log to audit trail
+            $stmt = $pdo->prepare("
+                INSERT INTO audit_trails (
+                    user_id, action, table_name, record_id, description
+                ) VALUES (?, ?, ?, ?, ?)
+            ");
+            $stmt->execute([
+                $_SESSION['user_id'],
+                'UPDATE',
+                'households',
+                $household_id,
+                "Updated household number: {$household_number} in Purok ID: {$purok_id}"
+            ]);
+
+            // Commit transaction
+            $pdo->commit();
+
+            $_SESSION['success'] = "Household updated successfully.";
+            header("Location: manage_households.php");
+            exit;
+        } catch (Exception $e) {
+            // Rollback transaction on error
+            $pdo->rollBack();
+            $errors[] = "Error updating household: " . $e->getMessage();
+        }
+    }
+
+    if (!empty($errors)) {
+        $_SESSION['error'] = implode("<br>", $errors);
+        header("Location: edit_household.php?id=$household_id");
+        exit;
+    }
 }
 
 // Fetch puroks

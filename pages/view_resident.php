@@ -24,16 +24,19 @@ try {
         SELECT 
             p.*,
             hm.household_id, 
+            h.household_number,
             hm.relationship_type_id,
             hm.is_household_head,
             rt.name as relationship_name,
             b.name as barangay_name,
+            pu.name as purok_name,
             TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
         FROM persons p
         LEFT JOIN household_members hm ON p.id = hm.person_id
         LEFT JOIN households h ON hm.household_id = h.id
         LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
         LEFT JOIN barangay b ON h.barangay_id = b.id
+        LEFT JOIN purok pu ON h.purok_id = pu.id
         WHERE p.id = ?
     ");
     $stmt->execute([$person_id]);
@@ -622,6 +625,9 @@ function displayCurrency($amount) {
                     <?php if (!empty($addresses) && isset($addresses[0]['barangay_name'])): ?>
                     <div class="text-sm">
                         <span class="badge badge-blue">Barangay: <?= htmlspecialchars($addresses[0]['barangay_name']) ?></span>
+                        <?php if (!empty($person['purok_name'])): ?>
+                        <span class="badge badge-blue ml-2">Purok: <?= htmlspecialchars($person['purok_name']) ?></span>
+                        <?php endif; ?>
                     </div>
                     <?php endif; ?>
                 </div>
@@ -695,10 +701,10 @@ function displayCurrency($amount) {
                 
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div class="bg-gray-50 p-4 rounded-lg border border-gray-200">
-                        <span class="text-sm text-gray-600 font-medium">Household ID</span>
+                        <span class="text-sm text-gray-600 font-medium">Household Number</span>
                         <div class="mt-1">
                             <span class="badge badge-blue text-lg py-1 px-3">
-                                <?= htmlspecialchars($person['household_id'] ?? 'Not assigned') ?>
+                                <?= htmlspecialchars($person['household_number'] ?? 'Not assigned') ?>
                             </span>
                         </div>
                     </div>
