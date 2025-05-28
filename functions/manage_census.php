@@ -902,6 +902,9 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
                 education_level = :education_level,
                 occupation = :occupation,
                 monthly_income = :monthly_income,
+                years_of_residency = :years_of_residency,
+                contact_number = :contact_number,
+                resident_type = :resident_type,
                 updated_at = CURRENT_TIMESTAMP
             WHERE id = :person_id
         ");
@@ -920,7 +923,10 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
             ':religion' => isset($data['religion']) ? trim($data['religion']) : null,
             ':education_level' => isset($data['education_level']) ? trim($data['education_level']) : null,
             ':occupation' => isset($data['occupation']) ? trim($data['occupation']) : null,
-            ':monthly_income' => isset($data['monthly_income']) ? trim($data['monthly_income']) : null
+            ':monthly_income' => isset($data['monthly_income']) ? trim($data['monthly_income']) : null,
+            ':years_of_residency' => isset($data['years_of_residency']) ? (int)trim($data['years_of_residency']) : 0,
+            ':contact_number' => isset($data['contact_number']) ? trim($data['contact_number']) : null,
+            ':resident_type' => isset($data['resident_type']) ? strtolower(trim($data['resident_type'])) : 'regular'
         ]);
         
         // Update present address
@@ -1827,6 +1833,38 @@ function validatePersonData($data) {
     if (empty($data['civil_status'])) {
         $errors[] = "Civil status is required";
     }
+
+    // Validate contact number format if provided
+    if (!empty($data['contact_number'])) {
+        // Remove any non-numeric characters for validation
+        $clean_number = preg_replace('/[^0-9]/', '', $data['contact_number']);
+        if (strlen($clean_number) < 10 || strlen($clean_number) > 11) {
+            $errors[] = "Contact number must be 10-11 digits";
+        }
+    }
+
+    // Validate government IDs if provided
+    if (!empty($data['osca_id']) && !preg_match('/^[A-Z0-9-]+$/', $data['osca_id'])) {
+        $errors[] = "Invalid OSCA ID format";
+    }
+    if (!empty($data['gsis_id']) && !preg_match('/^[0-9-]+$/', $data['gsis_id'])) {
+        $errors[] = "Invalid GSIS ID format";
+    }
+    if (!empty($data['sss_id']) && !preg_match('/^[0-9-]+$/', $data['sss_id'])) {
+        $errors[] = "Invalid SSS ID format";
+    }
+    if (!empty($data['tin_id']) && !preg_match('/^[0-9-]+$/', $data['tin_id'])) {
+        $errors[] = "Invalid TIN ID format";
+    }
+    if (!empty($data['philhealth_id']) && !preg_match('/^[0-9-]+$/', $data['philhealth_id'])) {
+        $errors[] = "Invalid PhilHealth ID format";
+    }
+
+    // Validate years of residency if provided
+    if (!empty($data['years_of_residency']) && !is_numeric($data['years_of_residency'])) {
+        $errors[] = "Years of residency must be a number";
+    }
+
     // Household ID is now optional
     if (!empty($data['household_id']) && empty($data['relationship'])) {
         $errors[] = "Relationship to household head is required when household is specified";

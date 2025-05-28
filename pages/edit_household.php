@@ -119,7 +119,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 // Fetch puroks
 $stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
-$stmt->execute([$barangay_id]);
+$stmt->execute([$_SESSION['barangay_id']]);
 $puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch available persons for household head

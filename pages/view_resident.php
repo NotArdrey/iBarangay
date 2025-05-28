@@ -1779,49 +1779,36 @@ function displayCurrency($amount) {
                     !empty($child_info['occupation']) ||
                     !empty($person['relationship_name'])
                 ): ?>
-                <div>
+                <div class="bg-gray-50 rounded-lg p-4 mb-4 shadow">
                     <div class="flex items-center mb-4 gap-2">
                         <svg class="w-5 h-5 text-indigo-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 14l9-5-9-5-9 5 9 5z"/><path d="M12 14l6.16-3.422A12.083 12.083 0 0112 21.5a12.083 12.083 0 01-6.16-10.922L12 14z"/></svg>
                         <h3 class="text-lg font-semibold">Educational Information</h3>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <?php if ($child_info['attending_school'] !== null): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Attending School</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['attending_school'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['attending_school'] ? 'Yes' : 'No' ?>
-                            </span>
+                        <div class="flex items-center">
+                            <span class="font-medium">Attending School:</span>
+                            <?php if ($child_info['attending_school']): ?>
+                                <span class="ml-2 inline-flex items-center px-2 py-1 bg-green-100 text-green-800 rounded-full"><svg class="w-4 h-4 mr-1 text-green-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>YES</span>
+                            <?php else: ?>
+                                <span class="ml-2 inline-flex items-center px-2 py-1 bg-red-100 text-red-800 rounded-full"><svg class="w-4 h-4 mr-1 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>NO</span>
+                            <?php endif; ?>
                         </div>
                         <?php endif; ?>
                         <?php if (!empty($child_info['school_type'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">School Type</div>
-                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['school_type']) ?></div>
-                        </div>
+                        <div><span class="font-medium">School Type:</span> <span class="ml-2 text-gray-900 font-semibold"><?= htmlspecialchars($child_info['school_type']) ?></span></div>
                         <?php endif; ?>
                         <?php if (!empty($child_info['school_name'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">School Name</div>
-                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['school_name']) ?></div>
-                        </div>
+                        <div><span class="font-medium">School Name:</span> <span class="ml-2 text-gray-900 font-semibold"><?= htmlspecialchars($child_info['school_name']) ?></span></div>
                         <?php endif; ?>
                         <?php if (!empty($child_info['grade_level'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Grade/Level</div>
-                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['grade_level']) ?></div>
-                        </div>
+                        <div><span class="font-medium">Grade/Level:</span> <span class="ml-2 text-gray-900 font-semibold"><?= htmlspecialchars($child_info['grade_level']) ?></span></div>
                         <?php endif; ?>
                         <?php if (!empty($child_info['occupation'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Occupation</div>
-                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($child_info['occupation']) ?></div>
-                        </div>
+                        <div><span class="font-medium">Occupation:</span> <span class="ml-2 text-gray-900 font-semibold"><?= htmlspecialchars($child_info['occupation']) ?></span></div>
                         <?php endif; ?>
                         <?php if (!empty($person['relationship_name'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Relationship to Household Head</div>
-                            <div class="text-gray-900 font-semibold mt-1"><?= htmlspecialchars($person['relationship_name']) ?></div>
-                        </div>
+                        <div><span class="font-medium">Relationship to Household Head:</span> <span class="ml-2 text-gray-900 font-semibold"><?= htmlspecialchars($person['relationship_name']) ?></span></div>
                         <?php endif; ?>
                     </div>
                 </div>
@@ -1837,75 +1824,40 @@ function displayCurrency($amount) {
                     isset($child_info['under_six_years']) ||
                     isset($child_info['grade_school'])
                 ): ?>
-                <div>
+                <div class="bg-gray-50 rounded-lg p-4 mb-4 shadow">
                     <div class="flex items-center mb-4 gap-2">
                         <svg class="w-5 h-5 text-green-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
                         <h3 class="text-lg font-semibold">Health & Nutrition</h3>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <?php if (isset($child_info['is_malnourished'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Malnourished</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_malnourished'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['is_malnourished'] ? 'Yes' : 'No' ?>
-                            </span>
+                        <?php
+                        $health_fields = [
+                            'is_malnourished' => 'Malnourished',
+                            'immunization_complete' => 'Immunization Complete',
+                            'garantisadong_pambata' => 'Garantizadong Pambata',
+                            'has_timbang_operation' => 'Operation Timbang',
+                            'has_supplementary_feeding' => 'Supplementary Feeding',
+                            'under_six_years' => '0-71 mos / Under 6 Years',
+                            'grade_school' => 'Grade School',
+                        ];
+                        foreach ($health_fields as $key => $label):
+                        if (isset($child_info[$key])): ?>
+                        <div class="flex items-center">
+                            <span class="font-medium"><?= $label ?>:</span>
+                            <?php if ($child_info[$key]): ?>
+                                <span class="ml-2 inline-flex items-center px-2 py-1 bg-green-100 text-green-800 rounded-full"><svg class="w-4 h-4 mr-1 text-green-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>YES</span>
+                            <?php else: ?>
+                                <span class="ml-2 inline-flex items-center px-2 py-1 bg-red-100 text-red-800 rounded-full"><svg class="w-4 h-4 mr-1 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>NO</span>
+                            <?php endif; ?>
                         </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['immunization_complete'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Immunization Complete</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['immunization_complete'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['immunization_complete'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['garantisadong_pambata'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Garantizadong Pambata</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['garantisadong_pambata'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['garantisadong_pambata'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['has_timbang_operation'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Operation Timbang</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['has_timbang_operation'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['has_timbang_operation'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['has_supplementary_feeding'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Supplementary Feeding</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['has_supplementary_feeding'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['has_supplementary_feeding'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['under_six_years'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">0-71 mos / Under 6 Years</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['under_six_years'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['under_six_years'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['grade_school'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Grade School</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['grade_school'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['grade_school'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
+                        <?php endif; endforeach; ?>
                     </div>
                 </div>
                 <?php endif; ?>
 
                 <!-- Diseases -->
                 <?php if (!empty($child_health_conditions)): ?>
-                <div>
+                <div class="bg-gray-50 rounded-lg p-4 mb-4 shadow">
                     <div class="flex items-center mb-4 gap-2">
                         <svg class="w-5 h-5 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
                         <h3 class="text-lg font-semibold">Diseases</h3>
@@ -1927,51 +1879,37 @@ function displayCurrency($amount) {
                     isset($child_info['is_directly_entrusted']) ||
                     isset($child_info['is_legally_adopted'])
                 ): ?>
-                <div>
+                <div class="bg-gray-50 rounded-lg p-4 mb-4 shadow">
                     <div class="flex items-center mb-4 gap-2">
                         <svg class="w-5 h-5 text-yellow-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
                         <h3 class="text-lg font-semibold">Child Welfare Status</h3>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <?php if (isset($child_info['in_caring_institution'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Caring Institution</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['in_caring_institution'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['in_caring_institution'] ? 'Yes' : 'No' ?>
-                            </span>
+                        <?php
+                        $welfare_fields = [
+                            'in_caring_institution' => 'Caring Institution',
+                            'is_under_foster_care' => 'Under Foster Care',
+                            'is_directly_entrusted' => 'Directly Entrusted',
+                            'is_legally_adopted' => 'Legally Adopted',
+                        ];
+                        foreach ($welfare_fields as $key => $label):
+                        if (isset($child_info[$key])): ?>
+                        <div class="flex items-center">
+                            <span class="font-medium"><?= $label ?>:</span>
+                            <?php if ($child_info[$key]): ?>
+                                <span class="ml-2 inline-flex items-center px-2 py-1 bg-green-100 text-green-800 rounded-full"><svg class="w-4 h-4 mr-1 text-green-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>YES</span>
+                            <?php else: ?>
+                                <span class="ml-2 inline-flex items-center px-2 py-1 bg-red-100 text-red-800 rounded-full"><svg class="w-4 h-4 mr-1 text-red-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12"/></svg>NO</span>
+                            <?php endif; ?>
                         </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['is_under_foster_care'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Under Foster Care</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_under_foster_care'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['is_under_foster_care'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['is_directly_entrusted'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Directly Entrusted</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_directly_entrusted'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['is_directly_entrusted'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
-                        <?php if (isset($child_info['is_legally_adopted'])): ?>
-                        <div>
-                            <div class="text-sm text-gray-600 font-medium">Legally Adopted</div>
-                            <span class="inline-block px-3 py-1 rounded-full text-xs font-semibold mt-1 <?= $child_info['is_legally_adopted'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $child_info['is_legally_adopted'] ? 'Yes' : 'No' ?>
-                            </span>
-                        </div>
-                        <?php endif; ?>
+                        <?php endif; endforeach; ?>
                     </div>
                 </div>
                 <?php endif; ?>
 
                 <!-- Disabilities -->
                 <?php if (!empty($child_disabilities)): ?>
-                <div>
+                <div class="bg-gray-50 rounded-lg p-4 mb-4 shadow">
                     <div class="flex items-center mb-4 gap-2">
                         <svg class="w-5 h-5 text-orange-500" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 8v4l3 3"/></svg>
                         <h3 class="text-lg font-semibold">Disabilities</h3>

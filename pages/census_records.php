@@ -98,13 +98,13 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
+              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Record Type</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Age</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Gender</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Civil Status</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Household Number</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Relationship</th>
-              <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Address</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Years of Residency</th>
               <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Actions</th>
             </tr>
@@ -113,6 +113,17 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <?php foreach ($residents as $resident):
               $age = $resident['age'] ?? calculateAge($resident['birth_date']);
               $residentType = strtoupper($resident['resident_type'] ?? 'REGULAR');
+              
+              // Check if this is a child record
+              $is_child = false;
+              $child_info = null;
+              if ($age < 18) {
+                $stmt = $pdo->prepare("SELECT * FROM child_information WHERE person_id = ?");
+                $stmt->execute([$resident['id']]);
+                $child_info = $stmt->fetch(PDO::FETCH_ASSOC);
+                $is_child = $child_info !== false;
+              }
+              
               // For children, we'll use age-based categorization
               $category = ($age < 18) ? 'CHILD' : $residentType;
             ?>
@@ -121,6 +132,17 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                   data-name="<?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
                     ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
                     ($resident['suffix'] ? " {$resident['suffix']}" : '')) ?>">
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <?php if ($is_child): ?>
+                    <span class="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                      Child Record
+                    </span>
+                  <?php else: ?>
+                    <span class="px-2 py-1 text-xs font-semibold rounded-full bg-blue-100 text-blue-800">
+                      Regular Record
+                    </span>
+                  <?php endif; ?>
+                </td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
                     ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
@@ -134,10 +156,14 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                   <?= htmlspecialchars($resident['relationship_name']) ?>
                   <?= $resident['is_household_head'] ? ' (Head)' : '' ?>
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['address'] ?? 'No address provided') ?></td>
                 <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['years_of_residency']) ?> years</td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+                  <?php if ($is_child): ?>
+                    <a href="edit_child.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">Edit</a>
+                  <?php else: ?>
+                    <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">Edit</a>
+                  <?php endif; ?>
+                  <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-green-600 hover:text-green-900 mr-3">View</a>
                   <button onclick="deleteResident(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</button>
                 </td>
               </tr>

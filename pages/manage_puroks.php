@@ -134,15 +134,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // Get puroks for current barangay
-$stmt = $pdo->prepare("
-    SELECT p.*, 
-           COUNT(h.id) as household_count
-    FROM purok p
-    LEFT JOIN households h ON p.id = h.purok_id
-    WHERE p.barangay_id = ?
-    GROUP BY p.id
-    ORDER BY p.name
-");
+$stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
 $stmt->execute([$_SESSION['barangay_id']]);
 $puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 

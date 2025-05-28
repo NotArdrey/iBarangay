@@ -25,7 +25,7 @@ $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch puroks for selection
 $stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
-$stmt->execute([$barangay_id]);
+$stmt->execute([$_SESSION['barangay_id']]);
 $puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Fetch existing census data with detailed information
