@@ -19,7 +19,7 @@ $bid              = isset($_SESSION['barangay_id'])   ? (int) $_SESSION['baranga
 define('ROLE_RESIDENT', 8);
 $filter = $_GET['filter'] ?? 'active';
 // Access control: only Super Admin (2) and Barangay-specific Admins (3–7) can view
-if ($current_admin_id === null || !in_array($role, [2,3,4,5,6,7], true)) {
+if ($current_admin_id === null || !in_array($role, [2, 3, 4, 5, 6, 7], true)) {
     header("Location: ../pages/login.php");
     exit;
 }
@@ -27,7 +27,8 @@ if ($current_admin_id === null || !in_array($role, [2,3,4,5,6,7], true)) {
 /**
  * Audit trail logger
  */
-function logAuditTrail(PDO $pdo, int $admin, string $action, string $table, int $id, string $desc): void {
+function logAuditTrail(PDO $pdo, int $admin, string $action, string $table, int $id, string $desc): void
+{
     $stmt = $pdo->prepare(
         "INSERT INTO audit_trails (admin_user_id, action, table_name, record_id, old_values)
          VALUES (:admin, :act, :tbl, :rid, :desc)"
@@ -155,9 +156,9 @@ if (isset($_GET['action'], $_GET['id'])) {
                     $mail->addAddress($userInfo['email'], $userInfo['name']);
                     $mail->Subject = 'Your account has been suspended';
                     $mail->Body    = "Hello {$userInfo['name']},\n\n"
-                                   . "Your account has been suspended for the following reason:\n"
-                                   . "{$remarks}\n\n"
-                                   . "If you believe this is a mistake, please contact your barangay administrator.";
+                        . "Your account has been suspended for the following reason:\n"
+                        . "{$remarks}\n\n"
+                        . "If you believe this is a mistake, please contact your barangay administrator.";
                     $mail->send();
                 } catch (Exception $e) {
                     error_log('Mailer Error: ' . $mail->ErrorInfo);
@@ -176,7 +177,6 @@ if (isset($_GET['action'], $_GET['id'])) {
         } else {
             echo json_encode(['success' => false, 'message' => 'Unable to ban resident.']);
         }
-
     } elseif ($act === 'unban') {
         // Reactivate the user
         $stmt = $pdo->prepare("
@@ -202,8 +202,8 @@ if (isset($_GET['action'], $_GET['id'])) {
                     $mail->addAddress($userInfo['email'], $userInfo['name']);
                     $mail->Subject = 'Your account has been reactivated';
                     $mail->Body    = "Hello {$userInfo['name']},\n\n"
-                                   . "Your account has been reactivated.\n"
-                                   . "You can now log in and continue using the system.";
+                        . "Your account has been reactivated.\n"
+                        . "You can now log in and continue using the system.";
                     $mail->send();
                 } catch (Exception $e) {
                     error_log('Mailer Error: ' . $mail->ErrorInfo);
@@ -221,7 +221,6 @@ if (isset($_GET['action'], $_GET['id'])) {
         } else {
             echo json_encode(['success' => false, 'message' => 'Unable to unban resident.']);
         }
-
     } else {
         echo json_encode(['success' => false, 'message' => 'Invalid action or method.']);
     }
@@ -246,7 +245,7 @@ try {
 // Handle edit form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'])) {
     $user_id = (int) ($_POST['edit_person_id'] ?? 0);
-    
+
     try {
         $pdo->beginTransaction();
 
@@ -270,10 +269,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
 
         // Update persons table
         $personFields = [
-            'first_name', 'middle_name', 'last_name', 'suffix',
-            'birth_date', 'birth_place', 'gender', 'civil_status',
-            'citizenship', 'religion', 'education_level', 'occupation',
-            'monthly_income', 'contact_number', 'resident_type'
+            'first_name',
+            'middle_name',
+            'last_name',
+            'suffix',
+            'birth_date',
+            'birth_place',
+            'gender',
+            'civil_status',
+            'citizenship',
+            'religion',
+            'education_level',
+            'occupation',
+            'monthly_income',
+            'contact_number',
+            'resident_type'
         ];
         $personUpdateParts = [];
         $personParams = [':user_id' => $user_id];
@@ -380,7 +390,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
         $_SESSION['success_message'] = "Resident information updated successfully.";
         header("Location: residents.php");
         exit;
-
     } catch (PDOException $e) {
         $pdo->rollBack();
         $_SESSION['error_message'] = "Error updating resident: " . $e->getMessage();
@@ -395,6 +404,7 @@ require_once __DIR__ . "/../pages/header.php";
 
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -402,25 +412,28 @@ require_once __DIR__ . "/../pages/header.php";
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
 </head>
+
 <body class="bg-gray-100">
     <div class="container mx-auto p-4">
-        <?php if(!empty($_SESSION['success_message'])): ?>
-            <div class="mb-4 p-4 bg-green-100 text-green-800 rounded"><?= $_SESSION['success_message']; unset($_SESSION['success_message']); ?></div>
-        <?php elseif(!empty($_SESSION['error_message'])): ?>
-            <div class="mb-4 p-4 bg-red-100 text-red-800 rounded"><?= $_SESSION['error_message']; unset($_SESSION['error_message']); ?></div>
+        <?php if (!empty($_SESSION['success_message'])): ?>
+            <div class="mb-4 p-4 bg-green-100 text-green-800 rounded"><?= $_SESSION['success_message'];
+                                                                        unset($_SESSION['success_message']); ?></div>
+        <?php elseif (!empty($_SESSION['error_message'])): ?>
+            <div class="mb-4 p-4 bg-red-100 text-red-800 rounded"><?= $_SESSION['error_message'];
+                                                                    unset($_SESSION['error_message']); ?></div>
         <?php endif; ?>
 
         <section class="mb-6">
-  <div class="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
-    <div class="flex items-center space-x-3">
-      <h1 class="text-3xl font-bold text-blue-800">Resident Accounts Management</h1>
-      <!-- Filter dropdown -->
-      <select id="filterStatus" class="border p-2 rounded">
-        <option value="active" <?= $filter==='active'?'selected':'' ?>>Active</option>
-        <option value="banned" <?= $filter==='banned'?'selected':'' ?>>Banned</option>
-        <option value="all" <?= $filter==='all'?'selected':'' ?>>All</option>
-      </select>
-    </div>
+            <div class="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+                <div class="flex items-center space-x-3">
+                    <h1 class="text-3xl font-bold text-blue-800">Resident Accounts Management</h1>
+                    <!-- Filter dropdown -->
+                    <select id="filterStatus" class="border p-2 rounded">
+                        <option value="active" <?= $filter === 'active' ? 'selected' : '' ?>>Active</option>
+                        <option value="banned" <?= $filter === 'banned' ? 'selected' : '' ?>>Banned</option>
+                        <option value="all" <?= $filter === 'all' ? 'selected' : '' ?>>All</option>
+                    </select>
+                </div>
                 <input id="searchInput" type="text" placeholder="Search residents..." class="p-2 border rounded w-1/3">
             </div>
         </section>
@@ -440,56 +453,55 @@ require_once __DIR__ . "/../pages/header.php";
                 <tbody class="bg-white divide-y divide-gray-200">
                     <?php foreach ($residents as $r): ?>
                         <?php
-                            // Prefer person data over user data
-                            $firstName = ($r['person_first_name'] ?? '') ?: ($r['first_name'] ?? '');
-                            $middleName = ($r['person_middle_name'] ?? '') ?: ($r['middle_name'] ?? '');
-                            $lastName = ($r['person_last_name'] ?? '') ?: ($r['last_name'] ?? '');
-                            $fullName = trim("{$firstName} {$middleName} {$lastName}");
-                            $birthDate = $r['person_birth_date'] ?? $r['birth_date'] ?? '';
-                            $age = !empty($birthDate) ? (new DateTime())->diff(new DateTime($birthDate))->y : '';
-                            $contact = $r['contact_number'] ?? $r['phone'] ?? '—';
-                            $address = trim(implode(', ', array_filter([
-                                $r['household_number'] ?? '',
-                                $r['purok_name'] ?? '',
-                                $r['phase'] ?? '',
-                                $r['barangay_name'] ?? '',
-                                $r['municipality'] ?? '',
-                                $r['province'] ?? ''
-                            ]))) ?: '—';
+                        // Prefer person data over user data
+                        $firstName = ($r['person_first_name'] ?? '') ?: ($r['first_name'] ?? '');
+                        $middleName = ($r['person_middle_name'] ?? '') ?: ($r['middle_name'] ?? '');
+                        $lastName = ($r['person_last_name'] ?? '') ?: ($r['last_name'] ?? '');
+                        $fullName = trim("{$firstName} {$middleName} {$lastName}");
+                        $birthDate = $r['person_birth_date'] ?? $r['birth_date'] ?? '';
+                        $age = !empty($birthDate) ? (new DateTime())->diff(new DateTime($birthDate))->y : '';
+                        $contact = $r['contact_number'] ?? $r['phone'] ?? '—';
+                        $address = trim(implode(', ', array_filter([
+                            $r['household_number'] ?? '',
+                            $r['purok_name'] ?? '',
+                            $r['phase'] ?? '',
+                            $r['barangay_name'] ?? '',
+                            $r['municipality'] ?? '',
+                            $r['province'] ?? ''
+                        ]))) ?: '—';
                         ?>
-                    <tr class="hover:bg-gray-50 transition-colors">
-                        <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($fullName) ?></td>
-                        <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($age) ?></td>
-                        <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($contact) ?></td>
-                        <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($address) ?></td>
-                        <td class="px-4 py-3 text-sm">
-                            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?= $r['is_active'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                <?= $r['is_active'] ? 'Active' : 'Banned' ?>
-                            </span>
-                        </td>
-                        <td class="px-4 py-3 text-sm text-gray-900">
-                            <div class="flex items-center space-x-2">
-                                <button class="viewBtn text-blue-600 hover:text-blue-900" 
+                        <tr class="hover:bg-gray-50 transition-colors">
+                            <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($fullName) ?></td>
+                            <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($age) ?></td>
+                            <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($contact) ?></td>
+                            <td class="px-4 py-3 text-sm text-gray-900"><?= htmlspecialchars($address) ?></td>
+                            <td class="px-4 py-3 text-sm">
+                                <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full <?= $r['is_active'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
+                                    <?= $r['is_active'] ? 'Active' : 'Banned' ?>
+                                </span>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                <div class="flex items-center space-x-2">
+                                    <button class="viewBtn text-blue-600 hover:text-blue-900"
                                         data-res='<?= htmlspecialchars(json_encode(array_merge($r, ['govt_id_image' => base64_encode($r['govt_id_image'] ?? '')])), ENT_QUOTES, 'UTF-8') ?>'>
-                                    View
-                                </button>
-                                <button class="editBtn bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700" 
+                                        View
+                                    </button>
+                                    <button class="editBtn bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
                                         data-res='<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>'>
-                                    Edit
-                                </button>
-                                <?php if ($role >= 3 && $role <= 7): ?>
-  <button
-    class="deactivateBtn bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600"
-    data-id="<?= $r['id'] ?>"
-  >
-    <?= $r['is_active'] ? 'Ban' : 'Unban' ?>
-  </button>
-<?php endif; ?>
-                            </div>
-                        </td>
-                    </tr>
+                                        Edit
+                                    </button>
+                                    <?php if ($role >= 3 && $role <= 7): ?>
+                                        <button
+                                            class="deactivateBtn bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600"
+                                            data-id="<?= $r['id'] ?>">
+                                            <?= $r['is_active'] ? 'Ban' : 'Unban' ?>
+                                        </button>
+                                    <?php endif; ?>
+                                </div>
+                            </td>
+                        </tr>
                     <?php endforeach; ?>
-                    <?php if(empty($residents)): ?>
+                    <?php if (empty($residents)): ?>
                         <tr>
                             <td colspan="3" class="px-4 py-4 text-center text-gray-500">No residents found</td>
                         </tr>
@@ -515,7 +527,7 @@ require_once __DIR__ . "/../pages/header.php";
                                 </svg>
                             </button>
                         </div>
-                        
+
                         <div class="space-y-6">
                             <!-- Basic Information Section -->
                             <div class="bg-gray-50 rounded-lg p-4">
@@ -731,7 +743,7 @@ require_once __DIR__ . "/../pages/header.php";
                     document.getElementById('viewOtherIdType').textContent = resident.other_id_type || '—';
                     document.getElementById('viewOtherIdNumber').textContent = resident.other_id_number || '—';
                     document.getElementById('viewIdExpiration').textContent = resident.id_expiration_date ? new Date(resident.id_expiration_date).toLocaleDateString() : '—';
-                    
+
                     // Handle ID image display
                     const idImage = document.getElementById('idImage');
                     const noIdImage = document.getElementById('noIdImage');
@@ -747,11 +759,11 @@ require_once __DIR__ . "/../pages/header.php";
                 });
             });
             document.getElementById('filterStatus').addEventListener('change', function() {
-  const f = this.value;
-  const url = new URL(window.location);
-  url.searchParams.set('filter', f);
-  window.location = url;
-});
+                const f = this.value;
+                const url = new URL(window.location);
+                url.searchParams.set('filter', f);
+                window.location = url;
+            });
 
             // Edit resident
             document.querySelectorAll('.editBtn').forEach(btn => {
@@ -784,71 +796,73 @@ require_once __DIR__ . "/../pages/header.php";
                 });
             });
             document.querySelectorAll('.deactivateBtn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const id  = btn.dataset.id;
-    const act = btn.textContent.trim().toLowerCase(); // 'ban' or 'unban'
+                btn.addEventListener('click', () => {
+                    const id = btn.dataset.id;
+                    const act = btn.textContent.trim().toLowerCase(); // 'ban' or 'unban'
 
-    if (act === 'ban') {
-      Swal.fire({
-        title: 'Ban Resident?',
-        input: 'textarea',
-        inputPlaceholder: 'Reason for ban...',
-        showCancelButton: true,
-        confirmButtonText: 'Ban',
-        preConfirm: reason => {
-          if (!reason) Swal.showValidationMessage('A reason is required');
-          return reason;
-        }
-      }).then(result => {
-        if (!result.isConfirmed) return;
-        Swal.showLoading();
-        fetch(`residents.php?id=${id}&action=ban`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-          body: `remarks=${encodeURIComponent(result.value)}`
-        })
-        .then(r => r.json())
-        .then(data => {
-          Swal.close();
-          if (data.success) {
-            Swal.fire('Banned!', data.message, 'success').then(() => location.reload());
-          } else {
-            Swal.fire('Error', data.message, 'error');
-          }
-        })
-        .catch(() => {
-          Swal.close();
-          Swal.fire('Error', 'Network error occurred', 'error');
-        });
-      });
+                    if (act === 'ban') {
+                        Swal.fire({
+                            title: 'Ban Resident?',
+                            input: 'textarea',
+                            inputPlaceholder: 'Reason for ban...',
+                            showCancelButton: true,
+                            confirmButtonText: 'Ban',
+                            preConfirm: reason => {
+                                if (!reason) Swal.showValidationMessage('A reason is required');
+                                return reason;
+                            }
+                        }).then(result => {
+                            if (!result.isConfirmed) return;
+                            Swal.showLoading();
+                            fetch(`residents.php?id=${id}&action=ban`, {
+                                    method: 'POST',
+                                    headers: {
+                                        'Content-Type': 'application/x-www-form-urlencoded'
+                                    },
+                                    body: `remarks=${encodeURIComponent(result.value)}`
+                                })
+                                .then(r => r.json())
+                                .then(data => {
+                                    Swal.close();
+                                    if (data.success) {
+                                        Swal.fire('Banned!', data.message, 'success').then(() => location.reload());
+                                    } else {
+                                        Swal.fire('Error', data.message, 'error');
+                                    }
+                                })
+                                .catch(() => {
+                                    Swal.close();
+                                    Swal.fire('Error', 'Network error occurred', 'error');
+                                });
+                        });
 
-    } else {
-      Swal.fire({
-        title: 'Unban Resident?',
-        icon: 'question',
-        showCancelButton: true,
-        confirmButtonText: 'Unban'
-      }).then(res => {
-        if (!res.isConfirmed) return;
-        Swal.showLoading();
-        fetch(`residents.php?id=${id}&action=unban`)
-          .then(r => r.json())
-          .then(data => {
-            Swal.close();
-            if (data.success) {
-              Swal.fire('Unbanned!', data.message, 'success').then(() => location.reload());
-            } else {
-              Swal.fire('Error', data.message, 'error');
-            }
-          })
-          .catch(() => {
-            Swal.close();
-            Swal.fire('Error', 'Network error occurred', 'error');
-          });
-      });
-    }
-  });
-});
+                    } else {
+                        Swal.fire({
+                            title: 'Unban Resident?',
+                            icon: 'question',
+                            showCancelButton: true,
+                            confirmButtonText: 'Unban'
+                        }).then(res => {
+                            if (!res.isConfirmed) return;
+                            Swal.showLoading();
+                            fetch(`residents.php?id=${id}&action=unban`)
+                                .then(r => r.json())
+                                .then(data => {
+                                    Swal.close();
+                                    if (data.success) {
+                                        Swal.fire('Unbanned!', data.message, 'success').then(() => location.reload());
+                                    } else {
+                                        Swal.fire('Error', data.message, 'error');
+                                    }
+                                })
+                                .catch(() => {
+                                    Swal.close();
+                                    Swal.fire('Error', 'Network error occurred', 'error');
+                                });
+                        });
+                    }
+                });
+            });
             // Delete handling
             document.querySelectorAll('.deleteBtn').forEach(btn => {
                 btn.addEventListener('click', function() {
@@ -866,7 +880,9 @@ require_once __DIR__ . "/../pages/header.php";
                         cancelButtonText: 'Cancel'
                     }).then((result) => {
                         if (result.isConfirmed) {
-                            fetch(`delete_resident.php?id=${userId}`, { method: 'DELETE' })
+                            fetch(`delete_resident.php?id=${userId}`, {
+                                    method: 'DELETE'
+                                })
                                 .then(response => {
                                     if (!response.ok) throw new Error('Deletion failed');
                                     return response.json();
@@ -887,4 +903,5 @@ require_once __DIR__ . "/../pages/header.php";
         });
     </script>
 </body>
+
 </html>

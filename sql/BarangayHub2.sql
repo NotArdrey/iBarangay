@@ -461,6 +461,26 @@ CREATE TABLE household_members (
     FOREIGN KEY (relationship_type_id) REFERENCES relationship_types(id) ON DELETE CASCADE
 );
 
+CREATE TABLE temporary_records (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    last_name VARCHAR(100) NOT NULL,
+    suffix VARCHAR(10),
+    first_name VARCHAR(100) NOT NULL,
+    house_number VARCHAR(100) NOT NULL,
+    street VARCHAR(100) NOT NULL,
+    barangay VARCHAR(100) NOT NULL,
+    municipality VARCHAR(100) NOT NULL,
+    province VARCHAR(100) NOT NULL,
+    region VARCHAR(100) NOT NULL,
+    middle_name VARCHAR(100),
+    date_of_birth DATE NOT NULL,
+    place_of_birth VARCHAR(255) NOT NULL,
+    months_residency INT NOT NULL,
+    days_residency INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
 -- Insert sample users
 INSERT INTO users (email, password, role_id, barangay_id, first_name, last_name, gender, email_verified_at, is_active) VALUES
     ('programmer@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 1, 1, 'System', 'Programmer', 'Male', NOW(), TRUE),
