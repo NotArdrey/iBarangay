@@ -14,11 +14,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $record_id = $_POST['record_id'];
         error_log("Attempting to delete record ID: " . $record_id);
 
-        // First check if the record exists
-        $checkStmt = $pdo->prepare("SELECT id FROM temporary_records WHERE id = ?");
+        // First check if the record exists and get its details for audit trail
+        $checkStmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
         $checkStmt->execute([$record_id]);
+        $record = $checkStmt->fetch(PDO::FETCH_ASSOC);
         
-        if (!$checkStmt->fetch()) {
+        if (!$record) {
             error_log("Record not found: " . $record_id);
             echo json_encode(['success' => false, 'message' => 'Record not found']);
             exit;
@@ -29,6 +30,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $result = $stmt->execute([$record_id]);
         
         if ($result) {
+            // Log the deletion in audit trail
+            $auditStmt = $pdo->prepare("
+                INSERT INTO audit_trails (
+                    user_id, action, table_name, record_id, old_values, description
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            ");
+            $auditStmt->execute([
+                $_SESSION['user_id'],
+                'DELETE',
+                'temporary_records',
+                $record_id,
+                json_encode($record),
+                "Deleted temporary record for {$record['last_name']}, {$record['first_name']}"
+            ]);
+
             error_log("Successfully deleted record ID: " . $record_id);
             echo json_encode(['success' => true, 'message' => 'Record deleted successfully']);
         } else {
@@ -47,6 +63,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         if (isset($_POST['record_id']) && !empty($_POST['record_id'])) {
+            // Get old record data for audit trail
+            $oldStmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
+            $oldStmt->execute([$_POST['record_id']]);
+            $oldRecord = $oldStmt->fetch(PDO::FETCH_ASSOC);
+
             // Update existing record
             $stmt = $pdo->prepare("
                 UPDATE temporary_records SET
@@ -74,6 +95,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_POST['province'],
                 $_POST['region'],
                 $_POST['record_id']
+            ]);
+
+            // Log the update in audit trail
+            $newRecord = [
+                'last_name' => $_POST['last_name'],
+                'suffix' => $_POST['suffix'],
+                'first_name' => $_POST['first_name'],
+                'middle_name' => $_POST['middle_name'],
+                'date_of_birth' => $_POST['date_of_birth'],
+                'place_of_birth' => $_POST['place_of_birth'],
+                'months_residency' => $_POST['months_residency'],
+                'days_residency' => $_POST['days_residency'],
+                'house_number' => $_POST['house_number'],
+                'street' => $_POST['street'],
+                'barangay' => $_POST['barangay'],
+                'municipality' => $_POST['municipality'],
+                'province' => $_POST['province'],
+                'region' => $_POST['region']
+            ];
+
+            $auditStmt = $pdo->prepare("
+                INSERT INTO audit_trails (
+                    user_id, action, table_name, record_id, old_values, new_values, description
+                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ");
+            $auditStmt->execute([
+                $_SESSION['user_id'],
+                'UPDATE',
+                'temporary_records',
+                $_POST['record_id'],
+                json_encode($oldRecord),
+                json_encode($newRecord),
+                "Updated temporary record for {$_POST['last_name']}, {$_POST['first_name']}"
             ]);
 
             echo "<script>
@@ -115,6 +169,40 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_POST['municipality'],
                 $_POST['province'],
                 $_POST['region']
+            ]);
+
+            $newRecordId = $pdo->lastInsertId();
+
+            // Log the insertion in audit trail
+            $newRecord = [
+                'last_name' => $_POST['last_name'],
+                'suffix' => $_POST['suffix'],
+                'first_name' => $_POST['first_name'],
+                'middle_name' => $_POST['middle_name'],
+                'date_of_birth' => $_POST['date_of_birth'],
+                'place_of_birth' => $_POST['place_of_birth'],
+                'months_residency' => $_POST['months_residency'],
+                'days_residency' => $_POST['days_residency'],
+                'house_number' => $_POST['house_number'],
+                'street' => $_POST['street'],
+                'barangay' => $_POST['barangay'],
+                'municipality' => $_POST['municipality'],
+                'province' => $_POST['province'],
+                'region' => $_POST['region']
+            ];
+
+            $auditStmt = $pdo->prepare("
+                INSERT INTO audit_trails (
+                    user_id, action, table_name, record_id, new_values, description
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            ");
+            $auditStmt->execute([
+                $_SESSION['user_id'],
+                'INSERT',
+                'temporary_records',
+                $newRecordId,
+                json_encode($newRecord),
+                "Added new temporary record for {$_POST['last_name']}, {$_POST['first_name']}"
             ]);
 
             echo "<script>
