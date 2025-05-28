@@ -70,7 +70,13 @@ CREATE TABLE users (
     FOREIGN KEY (barangay_id) REFERENCES barangay(id)
 );
 
-ALTER TABLE users ADD COLUMN govt_id_image LONGBLOB;
+-- Add ID-related columns to users table
+ALTER TABLE users
+ADD COLUMN govt_id_image LONGBLOB,
+ADD COLUMN id_type VARCHAR(50),
+ADD COLUMN id_expiry_date DATE,
+ADD COLUMN id_status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+ADD COLUMN id_verified_at TIMESTAMP NULL;
 
 -- Person information (personal data separate from users)
 CREATE TABLE persons (

@@ -55,6 +55,14 @@ if (!$docRequest) {
     exit();
 }
 
+// Check if document is a cedula
+if ($docRequest['document_code'] === 'cedula' || $docRequest['document_code'] === 'community_tax_certificate') {
+    echo "<h1>Community Tax Certificate (Cedula)</h1>";
+    echo "<p>Community Tax Certificates (Cedula) must be obtained in person at the Barangay Hall.</p>";
+    echo "<p>Please visit your Barangay Hall during office hours to process this document.</p>";
+    exit();
+}
+
 // ======================================
 // FETCH BARANGAY OFFICIALS
 // ======================================

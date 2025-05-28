@@ -2,12 +2,24 @@
 session_start();
 require_once "../config/dbconn.php";
 
-// Check for pending requests
+// Check for pending requests - UPDATED to use new table structure
 $hasPendingRequest = false;
 $pendingRequests = [];
 if (isset($_SESSION['user_id'])) {
     $stmt = $pdo->prepare("
-        SELECT dr.*, dt.name as document_name, dt.code as document_code
+        SELECT 
+            dr.id,
+            dr.status,
+            dr.created_at,
+            dr.request_date,
+            dr.price,
+            dr.first_name,
+            dr.last_name,
+            dr.purpose,
+            dr.business_name,
+            dr.business_type,
+            dt.name as document_name, 
+            dt.code as document_code
         FROM document_requests dr
         JOIN document_types dt ON dr.document_type_id = dt.id
         WHERE dr.user_id = ? 
@@ -19,7 +31,7 @@ if (isset($_SESSION['user_id'])) {
     $hasPendingRequest = count($pendingRequests) > 0;
 }
 
-// Handle form submission for document requests
+// Handle form submission for document requests - UPDATED VERSION
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         // Time-gated validation
@@ -48,13 +60,43 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $user_id = $_SESSION['user_id'];
 
-        // Get user's person_id from the persons table
-        $stmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = ?");
+        // Get user's person_id and personal information from the persons table
+        $stmt = $pdo->prepare("
+            SELECT p.*, u.first_name as user_first_name, u.last_name as user_last_name, u.gender as user_gender 
+            FROM persons p 
+            LEFT JOIN users u ON p.user_id = u.id
+            WHERE p.user_id = ?
+        ");
         $stmt->execute([$user_id]);
         $person = $stmt->fetch();
         
         if (!$person) {
             throw new Exception("User profile not found");
+        }
+
+        // Get user's address information
+        $stmt = $pdo->prepare("
+            SELECT house_no, street, subdivision, block_lot, phase 
+            FROM addresses 
+            WHERE user_id = ? AND is_primary = TRUE 
+            LIMIT 1
+        ");
+        $stmt->execute([$user_id]);
+        $address = $stmt->fetch();
+
+        // Get document type info for determining price
+        $stmt = $pdo->prepare("
+            SELECT dt.*, COALESCE(bdp.price, dt.default_fee) as final_price
+            FROM document_types dt
+            LEFT JOIN barangay_document_prices bdp ON bdp.document_type_id = dt.id 
+                AND bdp.barangay_id = ?
+            WHERE dt.id = ?
+        ");
+        $stmt->execute([$_SESSION['barangay_id'], $documentTypeId]);
+        $documentType = $stmt->fetch();
+
+        if (!$documentType) {
+            throw new Exception("Invalid document type selected");
         }
 
         // Begin transaction for the main request
@@ -63,12 +105,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         try {
             // Handle file upload for indigency certificate
             $imagePath = null;
-            if ($_POST['document_type_id'] && isset($_FILES['userPhoto'])) {
-                $stmt = $pdo->prepare("SELECT code FROM document_types WHERE id = ?");
-                $stmt->execute([$documentTypeId]);
-                $docType = $stmt->fetch();
-                
-                if ($docType && $docType['code'] === 'barangay_indigency' && $_FILES['userPhoto']['error'] === UPLOAD_ERR_OK) {
+            if ($documentType['code'] === 'barangay_indigency' && isset($_FILES['userPhoto'])) {
+                if ($_FILES['userPhoto']['error'] === UPLOAD_ERR_OK) {
                     $uploadDir = '../uploads/indigency_photos/';
                     if (!file_exists($uploadDir)) {
                         mkdir($uploadDir, 0777, true);
@@ -97,156 +135,116 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Insert into document_requests table
+            // Prepare the main insert statement with all the new columns
             $stmt = $pdo->prepare("
-                INSERT INTO document_requests 
-                (document_type_id, person_id, user_id, barangay_id, requested_by_user_id, status, request_date, proof_image_path, price) 
-                SELECT ?, ?, ?, ?, ?, 'pending', NOW(), ?, COALESCE(bdp.price, dt.default_fee)
-                FROM document_types dt
-                LEFT JOIN barangay_document_prices bdp ON bdp.document_type_id = dt.id 
-                    AND bdp.barangay_id = ?
-                WHERE dt.id = ?
+                INSERT INTO document_requests (
+                    document_type_id, person_id, user_id, barangay_id, requested_by_user_id, 
+                    status, request_date, price,
+                    
+                    -- Personal Information
+                    first_name, middle_name, last_name, suffix, gender, civil_status, 
+                    citizenship, birth_date, birth_place, religion, education_level, 
+                    occupation, monthly_income, contact_number,
+                    
+                    -- Address Information
+                    address_no, street,
+                    
+                    -- Business Information (for business permits)
+                    business_name, business_location, business_nature, business_type,
+                    
+                    -- Purpose and specific fields
+                    purpose,
+                    
+                    -- Image path for indigency
+                    proof_image_path
+                ) VALUES (
+                    ?, ?, ?, ?, ?, 'pending', NOW(), ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
+                    ?, ?, ?, ?, ?, ?, ?, ?
+                )
             ");
-            $stmt->execute([
+
+            // Prepare values based on document type
+            $values = [
                 $documentTypeId,
                 $person['id'],
                 $user_id,
                 $_SESSION['barangay_id'],
                 $user_id,
-                $imagePath,
-                $_SESSION['barangay_id'],
-                $documentTypeId
-            ]);
-            $requestId = $pdo->lastInsertId();
+                $documentType['final_price'],
+                
+                // Personal Information from persons table
+                $person['first_name'] ?? $person['user_first_name'] ?? '',
+                $person['middle_name'] ?? '',
+                $person['last_name'] ?? $person['user_last_name'] ?? '',
+                $person['suffix'] ?? '',
+                $person['gender'] ?? $person['user_gender'] ?? '',
+                $person['civil_status'] ?? '',
+                $person['citizenship'] ?? 'Filipino',
+                $person['birth_date'] ?? null,
+                $person['birth_place'] ?? '',
+                $person['religion'] ?? '',
+                $person['education_level'] ?? '',
+                $person['occupation'] ?? '',
+                $person['monthly_income'] ?? null,
+                $person['contact_number'] ?? '',
+                
+                // Address Information
+                $address['house_no'] ?? '',
+                $address['street'] ?? ''
+            ];
 
-            // Get document type info 
-            $stmt = $pdo->prepare("SELECT id, code FROM document_types WHERE id = ?");
-            $stmt->execute([$documentTypeId]);
-            $documentType = $stmt->fetch();
-
-            // Get attribute type IDs
-            $stmt = $pdo->prepare("
-                SELECT id, code 
-                FROM document_attribute_types 
-                WHERE document_type_id = ?
-            ");
-            $stmt->execute([$documentTypeId]);
-            $attributeTypes = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-
-            // Prepare attributes array based on document type
-            $attributes = [];
+            // Add document-specific values
             switch($documentType['code']) {
                 case 'barangay_clearance':
-                    if (!empty($_POST['purposeClearance'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['clearance_purpose'] ?? null,
-                            'value' => $_POST['purposeClearance']
-                        ];
-                    }
+                    $values = array_merge($values, [
+                        '', '', '', '', // business fields - empty for clearance
+                        $_POST['purposeClearance'] ?? '', // purpose
+                        $imagePath // proof_image_path
+                    ]);
                     break;
 
                 case 'proof_of_residency':
-                    if (!empty($_POST['residencyDuration'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['residency_duration'] ?? null,
-                            'value' => $_POST['residencyDuration']
-                        ];
-                    }
-                    if (!empty($_POST['residencyPurpose'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['residency_purpose'] ?? null,
-                            'value' => $_POST['residencyPurpose']
-                        ];
-                    }
+                    $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
+                               '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
+                    $values = array_merge($values, [
+                        '', '', '', '', // business fields - empty
+                        $purpose, // purpose
+                        $imagePath // proof_image_path
+                    ]);
                     break;
 
                 case 'barangay_indigency':
-                    if (!empty($_POST['indigencyReason'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['indigency_reason'] ?? null,
-                            'value' => $_POST['indigencyReason']
-                        ];
-                    }
-                    break;
-
-                case 'cedula':
-                case 'community_tax_certificate':
-                    // Handle occupation
-                    $occupation = !empty($_POST['cedulaOccupation']) ? $_POST['cedulaOccupation'] : $_POST['ctcOccupation'] ?? '';
-                    if (!empty($occupation)) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['occupation'] ?? null,
-                            'value' => $occupation
-                        ];
-                    }
-                    
-                    // Handle income fields
-                    $income = !empty($_POST['cedulaIncome']) ? $_POST['cedulaIncome'] : $_POST['ctcIncome'] ?? '';
-                    if (!empty($income)) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['income'] ?? null,
-                            'value' => number_format((float)$income, 2, '.', '')
-                        ];
-                    }
-
-                    // Handle optional fields specific to CTC
-                    if ($documentType['code'] === 'community_tax_certificate') {
-                        if (!empty($_POST['ctcPropertyValue'])) {
-                            $attributes[] = [
-                                'type_id' => $attributeTypes['property_value'] ?? null,
-                                'value' => number_format((float)$_POST['ctcPropertyValue'], 2, '.', '')
-                            ];
-                        }
-                        if (!empty($_POST['ctcBirthplace'])) {
-                            $attributes[] = [
-                                'type_id' => $attributeTypes['birthplace'] ?? null,
-                                'value' => $_POST['ctcBirthplace']
-                            ];
-                        }
-                    }
+                    $values = array_merge($values, [
+                        '', '', '', '', // business fields - empty
+                        $_POST['indigencyReason'] ?? '', // purpose
+                        $imagePath // proof_image_path (required for indigency)
+                    ]);
                     break;
 
                 case 'business_permit_clearance':
-                    if (!empty($_POST['businessName'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_name'] ?? null,
-                            'value' => $_POST['businessName']
-                        ];
-                    }
-                    if (!empty($_POST['businessType'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_type'] ?? null,
-                            'value' => $_POST['businessType']
-                        ];
-                    }
-                    if (!empty($_POST['businessAddress'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_address'] ?? null,
-                            'value' => $_POST['businessAddress']
-                        ];
-                    }
-                    if (!empty($_POST['businessPurpose'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_purpose'] ?? null,
-                            'value' => $_POST['businessPurpose']
-                        ];
-                    }
+                    $values = array_merge($values, [
+                        $_POST['businessName'] ?? '', // business_name
+                        $_POST['businessAddress'] ?? '', // business_location
+                        $_POST['businessPurpose'] ?? '', // business_nature
+                        $_POST['businessType'] ?? '', // business_type
+                        'Business Permit Application', // purpose
+                        $imagePath // proof_image_path
+                    ]);
+                    break;
+
+                default:
+                    $values = array_merge($values, [
+                        '', '', '', '', // business fields - empty
+                        '', // purpose
+                        $imagePath // proof_image_path
+                    ]);
                     break;
             }
 
-            // Insert attributes if any exist
-            if (!empty($attributes)) {
-                $stmt = $pdo->prepare("
-                    INSERT INTO document_request_attributes 
-                    (request_id, attribute_type_id, value) 
-                    VALUES (?, ?, ?)
-                ");
-                foreach ($attributes as $attr) {
-                    if ($attr['type_id']) {
-                        $stmt->execute([$requestId, $attr['type_id'], $attr['value']]);
-                    }
-                }
-            }
+            // Execute the insert
+            $stmt->execute($values);
+            $requestId = $pdo->lastInsertId();
 
             // If we got here, commit the transaction
             $pdo->commit();
@@ -684,6 +682,15 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     </div>
                     <div class="request-details">
                         Request ID: #<?= str_pad($request['id'], 6, '0', STR_PAD_LEFT) ?>
+                        <?php if (!empty($request['business_name'])): ?>
+                            <br>Business: <?= htmlspecialchars($request['business_name']) ?>
+                        <?php endif; ?>
+                        <?php if (!empty($request['purpose'])): ?>
+                            <br>Purpose: <?= htmlspecialchars($request['purpose']) ?>
+                        <?php endif; ?>
+                        <?php if ($request['price'] > 0): ?>
+                            <br>Fee: ₱<?= number_format($request['price'], 2) ?>
+                        <?php endif; ?>
                     </div>
                     <div class="request-date">
                         Submitted on: <?= date('F d, Y - h:i A', strtotime($request['created_at'])) ?>
@@ -718,7 +725,7 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                                 'business_permit_clearance',
                                 'cedula',
                                 'proof_of_residency',
-                                'community_tax_certificate'
+                                'first_time_job_seeker'
                             ];
                             // Build a map for quick lookup
                             $docMap = [];
@@ -737,6 +744,9 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                             }
                             ?>
                         </select>
+                        <div class="cedula-note" style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px;">
+                            <strong>Note:</strong> For Community Tax Certificate (Cedula), please visit the Barangay Hall in person. This document cannot be requested online.
+                        </div>
                     </div>
 
                     <!-- Document price/fee label -->
@@ -809,20 +819,21 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
 
                     <div id="businessPermitFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="businessName">Business Name</label>
-                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name">
+                            <label for="businessName">Business Name <span style="color: red;">*</span></label>
+                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name" required>
                         </div>
                         <div class="form-row">
-                            <label for="businessType">Business Type</label>
-                            <input type="text" id="businessType" name="businessType" placeholder="Enter type/nature of business (e.g., Retail, Restaurant, etc.)">
+                            <label for="businessType">Type of Business <span style="color: red;">*</span></label>
+                            <input type="text" id="businessType" name="businessType" placeholder="Enter type of business (e.g., Retail, Restaurant, etc.)" required>
                         </div>
                         <div class="form-row">
-                            <label for="businessAddress">Business Address</label>
-                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address">
+                            <label for="businessAddress">Business Location/Address <span style="color: red;">*</span></label>
+                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" required>
                         </div>
                         <div class="form-row">
-                            <label for="businessPurpose">Purpose</label>
-                            <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Purpose for business clearance (e.g., New business permit, Renewal, etc.)">
+                            <label for="businessPurpose">Nature of Business <span style="color: red;">*</span></label>
+                            <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Describe the nature of business operations" required>
+                            <small class="input-help">Describe what your business does (e.g., Food Service, General Merchandise, etc.)</small>
                         </div>
                     </div>
 
@@ -1034,10 +1045,23 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     const businessType = document.getElementById('businessType');
                     const businessAddress = document.getElementById('businessAddress');
                     const businessPurpose = document.getElementById('businessPurpose');
-                    if (businessName) businessName.required = true;
-                    if (businessType) businessType.required = true;
-                    if (businessAddress) businessAddress.required = true;
-                    if (businessPurpose) businessPurpose.required = true;
+                    
+                    // Enable and set required fields
+                    [businessName, businessType, businessAddress, businessPurpose].forEach(field => {
+                        if (field) {
+                            field.required = true;
+                            field.disabled = false;
+                            
+                            // Add input event listener for validation
+                            field.addEventListener('input', function() {
+                                if (!this.value.trim()) {
+                                    this.setCustomValidity('This field is required');
+                                } else {
+                                    this.setCustomValidity('');
+                                }
+                            });
+                        }
+                    });
                     break;
 
                 case 'community_tax_certificate':

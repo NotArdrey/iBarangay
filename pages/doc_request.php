@@ -282,6 +282,25 @@ if (isset($_GET['action'])) {
             }
 
         } elseif ($action === 'print') {
+            // Check if document is a cedula
+            $stmt = $pdo->prepare("
+                SELECT dt.code as document_code
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                WHERE dr.id = :id AND dr.barangay_id = :bid
+            ");
+            $stmt->execute([':id' => $reqId, ':bid' => $bid]);
+            $docType = $stmt->fetch();
+            
+            if ($docType && in_array($docType['document_code'], ['cedula', 'community_tax_certificate'])) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Community Tax Certificate (Cedula) must be obtained in person at the Barangay Hall.'
+                ]);
+                exit;
+            }
+            
             ob_start();
             $docRequestId = $reqId;
             require __DIR__ . '/../functions/document_template.php';
@@ -301,6 +320,7 @@ if (isset($_GET['action'])) {
                 SELECT 
                     dr.id AS document_request_id,
                     dt.name AS document_name,
+                    dt.code AS document_code,
                     CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
                     u.email
                 FROM document_requests dr
@@ -314,19 +334,6 @@ if (isset($_GET['action'])) {
             $info = $stmt->fetch();
             
             if ($info && !empty($info['email'])) {
-                // Generate PDF
-                ob_start();
-                $docRequestId = $reqId;
-                require __DIR__ . '/../functions/document_template.php';
-                $html = ob_get_clean();
-                $dompdf = new Dompdf();
-                $dompdf->loadHtml($html);
-                $dompdf->setPaper('A4','portrait');
-                $dompdf->render();
-                $pdfOutput = $dompdf->output();
-                $pdfName   = "document_request_{$reqId}.pdf";
-                
-                // Send email
                 $mail = new PHPMailer(true);
                 try {
                     $mail->isSMTP();
@@ -338,9 +345,33 @@ if (isset($_GET['action'])) {
                     $mail->Port       = 587;
                     $mail->setFrom('noreply@barangayhub.com','iBarangay');
                     $mail->addAddress($info['email'], $info['requester_name']);
-                    $mail->Subject = 'Your Document Request: ' . $info['document_name'];
-                    $mail->Body    = "Hello {$info['requester_name']},\n\nPlease find attached your requested document.";
-                    $mail->addStringAttachment($pdfOutput, $pdfName, 'base64', 'application/pdf');
+
+                    // Check if document is a cedula
+                    if (in_array($info['document_code'], ['cedula', 'community_tax_certificate'])) {
+                        $mail->Subject = 'Community Tax Certificate (Cedula) Ready for Pickup';
+                        $mail->Body    = "Hello {$info['requester_name']},\n\n"
+                                     . "Your Community Tax Certificate (Cedula) request has been processed and is ready for pickup at the Barangay Hall.\n\n"
+                                     . "Please note that Cedula must be obtained in person. Bring a valid ID when claiming your document.\n\n"
+                                     . "Office Hours: Monday to Friday, 8:00 AM to 5:00 PM\n\n"
+                                     . "Thank you for your understanding.";
+                    } else {
+                        // Generate PDF for non-cedula documents
+                        ob_start();
+                        $docRequestId = $reqId;
+                        require __DIR__ . '/../functions/document_template.php';
+                        $html = ob_get_clean();
+                        $dompdf = new Dompdf();
+                        $dompdf->loadHtml($html);
+                        $dompdf->setPaper('A4','portrait');
+                        $dompdf->render();
+                        $pdfOutput = $dompdf->output();
+                        $pdfName   = "document_request_{$reqId}.pdf";
+                        
+                        $mail->Subject = 'Your Document Request: ' . $info['document_name'];
+                        $mail->Body    = "Hello {$info['requester_name']},\n\nPlease find attached your requested document.";
+                        $mail->addStringAttachment($pdfOutput, $pdfName, 'base64', 'application/pdf');
+                    }
+                    
                     $mail->send();
                     
                     // Update status
@@ -351,9 +382,16 @@ if (isset($_GET['action'])) {
                     ");
                     $upd->execute([':id'=>$reqId,':bid'=>$bid]);
                     
-                    logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,'Sent PDF and marked complete.');
+                    logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
+                        in_array($info['document_code'], ['cedula', 'community_tax_certificate']) 
+                            ? 'Sent pickup notification email for cedula.'
+                            : 'Sent PDF and marked complete.'
+                    );
+                    
                     $response['success'] = true;
-                    $response['message'] = 'Email sent & marked complete.';
+                    $response['message'] = in_array($info['document_code'], ['cedula', 'community_tax_certificate'])
+                        ? 'Pickup notification email sent & marked complete.'
+                        : 'Email sent & marked complete.';
                 } catch (Exception $e) {
                     $response['message'] = 'Mailer error: '.$mail->ErrorInfo;
                 }
@@ -469,12 +507,60 @@ $completedRequests = $stmtHist->fetchAll();
     .action-btn i {
         font-size: 0.875rem;
     }
+
+    /* Tabs Navigation Styles */
+    .tabs-navigation {
+      display: flex;
+      gap: 1rem;
+      border-bottom: 2px solid #e5e7eb;
+      margin-bottom: 2rem;
+    }
+
+    .tab-button {
+      padding: 0.75rem 1.5rem;
+      font-weight: 500;
+      color: #6b7280;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s ease;
+      cursor: pointer;
+    }
+
+    .tab-button:hover {
+      color: #1e40af;
+    }
+
+    .tab-button.active {
+      color: #1e40af;
+      border-bottom-color: #1e40af;
+    }
+
+    /* Tab Content Styles */
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+      animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
   </style>
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
-    <!-- Pending Requests Section -->
-    <section id="docRequests" class="mb-10">
+    <!-- Tabs Navigation -->
+    <div class="tabs-navigation mb-4">
+      <button class="tab-button active" data-tab="pending">Pending Requests</button>
+      <button class="tab-button" data-tab="completed">Completed Requests</button>
+    </div>
+
+    <!-- Pending Requests Tab -->
+    <section id="pending" class="tab-content active">
       <header class="mb-6">
         <h1 class="text-3xl font-bold text-blue-800">Pending Document Requests</h1>
         <p class="text-gray-600 mt-2">Total pending requests: <span class="font-semibold"><?= count($docRequests) ?></span></p>
@@ -546,9 +632,11 @@ $completedRequests = $stmtHist->fetchAll();
                         <i class="fas fa-download"></i> Photo
                       </a>
                       <?php endif; ?>
+                      <?php if (!in_array($req['document_code'], ['cedula', 'community_tax_certificate'])): ?>
                       <button class="printDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
                         <i class="fas fa-print"></i> Print
                       </button>
+                      <?php endif; ?>
                       <button class="sendDocEmailBtn p-2 text-green-600 hover:text-green-900 rounded-lg hover:bg-green-50" data-id="<?= $req['document_request_id'] ?>">
                         <i class="fas fa-envelope"></i> Email
                       </button>
@@ -573,10 +661,10 @@ $completedRequests = $stmtHist->fetchAll();
       </div>
     </section>
 
-    <!-- Completed (History) Section -->
-    <section id="docRequestsHistory">
+    <!-- Completed Requests Tab -->
+    <section id="completed" class="tab-content">
       <header class="mb-6">
-        <h1 class="text-3xl font-bold text-green-800">Document Requests History (Completed)</h1>
+        <h1 class="text-3xl font-bold text-green-800">Document Requests History</h1>
         <p class="text-gray-600 mt-2">Total completed requests: <span class="font-semibold"><?= count($completedRequests) ?></span></p>
       </header>
 
@@ -644,6 +732,32 @@ $completedRequests = $stmtHist->fetchAll();
   <!-- Include the JavaScript and modal code here -->
   <script>
     document.addEventListener('DOMContentLoaded', function() {
+      // Tabs functionality
+      const tabButtons = document.querySelectorAll('.tab-button');
+      const tabContents = document.querySelectorAll('.tab-content');
+
+      function switchTab(tabId) {
+        // Update tab buttons
+        tabButtons.forEach(button => {
+          button.classList.toggle('active', button.dataset.tab === tabId);
+        });
+
+        // Update tab contents
+        tabContents.forEach(content => {
+          if (content.id === tabId) {
+            content.classList.add('active');
+          } else {
+            content.classList.remove('active');
+          }
+        });
+      }
+
+      tabButtons.forEach(button => {
+        button.addEventListener('click', () => {
+          switchTab(button.dataset.tab);
+        });
+      });
+
       // Search functionality
       function tableSearch(inputElem, tableElem) {
         inputElem.addEventListener('keyup', function() {
@@ -734,7 +848,19 @@ $completedRequests = $stmtHist->fetchAll();
       document.querySelectorAll('.printDocRequestBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           const requestId = this.getAttribute('data-id');
-          window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
+          fetch(`doc_request.php?action=print&id=${requestId}`)
+            .then(response => response.json())
+            .then(data => {
+              if (!data.success) {
+                Swal.fire('Not Available', data.message, 'warning');
+              } else {
+                window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
+              }
+            })
+            .catch(() => {
+              // If response is not JSON, it means it's the PDF
+              window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
+            });
         });
       });
 
