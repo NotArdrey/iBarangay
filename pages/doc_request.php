@@ -131,7 +131,7 @@ if (isset($_GET['action'])) {
                         $mail->Password   = 'eisy hpjz rdnt bwrp';
                         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                         $mail->Port       = 587;
-                        $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
+                        $mail->setFrom('noreply@barangayhub.com','iBarangay');
                         $mail->addAddress($userInfo['email'], $userInfo['name']);
                         $mail->Subject = 'Your account has been banned';
                         // properly terminate the string and remove the stray backslash

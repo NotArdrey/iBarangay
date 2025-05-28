@@ -1,5 +1,5 @@
 <?php
-// Ensure user info and barangay name are available
+// NAVIGATION BAR COMPONENT
 if (!isset($user_info) || !$user_info) {
   // Example: adjust according to your session/user management
   if (isset($_SESSION['user_id'])) {
@@ -233,9 +233,14 @@ if (!isset($user_info) || !$user_info) {
         </div>
       </div>
     <?php endif; ?>
+    <div id="scheduleNotif" style="position: relative;">
+      <i class="fas fa-calendar-check" style="font-size: 1.5rem; cursor: pointer;" onclick="location.href='../pages/blotter_status.php'"></i>
+      <span id="schedBadge" style="position: absolute; top: -5px; right: -5px; background:#dc2626; color: white; font-size: .7rem; border-radius: 50%; padding: 2px 6px; display:none;">0</span>
+    </div>
   </div>
 </nav>
 <div style="height:70px;"></div> <!-- Spacer div to prevent content from being hidden -->
+
 
 <script>
   // Dropdown functionality
@@ -268,4 +273,22 @@ if (!isset($user_info) || !$user_info) {
       });
     }
   });
+  
+  // Example AJAX to fetch schedule notifications count
+  function updateScheduleNotif(){
+    fetch('?action=get_schedule_notifications')
+      .then(response => response.json())
+      .then(data => {
+        var badge = document.getElementById('schedBadge');
+        if(data.count > 0){
+          badge.textContent = data.count;
+          badge.style.display = 'inline-block';
+        } else {
+          badge.style.display = 'none';
+        }
+      });
+  }
+  document.addEventListener('DOMContentLoaded', updateScheduleNotif);
+  // Optionally set interval to poll notifications
+  setInterval(updateScheduleNotif, 60000);
 </script>

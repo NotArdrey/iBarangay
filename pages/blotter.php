@@ -1,9 +1,11 @@
 <?php
-// blotter.php – Complete Blotter Case Management with Hearing Process and Barangay Forms
+// blotter.php – ADMIN SIDE
 session_start();
 require "../config/dbconn.php";
 require "../vendor/autoload.php";
-use Dompdf\Dompdf;  
+use Dompdf\Dompdf;
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\Exception;  
 
 // Authentication & role check
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
@@ -11,20 +13,15 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
     exit;
 }
 
-function transcribeFile(string $filePath): string
-{
+function transcribeFile(string $filePath): string {
     $apiKey = getenv('OPENAI_API_KEY') ?: '';
-    if (!$apiKey) {
-        throw new Exception("Missing OPENAI_API_KEY");
-    }
+    if (!$apiKey) throw new Exception("Missing OPENAI_API_KEY");
 
-    // Check file size
     $fileSize = filesize($filePath);
-    if ($fileSize > 25 * 1024 * 1024) { // 25MB limit
+    if ($fileSize > 25 * 1024 * 1024) {
         throw new Exception("File too large. Maximum size is 25MB.");
     }
 
-    // Check file mime type
     $finfo = new finfo(FILEINFO_MIME_TYPE);
     $mimeType = $finfo->file($filePath);
     $allowedTypes = [
@@ -47,45 +44,34 @@ function transcribeFile(string $filePath): string
     $ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
     curl_setopt_array($ch, [
         CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST           => true,
-        CURLOPT_HTTPHEADER     => [
-            "Authorization: Bearer {$apiKey}",
-            "Content-Type: multipart/form-data"
-        ],
-        CURLOPT_POSTFIELDS     => $post,
-        CURLOPT_TIMEOUT        => 300,
-        CURLOPT_CONNECTTIMEOUT => 30,
+        CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ["Authorization: Bearer {$apiKey}", "Content-Type: multipart/form-data"],
+        CURLOPT_POSTFIELDS => $post,
+        CURLOPT_TIMEOUT => 300,
     ]);
 
     $resp = curl_exec($ch);
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    
-    if (curl_errno($ch)) {
-        throw new Exception('Connection error: ' . curl_error($ch));
-    }
-    
+    if (curl_errno($ch)) throw new Exception('Connection error: ' . curl_error($ch));
     curl_close($ch);
 
     if ($httpCode !== 200) {
         $error = json_decode($resp, true);
-        $message = isset($error['error']['message']) ? $error['error']['message'] : "API returned HTTP $httpCode";
+        $message = $error['error']['message'] ?? "API returned HTTP $httpCode";
         throw new Exception("Transcription failed: $message");
     }
 
     $data = json_decode($resp, true);
-    if (empty($data['text'])) {
-        throw new Exception('No transcription text returned from API.');
-    }
+    if (empty($data['text'])) throw new Exception('No transcription text returned from API.');
 
     return trim($data['text']);
 }
 
 $current_admin_id = $_SESSION['user_id'];
-$bid              = $_SESSION['barangay_id'];
-$role             = $_SESSION['role_id'];
-$allowedStatuses  = ['pending','open','closed','completed','solved','endorsed_to_court','cfa_eligible'];
+$bid = $_SESSION['barangay_id'];
+$role = $_SESSION['role_id'];
+$allowedStatuses = ['pending','open','closed','completed','solved','endorsed_to_court','cfa_eligible'];
 
-// Helpers
 function logAuditTrail($pdo, $adminId, $action, $table, $recordId, $desc = '') {
     $pdo->prepare("INSERT INTO audit_trails
         (user_id, admin_user_id, action, table_name, record_id, description)
@@ -108,47 +94,31 @@ function getResidents($pdo, $bid) {
 }
 
 function validateBlotterData(array $data, &$errors) {
-    if (empty(trim($data['location'] ?? ''))) {
-        $errors[] = 'Location is required.';
-    }
-    if (empty(trim($data['description'] ?? ''))) {
-        $errors[] = 'Description is required.';
-    }
-    if (empty($data['categories']) || !is_array($data['categories'])) {
-        $errors[] = 'At least one category must be selected.';
-    }
+    if (empty(trim($data['location'] ?? ''))) $errors[] = 'Location is required.';
+    if (empty(trim($data['description'] ?? ''))) $errors[] = 'Description is required.';
+    if (empty($data['categories']) || !is_array($data['categories'])) $errors[] = 'At least one category must be selected.';
+    
     if (empty($data['participants']) || !is_array($data['participants'])) {
         $errors[] = 'At least one participant is required.';
     } else {
         foreach ($data['participants'] as $idx => $p) {
-            if (!empty($p['user_id'])) {
-                if (!ctype_digit(strval($p['user_id']))) {
-                    $errors[] = "Participant #".($idx+1)." has invalid user ID.";
-                }
+            if (!empty($p['user_id']) && !ctype_digit(strval($p['user_id']))) {
+                $errors[] = "Participant #".($idx+1)." has invalid user ID.";
             } else {
-                if (empty(trim($p['first_name'] ?? ''))) {
-                    $errors[] = "Participant #".($idx+1)." first name is required.";
-                }
-                if (empty(trim($p['last_name'] ?? ''))) {
-                    $errors[] = "Participant #".($idx+1)." last name is required.";
-                }
-                if (!empty($p['age']) && !ctype_digit(strval($p['age']))) {
-                    $errors[] = "Participant #".($idx+1)." age must be a number.";
-                }
+                if (empty(trim($p['first_name'] ?? ''))) $errors[] = "Participant #".($idx+1)." first name is required.";
+                if (empty(trim($p['last_name'] ?? ''))) $errors[] = "Participant #".($idx+1)." last name is required.";
+                if (!empty($p['age']) && !ctype_digit(strval($p['age']))) $errors[] = "Participant #".($idx+1)." age must be a number.";
                 if (!empty($p['gender']) && !in_array($p['gender'], ['Male','Female','Other'], true)) {
                     $errors[] = "Participant #".($idx+1)." has invalid gender.";
                 }
             }
-            if (empty(trim($p['role'] ?? ''))) {
-                $errors[] = "Participant #".($idx+1)." role is required.";
-            }
+            if (empty(trim($p['role'] ?? ''))) $errors[] = "Participant #".($idx+1)." role is required.";
         }
     }
     return empty($errors);
 }
 
 function updateCaseStatus($pdo, $caseId) {
-    // Check hearing outcomes and update case status accordingly
     $stmt = $pdo->prepare("
         SELECT hearing_number, hearing_outcome, is_mediation_successful 
         FROM case_hearings 
@@ -161,43 +131,34 @@ function updateCaseStatus($pdo, $caseId) {
     
     if ($lastHearing) {
         if ($lastHearing['is_mediation_successful']) {
-            $pdo->prepare("UPDATE blotter_cases SET status = 'solved' WHERE id = ?")
-                ->execute([$caseId]);
+            $pdo->prepare("UPDATE blotter_cases SET status = 'solved' WHERE id = ?")->execute([$caseId]);
         } elseif ($lastHearing['hearing_number'] >= 3 && 
-                  in_array($lastHearing['hearing_outcome'], ['failed', 'no_show_respondent'])) {
-            $pdo->prepare("
-                UPDATE blotter_cases 
-                SET status = 'cfa_eligible', is_cfa_eligible = TRUE 
-                WHERE id = ?
-            ")->execute([$caseId]);
+                in_array($lastHearing['hearing_outcome'], ['failed', 'no_show_respondent'])) {
+            $pdo->prepare("UPDATE blotter_cases SET status = 'cfa_eligible', is_cfa_eligible = TRUE WHERE id = ?")
+                ->execute([$caseId]);
         }
     }
 }
 
 function generateCFACertificate($pdo, $caseId, $complainantId, $issuedBy) {
     $certNumber = 'CFA-' . date('Y') . '-' . str_pad($caseId, 4, '0', STR_PAD_LEFT);
-    
     $stmt = $pdo->prepare("
         INSERT INTO cfa_certificates 
         (blotter_case_id, complainant_person_id, issued_by_user_id, certificate_number, issued_at, reason)
         VALUES (?, ?, ?, ?, NOW(), 'Failed mediation after maximum hearings')
     ");
     $stmt->execute([$caseId, $complainantId, $issuedBy, $certNumber]);
-    
     $pdo->prepare("
         UPDATE blotter_cases 
         SET status = 'endorsed_to_court', cfa_issued_at = NOW(), endorsed_to_court_at = NOW() 
         WHERE id = ?
     ")->execute([$caseId]);
-    
     return $certNumber;
 }
 
 function generateSummonsForm($pdo, $caseId) {
-    // Get case details
     $stmt = $pdo->prepare("
-        SELECT bc.*, 
-               GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+        SELECT bc.*, GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
         FROM blotter_cases bc
         LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
         LEFT JOIN case_categories cc ON bcc.category_id = cc.id
@@ -206,21 +167,20 @@ function generateSummonsForm($pdo, $caseId) {
     ");
     $stmt->execute([$caseId]);
     $case = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if (!$case) {
-        throw new Exception("Case not found");
+    if (!$case) throw new Exception("Case not found");
+
+    // Get captain's esignature if available and case is open or later
+    $esignaturePath = null;
+    if (in_array($case['status'], ['open','closed','completed','solved','endorsed_to_court','cfa_eligible'])) {
+        $esignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
     }
-    
-    // Get participants
+
     $pStmt = $pdo->prepare("
-        SELECT 
-            bp.role,
-            COALESCE(CONCAT(p.first_name, ' ', p.last_name), CONCAT(ep.first_name, ' ', ep.last_name)) AS full_name,
-            COALESCE(CONCAT(a.house_no, ' ', a.street, ', ', b.name), ep.address) AS address
+        SELECT bp.role,
+            COALESCE(CONCAT(p.first_name, ' ', p.last_name), 
+            CONCAT(ep.first_name, ' ', ep.last_name)) AS full_name
         FROM blotter_participants bp
         LEFT JOIN persons p ON bp.person_id = p.id
-        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
-        LEFT JOIN barangay b ON a.barangay_id = b.id
         LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
         WHERE bp.blotter_case_id = ?
     ");
@@ -229,217 +189,114 @@ function generateSummonsForm($pdo, $caseId) {
     
     $complainants = array_filter($participants, fn($p) => $p['role'] === 'complainant');
     $respondents = array_filter($participants, fn($p) => $p['role'] === 'respondent');
-    
-    ob_start();
-    ?>
+
+    ob_start(); ?>
     <!DOCTYPE html>
     <html>
     <head>
         <meta charset="UTF-8">
         <style>
-            @page { margin: 25mm 20mm; size: 8.5in 13in; }
-            body { 
-                font-family: 'Times New Roman', serif; 
-                font-size: 12pt; 
-                line-height: 1.0;
-                margin: 0;
-                padding: 0;
-                color: #000;
-            }
-            .form-number {
-                position: absolute;
-                top: 5mm;
-                left: 5mm;
-                font-size: 10pt;
-                font-weight: normal;
-            }
-            .header-container {
-                margin-top: 15mm;
-                margin-bottom: 15mm;
-            }
-            .logo-row {
-                display: table;
-                width: 100%;
-                margin-bottom: 10mm;
-            }
-            .logo-cell {
-                display: table-cell;
-                width: 80px;
-                vertical-align: middle;
-                text-align: center;
-            }
-            .logo {
-                width: 60px;
-                height: 60px;
-                border: 2px solid #000;
-                border-radius: 50%;
-                margin: 0 auto;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 8pt;
-                font-weight: bold;
-            }
-            .center-cell {
-                display: table-cell;
-                text-align: center;
-                vertical-align: middle;
-                font-size: 11pt;
-                font-weight: bold;
-                line-height: 1.1;
-            }
-            .main-title {
-                text-align: center;
-                font-size: 14pt;
-                font-weight: bold;
-                text-decoration: underline;
-                margin: 15mm 0 10mm 0;
-            }
-            .case-info {
-                text-align: right;
-                margin-bottom: 15mm;
-                font-size: 12pt;
-                line-height: 1.4;
-            }
-            .underline {
-                border-bottom: 1px solid #000;
-                display: inline-block;
-                min-width: 150px;
-                margin: 0 2px;
-            }
-            .complainant-section {
-                margin-bottom: 20mm;
-                line-height: 1.8;
-            }
-            .patawag-title {
-                text-align: center;
-                font-weight: bold;
-                font-size: 12pt;
-                text-decoration: underline;
-                margin: 15mm 0 8mm 0;
-            }
-            .patawag-section {
-                margin-bottom: 10mm;
-                line-height: 1.4;
-            }
-            .content-paragraph {
-                text-align: justify;
-                text-indent: 50px;
-                margin-bottom: 8mm;
-                line-height: 1.3;
-                font-size: 12pt;
-            }
-            .date-line {
-                margin: 15mm 0;
-                text-indent: 50px;
-            }
-            .signature-area {
-                text-align: right;
-                margin-top: 20mm;
-                margin-right: 20mm;
-            }
-            .signature-line {
-                border-bottom: 1px solid #000;
-                width: 250px;
-                margin: 0 0 5px 0;
-                display: inline-block;
-            }
-            .footer-motto {
-                text-align: center;
-                margin-top: 30mm;
-                font-style: italic;
-                color: #0066cc;
-                font-size: 12pt;
-                font-weight: bold;
-            }
+            @page { margin: 25mm 20mm; size: A4; }
+            body { font-family: 'Times New Roman', serif; font-size: 12pt; margin: 0; color: #000; }
+            /* Remove absolute positioning for form-number to avoid overlap */
+            .form-number { font-size: 11pt; margin-bottom: 2mm; }
+            .header-table { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
+            .header-table td { vertical-align: middle; }
+            .logo-cell { width: 70px; text-align: center; }
+            .logo-placeholder { width: 60px; height: 60px; border: 1px solid #000; border-radius: 50%; margin: 0 auto; }
+            .center-cell { text-align: center; font-size: 11pt; font-weight: bold; }
+            .main-title { text-align: center; font-size: 13pt; font-weight: bold; text-decoration: underline; margin: 2mm 0 2mm 0; }
+            .divider { border-top: 1.5px solid #000; margin: 2mm 0 2mm 0; }
+            .case-table { width: 100%; margin-bottom: 2mm; }
+            .case-table td { font-size: 12pt; }
+            .underline { border-bottom: 1px solid #000; min-width: 120px; display: inline-block; }
+            .parties-table { width: 100%; margin-bottom: 2mm; }
+            .parties-table td { vertical-align: top; }
+            .label { font-size: 11pt; }
+            .summons-title { text-align: center; font-weight: bold; text-decoration: underline; margin: 2mm 0; }
+            .lines { border-bottom: 1px solid #000; height: 12px; margin: 1.5mm 0; }
+            .signature-section { margin-top: 8mm; }
+            .signature-line { border-bottom: 1px solid #000; width: 60mm; display: inline-block; margin-bottom: 2mm; }
+            .footer-motto { text-align: center; margin-top: 10mm; font-style: italic; font-size: 12pt; font-weight: bold; }
         </style>
     </head>
     <body>
-        <div class="form-number">KP Pormularyo Blg. 9</div>
-        
-        <div class="header-container">
-            <div class="logo-row">
-                <div class="logo-cell">
-                    <div class="logo">LOGO</div>
-                </div>
-                <div class="center-cell">
+        <div class="form-number">KP Pormularyo Blg. 7</div>
+        <table class="header-table">
+            <tr>
+                <td class="logo-cell"><div class="logo-placeholder"></div></td>
+                <td class="center-cell">
                     Republika ng Pilipinas<br>
                     Lalawigan ng Bulacan<br>
                     Bayan ng San Rafael<br>
                     Barangay Tambubong
+                </td>
+                <td class="logo-cell"><div class="logo-placeholder"></div></td>
+            </tr>
+        </table>
+        <div class="main-title">TANGGAPAN NG LUPONG TAGAPAMAYAPA</div>
+        <div class="divider"></div>
+        <div class="case-table">
+            <div style="width:45%;display:inline-block;vertical-align:top;">
+                <div class="underline" style="min-width:180px;">
+                    <?php foreach($complainants as $c): ?>
+                        <?= htmlspecialchars($c['full_name'] ?? 'Unknown') ?><br>
+                    <?php endforeach; ?>
+                    <?php if (empty($complainants)): ?>
+                        &nbsp;
+                    <?php endif; ?>
                 </div>
-                <div class="logo-cell">
-                    <div class="logo">LOGO</div>
+                <div class="label">(Mga) Maysumbong</div>
+                <div style="margin:2mm 0;">-laban kay (kina)-</div>
+                <div class="underline" style="min-width:180px;">
+                    <?php foreach($respondents as $r): ?>
+                        <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
+                    <?php endforeach; ?>
+                    <?php if (empty($respondents)): ?>
+                        &nbsp;
+                    <?php endif; ?>
                 </div>
+                <div class="label">(Mga) Ipinagsusumbong</div>
+            </div>
+            <div style="width:10%;display:inline-block;"></div>
+            <div style="width:45%;display:inline-block;vertical-align:top;">
+                Usaping Barangay Blg. <span class="underline" style="min-width:80px;"><?= htmlspecialchars($case['case_number'] ?? '') ?></span><br>
+                Ukol sa <span class="underline" style="min-width:120px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
             </div>
         </div>
-        
-        <div class="main-title">TANGGAPAN NG LUPONG TAGAPAMAYAPA</div>
-        
-        <div class="case-info">
-            Usaping Barangay Blg. <span class="underline"><?= htmlspecialchars($case['case_number'] ?? '') ?></span><br>
-            Ukol sa <span class="underline" style="min-width: 200px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
+        <div class="summons-title">PATAWAG</div>
+        <div style="margin-bottom:2mm;">
+            Kay/Kina: <span class="underline" style="min-width:180px;">
+                <?php foreach($respondents as $r) echo htmlspecialchars($r['full_name']) . ' '; ?>
+            </span>
+            <div class="label">(Mga) Ipinagsusumbong</div>
         </div>
-        
-        <div class="complainant-section">
-            <span class="underline" style="min-width: 300px;">
-                <?php 
-                if ($complainants) {
-                    echo htmlspecialchars($complainants[0]['full_name']);
-                }
-                ?>
-            </span><br>
-            (Mga) Maysumbong<br><br>
-            
-            -laban kay (kina)-<br><br>
-            
-            <span class="underline" style="min-width: 300px;">
-                <?php 
-                if ($respondents) {
-                    echo htmlspecialchars($respondents[0]['full_name']);
-                }
-                ?>
-            </span><br>
-            (Mga) Ipinagsusumbong
+        <div style="margin-bottom:2mm;">
+            Sa pamamagitan nito, kayo'y tinatawag upang personal na humarap sa akin, kasama ang inyong mga testigo, sa ika-<span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>, sa ganap na ika-<span class="underline" style="min-width:40px;"></span> ng umaga/hapon, upang sagutin ang isang sumbong na idinulog sa akin, na ang kopya'y kalakip nito, para pagmagitanan/pagpakasunduin kayo sa inyong alitan ng (mga) maysumbong.
         </div>
-        
-        <div class="patawag-title">PATAWAG</div>
-        
-        <div class="patawag-section">
-            Kay/Kina: <span class="underline" style="min-width: 350px;">
-                <?php 
-                foreach($respondents as $r) {
-                    echo htmlspecialchars($r['full_name']) . " ";
-                }
-                ?>
-            </span><br>
-            <span class="underline" style="min-width: 450px;">(Mga) Ipinagsusumbong</span>
+        <div style="margin-bottom:2mm;">
+            Sa pamamagitan nito, kayo'y binabalaan na ang inyong pagtanggi o sadyang di-pagharap bilang pagtaliwas sa patawag na ito ay magbibigay ng karapatan sa (mga) maysumbong upang tuwiran kayong ipagsakdal sa hukuman/tanggapan ng pamahalaan, na doon ay mahahadlangan kayong magharap ng kontra-demanda bunga ng nabanggit na sumbong.
         </div>
-        
-        <div class="content-paragraph">
-            Sa pamamagitan nito, kayo'y tinatawag upang personal na humarap sa akin, kasama ang inyong mga testigo, sa ika-<span class="underline">____</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>, sa ganap na ika-<span class="underline">____</span> ng umaga/hapon, upang sagutin ang isang sumbong laban sa akin, na ako ay kopyay kalakip nito, para pamagitanan/papagkasunduin kayo sa inyong alitan ng (mga) maysumbong.
-        </div>
-        
-        <div class="content-paragraph">
-            Sa pamamagitan nito, kayo'y binabataan na ang inyong pagtanggi o sadyang di-pagharap bilang pagtalima sa patawag na ito ay magbibigay ng karapatan sa (mga) maysumbong upang tuwiran kayong ipagsakdal sa hukuman/tanggapan ng pamahalan, na doon ay may mahahadlangan kayong magharap ng kontra-demanda bunga ng nabanggit na sumbong.
-        </div>
-        
-        <div class="content-paragraph">
+        <div style="margin-bottom:2mm;">
             TUPARIN ITO, at kung hindi'y parurusahan kayo sa salang paglapastangan sa hukuman.
         </div>
-        
-        <div class="date-line">
-            Ngayon ika-<span class="underline">______</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>.
+        <div class="signature-section">
+            <table style="width:100%; margin-top:6mm;">
+                <tr>
+                    <td>
+                        Ngayon ika-<span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>.
+                    </td>
+                    <td style="text-align:right;">
+                        <?php if ($esignaturePath): ?>
+                            <img src="<?= htmlspecialchars($esignaturePath) ?>" alt="E-signature" style="height:50px;max-width:180px;display:block;margin-left:auto;margin-bottom:2mm;">
+                        <?php endif; ?>
+                        <div class="signature-line"></div><br>
+                        Punong Barangay/Pangulo ng Lupon
+                    </td>
+                </tr>
+            </table>
         </div>
-        
-        <div class="signature-area">
-            <div class="signature-line"></div><br>
-            Punong Barangay/Pangulo ng Lupon
-        </div>
-        
-        <div class="footer-motto">
-            "ASENSO at PROGRESO"
-        </div>
+        <div class="footer-motto">"ASENSO at PROGRESO"</div>
     </body>
     </html>
     <?php
@@ -447,7 +304,6 @@ function generateSummonsForm($pdo, $caseId) {
 }
 
 function generateReportForm($pdo, $caseId) {
-    // Get case details
     $stmt = $pdo->prepare("
         SELECT bc.*, 
                GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
@@ -464,6 +320,12 @@ function generateReportForm($pdo, $caseId) {
         throw new Exception("Case not found");
     }
     
+    // Get captain's esignature if available and case is open or later
+    $esignaturePath = null;
+    if (in_array($case['status'], ['open','closed','completed','solved','endorsed_to_court','cfa_eligible'])) {
+        $esignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
+    }
+
     // Get participants
     $pStmt = $pdo->prepare("
         SELECT 
@@ -490,225 +352,199 @@ function generateReportForm($pdo, $caseId) {
     <head>
         <meta charset="UTF-8">
         <style>
-            @page { margin: 25mm 20mm; size: 8.5in 13in; }
-            body { 
-                font-family: 'Times New Roman', serif; 
-                font-size: 12pt; 
-                line-height: 1.0;
-                margin: 0;
-                padding: 0;
-                color: #000;
-            }
-            .form-number {
-                position: absolute;
-                top: 5mm;
-                left: 5mm;
-                font-size: 10pt;
-                font-weight: normal;
-            }
-            .header-container {
-                margin-top: 15mm;
-                margin-bottom: 15mm;
-            }
-            .logo-row {
-                display: table;
-                width: 100%;
-                margin-bottom: 10mm;
-            }
-            .logo-cell {
-                display: table-cell;
-                width: 80px;
-                vertical-align: middle;
-                text-align: center;
-            }
-            .logo {
-                width: 60px;
-                height: 60px;
-                border: 2px solid #000;
-                border-radius: 50%;
-                margin: 0 auto;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                font-size: 8pt;
-                font-weight: bold;
-            }
-            .center-cell {
-                display: table-cell;
-                text-align: center;
-                vertical-align: middle;
-                font-size: 11pt;
-                font-weight: bold;
-                line-height: 1.1;
-            }
-            .main-title {
-                text-align: center;
-                font-size: 14pt;
-                font-weight: bold;
-                text-decoration: underline;
-                margin: 15mm 0 10mm 0;
-            }
-            .case-info {
-                text-align: right;
-                margin-bottom: 15mm;
-                font-size: 12pt;
-                line-height: 1.4;
-            }
-            .underline {
-                border-bottom: 1px solid #000;
-                display: inline-block;
-                min-width: 150px;
-                margin: 0 2px;
-            }
-            .complainant-section {
-                margin-bottom: 20mm;
-                line-height: 1.8;
-            }
-            .sumbong-title {
-                text-align: center;
-                font-weight: bold;
-                font-size: 12pt;
-                text-decoration: underline;
-                margin: 15mm 0 8mm 0;
-            }
-            .content-paragraph {
-                text-align: justify;
-                text-indent: 50px;
-                margin-bottom: 8mm;
-                line-height: 1.3;
-                font-size: 12pt;
-            }
-            .lined-section {
-                border-bottom: 1px solid #000;
-                height: 15px;
-                margin: 3mm 0;
-                width: 100%;
-            }
-            .date-line {
-                margin: 15mm 0 10mm 0;
-                text-indent: 50px;
-            }
-            .signature-area {
-                text-align: right;
-                margin: 15mm 20mm 15mm 0;
-            }
-            .signature-line {
-                border-bottom: 1px solid #000;
-                width: 250px;
-                margin: 0 0 5px 0;
-                display: inline-block;
-            }
-            .received-section {
-                margin: 20mm 0 15mm 0;
-                text-indent: 50px;
-            }
-            .footer-motto {
-                text-align: center;
-                margin-top: 30mm;
-                font-style: italic;
-                color: #0066cc;
-                font-size: 12pt;
-                font-weight: bold;
-            }
+            @page { margin: 25mm 20mm; size: A4; }
+            body { font-family: 'Times New Roman', serif; font-size: 12pt; margin: 0; color: #000; }
+            /* Remove absolute positioning for form-number to avoid overlap */
+            .form-number { font-size: 11pt; margin-bottom: 2mm; }
+            .header-table { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
+            .header-table td { vertical-align: middle; }
+            .logo-cell { width: 70px; text-align: center; }
+            .logo-placeholder { width: 60px; height: 60px; border: 1px solid #000; border-radius: 50%; margin: 0 auto; }
+            .center-cell { text-align: center; font-size: 11pt; font-weight: bold; }
+            .main-title { text-align: center; font-size: 13pt; font-weight: bold; text-decoration: underline; margin: 2mm 0 2mm 0; }
+            .divider { border-top: 1.5px solid #000; margin: 2mm 0 2mm 0; }
+            .case-table { width: 100%; margin-bottom: 2mm; }
+            .case-table td { font-size: 12pt; }
+            .underline { border-bottom: 1px solid #000; min-width: 120px; display: inline-block; }
+            .parties-table { width: 100%; margin-bottom: 2mm; }
+            .parties-table td { vertical-align: top; }
+            .label { font-size: 11pt; }
+            .sumbong-title { text-align: center; font-weight: bold; text-decoration: underline; margin: 2mm 0; }
+            .lines { border-bottom: 1px solid #000; height: 12px; margin: 1.5mm 0; }
+            .signature-section { margin-top: 8mm; }
+            .signature-line { border-bottom: 1px solid #000; width: 60mm; display: inline-block; margin-bottom: 2mm; }
+            .footer-motto { text-align: center; margin-top: 10mm; font-style: italic; font-size: 12pt; font-weight: bold; }
         </style>
     </head>
     <body>
         <div class="form-number">KP Pormularyo Blg. 7</div>
-        
-        <div class="header-container">
-            <div class="logo-row">
-                <div class="logo-cell">
-                    <div class="logo">LOGO</div>
-                </div>
-                <div class="center-cell">
+        <table class="header-table">
+            <tr>
+                <td class="logo-cell"><div class="logo-placeholder"></div></td>
+                <td class="center-cell">
                     Republika ng Pilipinas<br>
                     Lalawigan ng Bulacan<br>
                     Bayan ng San Rafael<br>
                     Barangay Tambubong
+                </td>
+                <td class="logo-cell"><div class="logo-placeholder"></div></td>
+            </tr>
+        </table>
+        <div class="main-title">TANGGAPAN NG LUPONG TAGAPAMAYAPA</div>
+        <div class="divider"></div>
+        <div class="case-table">
+            <div style="width:45%;display:inline-block;vertical-align:top;">
+                <div class="underline" style="min-width:180px;">
+                    <?php foreach($complainants as $c): ?>
+                        <?= htmlspecialchars($c['full_name'] ?? 'Unknown') ?><br>
+                    <?php endforeach; ?>
+                    <?php if (empty($complainants)): ?>
+                        &nbsp;
+                    <?php endif; ?>
                 </div>
-                <div class="logo-cell">
-                    <div class="logo">LOGO</div>
+                <div class="label">(Mga) Maysumbong</div>
+                <div style="margin:2mm 0;">-laban kay (kina)-</div>
+                <div class="underline" style="min-width:180px;">
+                    <?php foreach($respondents as $r): ?>
+                        <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
+                    <?php endforeach; ?>
+                    <?php if (empty($respondents)): ?>
+                        &nbsp;
+                    <?php endif; ?>
                 </div>
+                <div class="label">(Mga) Ipinagsusumbong</div>
+            </div>
+            <div style="width:10%;display:inline-block;"></div>
+            <div style="width:45%;display:inline-block;vertical-align:top;">
+                Usaping Barangay Blg. <span class="underline" style="min-width:80px;"><?= htmlspecialchars($case['case_number'] ?? '') ?></span><br>
+                Para sa <span class="underline" style="min-width:120px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
             </div>
         </div>
-        
-        <div class="main-title">TANGGAPAN NG LUPONG TAGAPAMAYAPA</div>
-        
-        <div class="case-info">
-            Usaping Barangay Blg. <span class="underline"><?= htmlspecialchars($case['case_number'] ?? '') ?></span><br>
-            Para sa <span class="underline" style="min-width: 200px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
-        </div>
-        
-        <div class="complainant-section">
-            <span class="underline" style="min-width: 300px;">
-                <?php 
-                if ($complainants) {
-                    echo htmlspecialchars($complainants[0]['full_name']);
-                }
-                ?>
-            </span><br>
-            (Mga) Maysumbong<br><br>
-            
-            -laban kay (kina)-<br><br>
-            
-            <span class="underline" style="min-width: 300px;">
-                <?php 
-                if ($respondents) {
-                    echo htmlspecialchars($respondents[0]['full_name']);
-                }
-                ?>
-            </span><br>
-            (Mga) Ipinagsusumbong
-        </div>
-        
         <div class="sumbong-title">SUMBONG</div>
-        
-        <div class="content-paragraph">
+        <div style="margin-bottom:2mm;">
             AKO/KAMI, sa pamamagitan nito, ay naghahain ng sumbong laban sa (mga) ipinagsusumbong na binabanggit sa itaas dahil sa paglabag sa aking/aming mga karapatan at kapakanan sa sumusunod na paraan:
         </div>
-        
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        
-        <div class="content-paragraph">
-            DAHIL DITO, AKO/KAMI ay namamanhik na ipagkaloob sa akin/amin ang sumusunod na (mga) kalunas/ang naaaalinsunod sa batas at/o pagkamakatuwiran:
+        <?php for($i=0;$i<6;$i++): ?><div class="lines"></div><?php endfor; ?>
+        <div style="margin:2mm 0;">
+            DAHIL DITO, AKO/KAMI ay namamanhik na ipagkaloob sa akin/amin ang sumusunod na (mga) kalunasan nang naa alinsunod sa batas at/o pagkamakatuwiran:
         </div>
-        
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        <div class="lined-section"></div>
-        
-        <div class="date-line">
-            Ginawa ngayong ika-<span class="underline">______</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>.
+        <?php for($i=0;$i<4;$i++): ?><div class="lines"></div><?php endfor; ?>
+        <div class="signature-section">
+            <table style="width:100%; margin-top:6mm;">
+                <tr>
+                    <td style="width:60%">
+                        Ginawa ngayong ika- <span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>.
+                    </td>
+                    <td style="width:40%; text-align:right;">
+                        <?php if ($esignaturePath): ?>
+                            <img src="<?= htmlspecialchars($esignaturePath) ?>" alt="E-signature" style="height:50px;max-width:180px;display:block;margin-left:auto;margin-bottom:2mm;">
+                        <?php endif; ?>
+                        <div class="signature-line"></div><br>
+                        (Mga) Maysumbong
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" style="height:10mm"></td>
+                </tr>
+                <tr>
+                    <td>
+                        Tinanggap at itinala ngayong ika- <span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>.
+                    </td>
+                    <td style="text-align:right;">
+                        <?php if ($esignaturePath): ?>
+                            <img src="<?= htmlspecialchars($esignaturePath) ?>" alt="E-signature" style="height:50px;max-width:180px;display:block;margin-left:auto;margin-bottom:2mm;">
+                        <?php endif; ?>
+                        <div class="signature-line"></div><br>
+                        Punong Barangay/Pangulo ng Lupon
+                    </td>
+                </tr>
+            </table>
         </div>
-        
-        <div class="signature-area">
-            <div class="signature-line"></div><br>
-            (Mga) Maysumbong
-        </div>
-        
-        <div class="received-section">
-            Tinanggap at itinala ngayong ika-<span class="underline">____</span> araw ng <span class="underline">________________</span>, 20<span class="underline">____</span>.
-        </div>
-        
-        <div class="signature-area">
-            <div class="signature-line"></div><br>
-            Punong Barangay/Pangulo ng Lupon
-        </div>
-        
-        <div class="footer-motto">
-            "ASENSO at PROGRESO"
-        </div>
+        <div class="footer-motto">"ASENSO at PROGRESO"</div>
     </body>
     </html>
     <?php
     return ob_get_clean();
 }
+// Add this function after generateSummonsForm()
+function generateSummonsPDF($pdo, $caseId) {
+    $html = generateSummonsForm($pdo, $caseId);
+    $pdf = new Dompdf();
+    $pdf->loadHtml($html, 'UTF-8');
+    $pdf->setPaper('A4','portrait');
+    $pdf->render();
+    return $pdf->output();
+}
+
+
+
+// Helper to get captain's esignature for a barangay
+function getCaptainEsignature($pdo, $barangayId) {
+    $stmt = $pdo->prepare("
+        SELECT u.esignature_path
+        FROM users u
+        JOIN roles r ON u.role_id = r.id
+        WHERE u.barangay_id = ? AND r.name = 'Barangay Captain'
+        LIMIT 1
+    ");
+    $stmt->execute([$barangayId]);
+    $path = $stmt->fetchColumn();
+    return $path ? "../$path" : null;
+}
+
+function sendSummonsEmails($pdo, $caseId, $proposalId) {
+    // Generate PDF once for all emails
+    $pdfContent = generateSummonsPDF($pdo, $caseId);
+    $filename = "Summons-Case-{$caseId}.pdf";
+
+    // Fetch emails for complainants and respondents
+    $stmt = $pdo->prepare("
+        SELECT u.email, CONCAT(u.first_name, ' ', u.last_name) AS name
+        FROM users u
+        JOIN blotter_participants bp ON u.id = bp.person_id
+        WHERE bp.blotter_case_id = ? AND bp.role IN ('complainant','respondent')
+    ");
+    $stmt->execute([$caseId]);
+    $participants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    foreach ($participants as $p) {
+        $mail = new PHPMailer(true);
+        try {
+            // Server settings (adjust as needed)
+            $mail->isSMTP();
+            $mail->Host       = 'smtp.example.com';
+            $mail->SMTPAuth   = true;
+            $mail->Username   = 'barangayhub2@gmail.com';
+            $mail->Password   = 'eisy hpjz rdnt bwrp';
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Port       = 587;
+
+            // Recipients
+            $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
+            $mail->addAddress($p['email'], $p['name']);
+
+            // Attach PDF
+            $mail->addStringAttachment($pdfContent, $filename);
+
+            // Email content
+            $mail->isHTML(true);
+            $mail->Subject = 'Summons Notice for Your Blotter Case';
+            $mail->Body    = 'Dear ' . htmlspecialchars($p['name']) . ',<br><br>'
+                . 'You are being summoned for a hearing regarding your case. '
+                . 'Please find the attached summons document.<br><br>'
+                . 'Thank you,<br>iBarangay Admin';
+            $mail->AltBody = 'Dear ' . $p['name'] . ', '
+                . 'You are being summoned for a hearing regarding your case. '
+                . 'Please find the attached summons document.';
+
+            $mail->send();
+        } catch (Exception $e) {
+            error_log("Summons email failed for " . $p['email'] . ": " . $mail->ErrorInfo);
+        }
+    }
+}
+
+
 
 // === POST: Add New Case ===
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
@@ -742,6 +578,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
 
     if ($location === '' || $description === '' || !is_array($participants) || count($participants) === 0) {
         $_SESSION['error_message'] = 'All fields are required and at least one participant must be added.';
+        header('Location: blotter.php');
+        exit;
+    }
+
+    // Check for pending schedule proposal for this location and barangay
+    $stmt = $pdo->prepare("
+        SELECT sp.id 
+        FROM schedule_proposals sp
+        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+        WHERE bc.location = ? AND bc.barangay_id = ? AND sp.status IN ('proposed','user_confirmed','captain_confirmed')
+        LIMIT 1
+    ");
+    $stmt->execute([$location, $bid]);
+    if ($stmt->fetchColumn()) {
+        $_SESSION['error_message'] = 'There is already a pending hearing schedule proposal for this location. Please resolve it before adding a new case.';
         header('Location: blotter.php');
         exit;
     }
@@ -1202,55 +1053,58 @@ if (!empty($_GET['action'])) {
                     exit;
                 }
 
-                $pdo->beginTransaction();
-                
-                // Get current hearing count
-                $stmt = $pdo->prepare("
-                    SELECT hearing_count FROM blotter_cases WHERE id = ?
-                ");
-                $stmt->execute([$id]);
-                $case = $stmt->fetch();
-                
-                if ($case['hearing_count'] >= 3) {
-                    echo json_encode(['success'=>false,'message'=>'Maximum of 3 hearings allowed per case']);
-                    $pdo->rollBack();
+                // Only Barangay Captain allowed
+                if (
+                    empty($data['presiding_officer']) ||
+                    strtolower(trim($data['presiding_officer'])) !== 'barangay captain' ||
+                    (isset($data['officer_position']) && strtolower($data['officer_position']) !== 'barangay_captain')
+                ) {
+                    echo json_encode(['success'=>false,'message'=>'Only Barangay Captain can be the presiding officer for the hearing.']);
                     exit;
                 }
-                
-                $hearingNumber = $case['hearing_count'] + 1;
-                $hearingType = match($hearingNumber) {
-                    1 => 'first',
-                    2 => 'second', 
-                    3 => 'third',
-                    default => 'first'
-                };
-                
-                // Insert hearing
-                $pdo->prepare("
-                    INSERT INTO case_hearings 
-                    (blotter_case_id, hearing_date, hearing_type, hearing_number, 
-                     presiding_officer_name, presiding_officer_position, hearing_notes)
+
+                // Hearing date must be within 5 days from today (inclusive)
+                $hearingDate = $data['hearing_date'];
+                $today = new DateTime();
+                $minDate = $today->format('Y-m-d');
+                $maxDate = (clone $today)->modify('+5 days')->format('Y-m-d');
+                if ($hearingDate < $minDate || $hearingDate > $maxDate) {
+                    echo json_encode(['success'=>false,'message'=>'Hearing date must be within the next 5 days (including today).']);
+                    exit;
+                }
+
+                // Check for existing pending proposal for this case
+                $stmt = $pdo->prepare("SELECT id FROM schedule_proposals WHERE blotter_case_id=? AND status IN ('proposed','user_confirmed','captain_confirmed')");
+                $stmt->execute([$id]);
+                if ($stmt->fetch()) {
+                    echo json_encode(['success'=>false,'message'=>'There is already a pending schedule proposal for this case.']);
+                    exit;
+                }
+
+                $pdo->beginTransaction();
+                // Insert schedule proposal
+                $stmt = $pdo->prepare("
+                    INSERT INTO schedule_proposals
+                    (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position)
                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                ")->execute([
+                ");
+                $stmt->execute([
                     $id,
-                    $data['hearing_date'] . ' ' . $data['hearing_time'],
-                    $hearingType,
-                    $hearingNumber,
+                    $current_admin_id,
+                    $data['hearing_date'],
+                    $data['hearing_time'],
+                    $data['hearing_location'] ?? 'Barangay Hall',
                     $data['presiding_officer'] ?? 'Barangay Captain',
-                    $data['officer_position'] ?? 'barangay_captain',
-                    $data['notes'] ?? ''
+                    $data['officer_position'] ?? 'barangay_captain'
                 ]);
-                
-                // Update case hearing count and status
-                $pdo->prepare("
-                    UPDATE blotter_cases 
-                    SET hearing_count = ?, status = 'open'
-                    WHERE id = ?
-                ")->execute([$hearingNumber, $id]);
-                
+                $proposalId = $pdo->lastInsertId();
+
+                // Send summons emails to all parties using PHPMailer
+                sendSummonsEmails($pdo, $id, $proposalId);
+
                 $pdo->commit();
-                logAuditTrail($pdo, $current_admin_id, 'INSERT', 'case_hearings', $pdo->lastInsertId(), "Scheduled hearing #$hearingNumber");
-                echo json_encode(['success'=>true]);
+                logAuditTrail($pdo, $current_admin_id, 'INSERT', 'schedule_proposals', $proposalId, "Scheduled hearing proposal for case $id");
+                echo json_encode(['success'=>true, 'message'=>'Summons sent to all parties. Awaiting confirmations.']);
                 break;
 
             case 'record_hearing':
@@ -1417,6 +1271,47 @@ if (!empty($_GET['action'])) {
                     echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
                 }
                 break;
+
+            case 'confirm_schedule':
+                // Mark that the current respondent (User or Captain) confirms availability.
+                // Update an imaginary field 'schedule_confirmations' (assume stored as JSON or two boolean fields)
+                // For simplicity, assume we update a field on blotter_cases; here we set 'hearing_count' to negative value as approved.
+                $stmt = $pdo->prepare("UPDATE blotter_cases SET status='approved' WHERE id=?");
+                $stmt->execute([$id]);
+                // Log audit for confirmation
+                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, "Schedule confirmed by party");
+                echo json_encode(['success'=>true]);
+                break;
+
+            case 'reject_schedule':
+                // Record conflict remark from either party
+                $data = json_decode(file_get_contents('php://input'), true);
+                $remark = $data['remark'] ?? 'No remark provided';
+                // Assume we add the conflict remark in a field called resolution_details
+                $stmt = $pdo->prepare("UPDATE blotter_cases SET status='conflict', resolution_details=? WHERE id=?");
+                $stmt->execute([$remark, $id]);
+                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, "Schedule rejected: " . $remark);
+                echo json_encode(['success'=>true]);
+                break;
+
+            case 'propose_schedule':
+                // Called by Captain from add_staff_official_barangaycaptian.php
+                $hearing_date = $_POST['hearing_date'] ?? '';
+                $hearing_time = $_POST['hearing_time'] ?? '';
+                $remarks = $_POST['remarks'] ?? '';
+                if(!$hearing_date || !$hearing_time){
+                    echo json_encode(['success'=>false, 'message'=>'Date and time required']);
+                    exit;
+                }
+                // Insert schedule proposal in a new schedule table or update the blotter_cases proposed schedule fields.
+                $schedule = $hearing_date . ' ' . $hearing_time;
+                $stmt = $pdo->prepare("UPDATE blotter_cases SET scheduled_hearing=?, status='pending_confirmation', resolution_details=? WHERE id=?");
+                // For demo, assume $id is passed by GET or pre-defined
+                $stmt->execute([$schedule, $remarks, $id]);
+                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, "Proposed schedule: $schedule. Remarks: $remarks");
+                echo json_encode(['success'=>true]);
+                break;
+
             default:
                 echo json_encode(['success'=>false,'message'=>'Unknown action']);
         }
@@ -1603,22 +1498,6 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         </div>
           <!-- Categories -->
           <div>
-            <label class="block text-sm font-medium text-gray-700">Categories</label>
-            <div id="editCategoryContainer" class="grid grid-cols-2 gap-2">
-              <?php foreach ($categories as $cat): ?>
-                <label class="flex items-center gap-2">
-                <input
-            type="checkbox"
-            name="categories[]"
-            value="<?= $cat['id'] ?>"
-          >
-                  <?= htmlspecialchars($cat['name']) ?>
-                </label>
-              <?php endforeach; ?>
-            </div>
-          </div>
-          <!-- Status -->
-          <div>
             <label class="block text-sm font-medium text-gray-700">Status</label>
             <select id="editStatus" name="status" required
                     class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
@@ -1687,6 +1566,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       </div>
       <!-- Form -->
       <form
+         
           method="POST"
           enctype="multipart/form-data"
           class="p-6 space-y-4 overflow-y-auto max-h-[calc(100%-6rem)]"
@@ -1742,6 +1622,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <label class="flex items-center gap-2">
               <input
                 type="checkbox"
+               
                 name="interventions[]"
                 value="<?= $int['id'] ?>"
               >
@@ -1802,7 +1683,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
   <header class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 space-y-4 md:space-y-0">
     <!-- Title -->
     <h1 class="text-3xl font-bold text-blue-800">
-      Blotter Cases with Hearing Process & Forms
+      Blotter Cases with Hearing Process
     </h1>
     <!-- Action buttons -->
     <div class="flex flex-col sm:flex-row sm:space-x-4 w-full md:w-auto">
@@ -1828,7 +1709,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     <table class="min-w-full divide-y divide-gray-200">
       <thead class="bg-gray-50">
         <tr>
-          <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Case #</th>
+          <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reported By</th>
           <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Reported</th>
           <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
           <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Categories</th>
@@ -1840,8 +1721,21 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       <tbody class="bg-white divide-y divide-gray-200">
         <?php if ($cases): foreach ($cases as $case): ?>
         <tr class="hover:bg-gray-50 transition-colors">
-          <td class="px-4 py-3 text-sm font-medium text-gray-900">
-            <?= htmlspecialchars($case['case_number'] ?? 'N/A') ?>
+          <td class="px-4 py-3 text-sm text-gray-900">
+            <?php
+              // Display the name of who reported (complainant)
+              $stmt = $pdo->prepare("
+                SELECT COALESCE(CONCAT(p.first_name, ' ', p.last_name), CONCAT(ep.first_name, ' ', ep.last_name)) AS reporter
+                FROM blotter_participants bp
+                LEFT JOIN persons p ON bp.person_id = p.id
+                LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
+                WHERE bp.blotter_case_id = ? AND bp.role = 'complainant'
+                LIMIT 1
+              ");
+              $stmt->execute([$case['id']]);
+              $reporter = $stmt->fetchColumn();
+              echo htmlspecialchars($reporter ?: '—');
+            ?>
           </td>
           <td class="px-4 py-3 text-sm text-gray-900">
             <?php
@@ -1867,8 +1761,8 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <?php endif; ?>
           </td>
           <td class="px-4 py-3 text-sm text-gray-600">
-            <?= $case['hearing_count'] ?>/3
-            <?php if ($case['is_cfa_eligible']): ?>
+            <?= ($case['hearing_count'] ?? 0) ?>/3
+            <?php if (!empty($case['is_cfa_eligible'])): ?>
               <span class="text-red-600 font-medium">(CFA Eligible)</span>
             <?php endif; ?>
           </td>
@@ -1888,17 +1782,19 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
               </div>
               
               <?php if (in_array($role, [3, 4, 5])): ?>
-                <?php if ($case['hearing_count'] < 3 && !in_array($case['status'], ['solved', 'endorsed_to_court'])): ?>
+                <?php if (($case['hearing_count'] ?? 0) < 3 && !in_array($case['status'], ['solved', 'endorsed_to_court'])): ?>
                   <button class="btn-schedule schedule-hearing-btn" data-id="<?= $case['id'] ?>">Schedule Hearing</button>
                 <?php endif; ?>
-                <?php if ($case['is_cfa_eligible'] && $case['status'] === 'cfa_eligible'): ?>
+                <?php if (!empty($case['is_cfa_eligible']) && $case['status'] === 'cfa_eligible'): ?>
                   <button class="btn-cfa issue-cfa-btn" data-id="<?= $case['id'] ?>">Issue CFA</button>
                 <?php endif; ?>
                 <?php if ($case['status'] !== 'closed'): ?>
                   <button class="complete-btn text-green-600 hover:text-green-900" data-id="<?= $case['id'] ?>">Close</button>
                 <?php endif; ?>
-                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Delete</button>
-                <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
+                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Dismiss</button>
+                <?php if (in_array($case['status'], ['closed', 'solved', 'endorsed_to_court'])): ?>
+                  <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
+                <?php endif; ?>
               <?php endif; ?>
             </div>
           </td>
@@ -1992,7 +1888,8 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
   <?php endif; ?>
   
   <script>
-  document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', () => {
+    // Participant templates
     const registeredTemplate = `
       <div class="participant flex gap-2 bg-blue-50 p-2 rounded mb-2">
         <input type="hidden" name="participants[INDEX][type]" value="registered">
@@ -2011,29 +1908,30 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       </div>`;
       
     const unregisteredTemplate = `
-<div class="participant flex gap-2 bg-green-50 p-2 rounded mb-2">
-    <input type="hidden" name="participants[INDEX][type]" value="unregistered">
-    <div class="flex-1 grid grid-cols-2 gap-2">
-        <input type="text" name="participants[INDEX][first_name]" placeholder="First Name" required class="p-2 border rounded">
-        <input type="text" name="participants[INDEX][last_name]" placeholder="Last Name" required class="p-2 border rounded">
-        <input type="text" name="participants[INDEX][contact_number]" placeholder="Contact" class="p-2 border rounded">
-        <input type="text" name="participants[INDEX][address]" placeholder="Address" class="p-2 border rounded">
-        <input type="number" name="participants[INDEX][age]" placeholder="Age" class="p-2 border rounded">
-        <select name="participants[INDEX][gender]" class="p-2 border rounded">
+      <div class="participant flex gap-2 bg-green-50 p-2 rounded mb-2">
+        <input type="hidden" name="participants[INDEX][type]" value="unregistered">
+        <div class="flex-1 grid grid-cols-2 gap-2">
+          <input type="text" name="participants[INDEX][first_name]" placeholder="First Name" required class="p-2 border rounded">
+          <input type="text" name="participants[INDEX][last_name]" placeholder="Last Name" required class="p-2 border rounded">
+          <input type="text" name="participants[INDEX][contact_number]" placeholder="Contact" class="p-2 border rounded">
+          <input type="text" name="participants[INDEX][address]" placeholder="Address" class="p-2 border rounded">
+          <input type="number" name="participants[INDEX][age]" placeholder="Age" class="p-2 border rounded">
+          <select name="participants[INDEX][gender]" class="p-2 border rounded">
             <option value="">Gender</option>
             <option value="Male">Male</option>
             <option value="Female">Female</option>
             <option value="Other">Other</option>
+          </select>
+        </div>
+        <select name="participants[INDEX][role]" class="w-28 p-2 border rounded">
+          <option value="complainant">Complainant</option>
+          <option value="respondent">Respondent</option>
+          <option value="witness">Witness</option>
         </select>
-    </div>
-    <select name="participants[INDEX][role]" class="w-28 p-2 border rounded">
-        <option value="complainant">Complainant</option>
-        <option value="respondent">Respondent</option>
-        <option value="witness">Witness</option>
-    </select>
-    <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
-</div>`;
+        <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
+      </div>`;
 
+    // Add participant function
     function addParticipant(template, container) {
       const idx = container.children.length;
       const wrapper = document.createElement('div');
@@ -2044,6 +1942,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       node.scrollIntoView({ behavior: 'smooth' });
     }
     
+    // Modal toggle functions
     window.toggleViewBlotterModal = () => {
       document.getElementById('viewBlotterModal').classList.toggle('hidden');
     };
@@ -2056,11 +1955,13 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       document.getElementById('editBlotterModal').classList.toggle('hidden');
     };
     
+    // Add modal setup
     const addModal = document.getElementById('addBlotterModal');
     const openBtn  = document.getElementById('openModalBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const participantContainer = document.getElementById('participantContainer');
     
+    // Event listeners
     openBtn.addEventListener('click', () => {
       participantContainer.innerHTML = '';
       addModal.classList.remove('hidden');
@@ -2096,92 +1997,92 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       });
     });
 
-    // Generate Summons Form Handler
-    document.querySelectorAll('.generate-summons-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const caseId = btn.dataset.id;
-        window.open(`?action=generate_summons&id=${caseId}`, '_blank');
-      });
-    });
-
-    // Generate Report Form Handler
-    document.querySelectorAll('.generate-report-form-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const caseId = btn.dataset.id;
-        window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
-      });
-    });
-
     // View modal handler
     async function openViewModal(caseId) {
-      fetch(`?action=get_case_details&id=${caseId}`)
-        .then(response => response.json())
-        .then(data => {
-          if (!data.success) {
-            Swal.fire('Error', data.message, 'error');
-            return;
-          }
-          
-          const caseData = data.case;
-          document.getElementById('viewCaseNumber').textContent = caseData.case_number || 'N/A';
-          document.getElementById('viewDate').textContent = caseData.date_reported || caseData.created_at || 'N/A';
-          document.getElementById('viewLocation').textContent = caseData.location || 'N/A';
-          document.getElementById('viewDescription').textContent = caseData.description || 'N/A';
-          document.getElementById('viewCategories').textContent = caseData.categories || 'None';
-          document.getElementById('viewStatus').textContent = caseData.status || 'N/A';
+      const response = await fetch(`?action=get_case_details&id=${caseId}`);
+      const data = await response.json();
+      
+      if (!data.success || !data.case) {
+        Swal.fire('Error', 'Could not load case details', 'error');
+        return;
+      }
 
-          const pList = data.participants.map(p => {
-            let details = [];
-            if (p.participant_type === 'unregistered') {
-                if (p.contact_number) details.push(`Contact: ${p.contact_number}`);
-                if (p.address) details.push(`Address: ${p.address}`);
-                if (p.age) details.push(`Age: ${p.age}`);
-                if (p.gender) details.push(`Gender: ${p.gender}`);
-            }
-            return `<li>${p.first_name} ${p.last_name} (${p.role}) 
-                    ${details.length > 0 ? '<br>Details: ' + details.join(', ') : ''}</li>`;
-        }).join('');
-          document.getElementById('viewParticipants').innerHTML = pList;
+      // Populate basic case details
+      document.getElementById('viewCaseNumber').textContent = data.case.case_number || '—';
+      document.getElementById('viewDate').textContent = data.case.date_reported ? 
+        new Date(data.case.date_reported).toLocaleString() : '—';
+      document.getElementById('viewLocation').textContent = data.case.location || '—';
+      document.getElementById('viewDescription').textContent = data.case.description || '—';
+      document.getElementById('viewCategories').textContent = data.case.categories || '—';
+      document.getElementById('viewStatus').textContent = data.case.status ? 
+        data.case.status.charAt(0).toUpperCase() + data.case.status.slice(1) : '—';
 
-          const iList = data.interventions.length
-            ? data.interventions.map(i => `<li><strong>${i.intervention_name}</strong> (${i.intervened_at}): ${i.remarks || 'No remarks'}</li>`).join('')
-            : '<li>None</li>';
-          document.getElementById('viewInterventions').innerHTML = iList;
+      // Populate participants list
+      document.getElementById('viewParticipants').innerHTML = data.participants.length ?
+        data.participants.map(p => `
+          <li>
+            <strong>${p.first_name} ${p.last_name}</strong> (${p.role})
+            ${p.contact_number ? `<br>Contact: ${p.contact_number}` : ''}
+            ${p.address ? `<br>Address: ${p.address}` : ''}
+          </li>
+        `).join('') : '<li>No participants recorded</li>';
 
-          // Display hearings
-          const hearingsBody = document.getElementById('viewHearingsBody');
-          if (data.hearings && data.hearings.length > 0) {
-            hearingsBody.innerHTML = data.hearings.map(h => `
-              <tr>
-                <td>Hearing ${h.hearing_number}</td>
-                <td>${new Date(h.hearing_date).toLocaleString()}</td>
-                <td>${h.presiding_officer_name} (${h.presiding_officer_position.replace('_', ' ')})</td>
-                <td>
-                  <span class="status-badge status-${h.hearing_outcome?.replace('_', '-') || 'scheduled'}">
-                    ${h.hearing_outcome?.replace('_', ' ') || 'Scheduled'}
-                  </span>
-                  ${h.is_mediation_successful ? '<br><strong>✓ Mediation Successful</strong>' : ''}
-                </td>
-                <td>
-                  ${h.hearing_outcome === 'scheduled' ? 
-                    `<button class="btn-record record-hearing-btn" data-hearing-id="${h.id}" data-case-id="${caseId}">Record Outcome</button>` : 
-                    'Completed'
-                  }
-                </td>
-              </tr>
-            `).join('');
-          } else {
-            hearingsBody.innerHTML = '<tr><td colspan="5">No hearings scheduled</td></tr>';
-          }
+      // Populate interventions
+      const iList = data.interventions.length ?
+        data.interventions.map(i => `<li><strong>${i.intervention_name}</strong> (${i.intervened_at}): ${i.remarks || 'No remarks'}</li>`).join('') :
+        '<li>None</li>';
+      document.getElementById('viewInterventions').innerHTML = iList;
 
-          toggleViewBlotterModal();
-        });
+      // Display hearings
+      const hearingsBody = document.getElementById('viewHearingsBody');
+      if (data.hearings && data.hearings.length > 0) {
+        hearingsBody.innerHTML = data.hearings.map(h => {
+          const outcome = h.hearing_outcome ? h.hearing_outcome.replace('_', '-') : 'scheduled';
+          const outcomeText = h.hearing_outcome ? h.hearing_outcome.replace('_', ' ') : 'Scheduled';
+          return `
+          <tr>
+            <td>Hearing ${h.hearing_number}</td>
+            <td>${new Date(h.hearing_date).toLocaleString()}</td>
+            <td>${h.presiding_officer_name} (${h.presiding_officer_position ? h.presiding_officer_position.replace('_', ' ') : ''})</td>
+            <td>
+              <span class="status-badge status-${outcome}">
+                ${outcomeText}
+              </span>
+              ${h.is_mediation_successful ? '<br><strong>✓ Mediation Successful</strong>' : ''}
+            </td>
+            <td>
+              ${h.hearing_outcome === 'scheduled' ? 
+                `<button class="btn-record record-hearing-btn" data-hearing-id="${h.id}" data-case-id="${caseId}">Record Outcome</button>` : 
+                'Completed'
+              }
+            </td>
+          </tr>
+        `}).join('');
+      } else {
+        hearingsBody.innerHTML = '<tr><td colspan="5">No hearings scheduled</td></tr>';
+      }
+
+      // Show the modal
+      toggleViewBlotterModal();
     }
 
-    // Attach handlers to view buttons
-    document.querySelectorAll('.view-btn').forEach(btn =>
-      btn.addEventListener('click', () => openViewModal(btn.dataset.id))
-    );
+    // Event delegation for document generation buttons
+    document.addEventListener('click', e => {
+      if (e.target.classList.contains('generate-summons-btn')) {
+        const caseId = e.target.dataset.id;
+        window.open(`?action=generate_summons&id=${caseId}`, '_blank');
+      }
+      
+      if (e.target.classList.contains('generate-report-form-btn')) {
+        const caseId = e.target.dataset.id;
+        window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
+      }
+    });
+
+    // View buttons
+    document.querySelectorAll('.view-btn').forEach(btn => {
+      btn.addEventListener('click', () => openViewModal(btn.dataset.id));
+    });
 
     // Complete button handler
     document.querySelectorAll('.complete-btn').forEach(btn => btn.addEventListener('click', async () => {
@@ -2195,7 +2096,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
 
     // Delete button handler
     document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async () => {
-      const ok = await Swal.fire({ title:'Delete permanently?', icon:'warning', showCancelButton:true, confirmButtonColor:'#d33' });
+      const ok = await Swal.fire({ title:'Dismiss this case?', icon:'warning', showCancelButton:true, confirmButtonColor:'#d33' });
       if (!ok.isConfirmed) return;
       const res = await fetch(`?action=delete&id=${btn.dataset.id}`);
       const d   = await res.json();
@@ -2235,17 +2136,17 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
 
     // Schedule Hearing Handler
     document.querySelectorAll('.schedule-hearing-btn').forEach(btn => btn.addEventListener('click', async () => {
+      const today = new Date();
+      const minDate = today.toISOString().split('T')[0];
+      const maxDateObj = new Date(today.getTime() + 5 * 24 * 60 * 60 * 1000);
+      const maxDate = maxDateObj.toISOString().split('T')[0];
+
       const { value } = await Swal.fire({
         title: 'Schedule Hearing',
         html: `
-          <input id="hearingDate" type="date" class="swal2-input" min="${new Date().toISOString().split('T')[0]}">
-          <input id="hearingTime" type="time" class="swal2-input">
-          <select id="presidingOfficer" class="swal2-input">
-            <option value="Barangay Captain">Barangay Captain</option>
-            <option value="Kagawad 1">Kagawad 1</option>
-            <option value="Kagawad 2">Kagawad 2</option>
-            <option value="Kagawad 3">Kagawad 3</option>
-          </select>
+          <input id="hearingDate" type="date" class="swal2-input" min="${minDate}" max="${maxDate}" required>
+          <input id="hearingTime" type="time" class="swal2-input" required>
+          <input id="presidingOfficer" class="swal2-input" value="Barangay Captain" readonly>
           <textarea id="hearingNotes" class="swal2-textarea" placeholder="Hearing notes (optional)"></textarea>`,
         focusConfirm: false,
         showCancelButton: true,
@@ -2261,20 +2162,20 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             hearing_date: date,
             hearing_time: time,
             presiding_officer: officer,
-            officer_position: officer === 'Barangay Captain' ? 'barangay_captain' : 'kagawad',
+            officer_position: 'barangay_captain',
             notes: document.getElementById('hearingNotes').value
           };
         }
       });
-      
+
       if (!value) return;
-      
+
       const res = await fetch(`?action=schedule_hearing&id=${btn.dataset.id}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(value)
       });
-      
+
       const data = await res.json();
       if (data.success) {
         Swal.fire('Success', 'Hearing scheduled successfully', 'success').then(() => location.reload());
@@ -2283,8 +2184,8 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       }
     }));
 
-    // Record Hearing Handler (delegated event listener)
-    document.addEventListener('click', async (e) => {
+    // Record Hearing Handler (event delegation)
+    document.addEventListener('click', async e => {
       if (e.target.classList.contains('record-hearing-btn')) {
         const hearingId = e.target.dataset.hearingId;
         const caseId = e.target.dataset.caseId;
@@ -2341,7 +2242,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     document.querySelectorAll('.issue-cfa-btn').forEach(btn => btn.addEventListener('click', async () => {
       const caseId = btn.dataset.id;
       
-      // First, get the complainant for this case
+      // Get case details
       const caseRes = await fetch(`?action=get_case_details&id=${caseId}`);
       const caseData = await caseRes.json();
       
@@ -2399,14 +2300,16 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     }));
 
     // Edit button handler
-    document.body.addEventListener('click', async e => {
+    document.addEventListener('click', async e => {
       if (!e.target.classList.contains('edit-btn')) return;
       const id = e.target.dataset.id;
 
-      // reset form & clear checks
+      // Reset form
       editForm.reset();
       editPartCont.innerHTML = '';
       document.getElementById('editHearingsContainer').innerHTML = '';
+      
+      // Clear existing checks
       document.querySelectorAll('#editCategoryContainer input, #editInterventionContainer input')
         .forEach(cb => cb.checked = false);
 
@@ -2420,29 +2323,13 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         return;
       }
 
-      // populate fields
+      // Populate fields
       document.getElementById('editCaseId').value      = id;
       document.getElementById('editLocation').value    = payload.case.location;
       document.getElementById('editDescription').value = payload.case.description;
-      document.getElementById('editStatus').value      = (payload.case.status || '').toLowerCase();
+      document.getElementById('editStatus').value      = payload.case.status || '';
 
-      // autofill categories by name
-      const cats = payload.case.categories
-        ? payload.case.categories.split(',').map(s => s.trim())
-        : [];
-      document.querySelectorAll('#editCategoryContainer label').forEach(label => {
-        const box = label.querySelector('input[type="checkbox"]');
-        if (cats.includes(label.textContent.trim())) box.checked = true;
-      });
-
-      // autofill interventions by name
-      const ints = payload.interventions.map(i => i.intervention_name);
-      document.querySelectorAll('#editInterventionContainer label').forEach(label => {
-        const box = label.querySelector('input[type="checkbox"]');
-        if (ints.includes(label.textContent.trim())) box.checked = true;
-      });
-
-      // build participants
+      // Populate participants
       payload.participants.forEach((p, idx) => {
         const tmpl = p.participant_type === 'registered' ? registeredTemplate : unregisteredTemplate;
         const wrapper = document.createElement('div');
@@ -2464,7 +2351,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         editPartCont.appendChild(node);
       });
 
-      // Display hearings in edit mode
+      // Display hearings
       if (payload.hearings && payload.hearings.length > 0) {
         const hearingsHtml = `
           <table class="hearing-table">
@@ -2478,25 +2365,28 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
               </tr>
             </thead>
             <tbody>
-              ${payload.hearings.map(h => `
+              ${payload.hearings.map(h => {
+                const outcome = h.hearing_outcome ? h.hearing_outcome.replace('_', '-') : 'scheduled';
+                const outcomeText = h.hearing_outcome ? h.hearing_outcome.replace('_', ' ') : 'Scheduled';
+                return `
                 <tr>
                   <td>Hearing ${h.hearing_number}</td>
                   <td>${new Date(h.hearing_date).toLocaleString()}</td>
-                  <td>${h.presiding_officer_name} (${h.presiding_officer_position.replace('_', ' ')})</td>
+                  <td>${h.presiding_officer_name} (${h.presiding_officer_position ? h.presiding_officer_position.replace('_', ' ') : ''})</td>
                   <td>
-                    <span class="status-badge status-${h.hearing_outcome?.replace('_', '-') || 'scheduled'}">
-                      ${h.hearing_outcome?.replace('_', ' ') || 'Scheduled'}
+                    <span class="status-badge status-${outcome}">
+                      ${outcomeText}
                     </span>
                     ${h.is_mediation_successful ? '<br><strong>✓ Mediation Successful</strong>' : ''}
                   </td>
                   <td>
                     ${h.hearing_outcome === 'scheduled' ? 
-                      `<button type="button" class="btn-record record-hearing-btn" data-hearing-id="${h.id}" data-case-id="${id}">Record Outcome</button>` : 
+                      `<button class="btn-record record-hearing-btn" data-hearing-id="${h.id}" data-case-id="${id}">Record Outcome</button>` : 
                       'Completed'
                     }
                   </td>
                 </tr>
-              `).join('')}
+              `}).join('')}
             </tbody>
           </table>
         `;
@@ -2505,7 +2395,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         document.getElementById('editHearingsContainer').innerHTML = '<p class="text-gray-500">No hearings scheduled</p>';
       }
 
-      // finally, show the modal
+      // Show modal
       editModal.classList.remove('hidden');
     });
 
@@ -2517,12 +2407,6 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         location:      document.getElementById('editLocation').value.trim(),
         description:   document.getElementById('editDescription').value.trim(),
         status:        document.getElementById('editStatus').value,
-        categories:    Array.from(
-                         document.querySelectorAll('#editCategoryContainer input:checked')
-                       ).map(cb => cb.value),
-        interventions: Array.from(
-                         document.querySelectorAll('#editInterventionContainer input:checked')
-                       ).map(cb => cb.value),
         participants:  Array.from(editPartCont.children).map(node => {
           const isReg = !!node.querySelector('select[name$="[user_id]"]');
           if (isReg) {
@@ -2544,6 +2428,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         })
       };
       
+      // Validation
       if (!formData.location || !formData.description || !formData.participants.length) {
         return Swal.fire('Error', 'Location, description, and at least one participant are required', 'error');
       }
@@ -2563,65 +2448,63 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       }
     });
 
-    // Audio/Video Transcription via AJAX
-    $("#transcribe_btn").click(function() {
+    // Audio/Video Transcription
+    document.getElementById('transcribe_btn').addEventListener('click', function() {
       const fileInput = document.getElementById('transcript_file');
       if (!fileInput.files || fileInput.files.length === 0) {
         Swal.fire('Error', 'Please select an audio or video file to transcribe.', 'error');
         return;
       }
+      
       const file = fileInput.files[0];
       const allowedTypes = ['audio/mpeg', 'audio/mp4', 'audio/mp3', 'audio/wav', 'audio/x-wav', 
                          'audio/webm', 'audio/ogg', 'video/mp4', 'video/webm', 'video/ogg'];
+      
       if (!allowedTypes.includes(file.type)) {
         Swal.fire('Error', 'Please upload a supported audio or video file format.', 'error');
         return;
       }
+      
       if (file.size > 25 * 1024 * 1024) { // 25MB limit
         Swal.fire('Error', 'File too large. Maximum size is 25MB.', 'error');
         return;
       }
       
-      // Show loading animation
-      $("#transcript_loader").show();
-      $("#transcript_result").hide();
+      // Show loader
+      document.getElementById('transcript_loader').style.display = 'block';
+      document.getElementById('transcript_result').style.display = 'none';
+      
       const formData = new FormData();
       formData.append('transcript_file', file);
       formData.append('action', 'transcribe_only');
-      $.ajax({
-        url: 'blotter.php',
-        type: 'POST',
-        data: formData,
-        processData: false,
-        contentType: false,
-        success: function(response) {
-          try {
-            const data = (typeof response === 'string') ? JSON.parse(response) : response;
-            if (data.success) {
-              $("#transcript_result").show();
-              $("#transcript_text").text(data.text);
-              $("textarea[name='complaint']").val(data.text);
-              $("textarea[name='complaint']").addClass('bg-green-50');
-              setTimeout(function() {
-                $("textarea[name='complaint']").removeClass('bg-green-50');
-              }, 2000);
-            } else {
-              Swal.fire('Error', data.message || 'Transcription failed.', 'error');
-            }
-          } catch(e) {
-            Swal.fire('Error', 'Invalid response from server.', 'error');
-          }
-        },
-        error: function() {
-          Swal.fire('Error', 'Failed to connect to the server.', 'error');
-        },
-        complete: function() {
-          $("#transcript_loader").hide();
+      
+      fetch('blotter.php', {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.json())
+      .then(data => {
+        if (data.success) {
+          document.getElementById('transcript_result').style.display = 'block';
+          document.getElementById('transcript_text').textContent = data.text;
+          const complaintField = document.querySelector("textarea[name='complaint']");
+          complaintField.value = data.text;
+          complaintField.classList.add('bg-green-50');
+          setTimeout(() => {
+            complaintField.classList.remove('bg-green-50');
+          }, 2000);
+        } else {
+          Swal.fire('Error', data.message || 'Transcription failed.', 'error');
         }
+      })
+      .catch(error => {
+        Swal.fire('Error', 'Failed to connect to the server.', 'error');
+      })
+      .finally(() => {
+        document.getElementById('transcript_loader').style.display = 'none';
       });
     });
-
-  }); 
+});
   </script>
 </section>
 </body>
