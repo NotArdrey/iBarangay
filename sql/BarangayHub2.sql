@@ -303,6 +303,8 @@ CREATE TABLE users (
     phone VARCHAR(15) UNIQUE,
     role_id INT DEFAULT 8, -- Default to resident
     barangay_id INT DEFAULT 1, -- Default to a generic/first barangay
+    id_expiration_date DATE,
+    id_type VARCHAR(50),
     first_name VARCHAR(50),
     last_name VARCHAR(50),
     gender ENUM('Male', 'Female', 'Others'),

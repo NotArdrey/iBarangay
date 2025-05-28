@@ -99,6 +99,13 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       </div>
 
       <div class="input-group">
+        <label for="id_expiration">
+          <i class="fas fa-calendar-times"></i> ID Expiration Date
+        </label>
+        <input type="date" id="id_expiration" name="id_expiration" required>
+      </div>
+
+      <div class="input-group">
         <label for="first_name">
           <i class="fas fa-user"></i> First Name
         </label>
@@ -429,6 +436,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
         const fieldMappings = {
           'type_of_id': 'id_type',
           'id_number': 'id_number',
+          'expiration_date': 'id_expiration',
           'given_name': 'first_name',
           'middle_name': 'middle_name',
           'last_name': 'last_name',
@@ -442,10 +450,8 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
           const inputElement = document.getElementById(formField);
 
           if (inputElement) {
-            inputElement.value = value;
-
-            // For date of birth, special handling for date format
-            if (formField === 'birth_date' && value) {
+            // For date fields, special handling for date format
+            if ((formField === 'birth_date' || formField === 'id_expiration') && value) {
               // Convert to YYYY-MM-DD format if needed
               try {
                 const date = new Date(value);
@@ -455,6 +461,8 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
               } catch (e) {
                 console.error('Error formatting date:', e);
               }
+            } else {
+              inputElement.value = value;
             }
 
             // Add visual feedback that field was auto-populated
