@@ -1,4 +1,24 @@
 <?php
+// Enable all error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+
+// Set the error log path to an absolute path
+$logPath = 'C:/xampp/php/logs/php_error.log';
+ini_set('error_log', $logPath);
+
+// Test if we can write to the error log
+error_log("=== REGISTRATION DEBUG START ===");
+
+// Function to write debug logs
+function writeDebugLog($message) {
+    global $logPath;
+    $timestamp = date('Y-m-d H:i:s');
+    $logMessage = "[$timestamp] $message\n";
+    error_log($logMessage);
+}
+
 session_start();
 require '../config/dbconn.php';
 use PHPMailer\PHPMailer\PHPMailer;
@@ -363,76 +383,124 @@ function processIdWithDocumentAI() {
 
 // Add this function before the registration process
 function verifyPersonInCensus($pdo, $data) {
-    // Prepare the query to find matching person
-    $stmt = $pdo->prepare("
-        SELECT p.id, p.first_name, p.middle_name, p.last_name, p.birth_date, p.gender, a.barangay_id
-        FROM persons p
-        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
-        WHERE LOWER(p.first_name) = LOWER(:first_name)
-        AND LOWER(p.last_name) = LOWER(:last_name)
-        AND p.birth_date = :birth_date
-        AND p.gender = :gender
-        AND (p.middle_name IS NULL OR LOWER(p.middle_name) = LOWER(:middle_name))
-    ");
-
-    $stmt->execute([
-        ':first_name' => trim($data['first_name']),
-        ':middle_name' => trim($data['middle_name']),
-        ':last_name' => trim($data['last_name']),
-        ':birth_date' => $data['birth_date'],
-        ':gender' => $data['gender']
-    ]);
-
-    $person = $stmt->fetch(PDO::FETCH_ASSOC);
-
-    if ($person) {
-        // If person found, verify ID information
+    try {
+        $mismatchDetails = [];
+        
+        // First check if person exists in both records
         $stmt = $pdo->prepare("
-            SELECT pi.* 
-            FROM person_identification pi
-            WHERE pi.person_id = :person_id
-            AND (
-                (pi.other_id_type = :id_type AND pi.other_id_number = :id_number)
-                OR (pi.osca_id = :id_number_osca AND :id_type_osca = 'OSCA ID')
-                OR (pi.gsis_id = :id_number_gsis AND :id_type_gsis = 'GSIS ID')
-                OR (pi.sss_id = :id_number_sss AND :id_type_sss = 'SSS ID')
-                OR (pi.tin_id = :id_number_tin AND :id_type_tin = 'TIN ID')
-                OR (pi.philhealth_id = :id_number_philhealth AND :id_type_philhealth = 'PhilHealth ID')
-            )
+            SELECT 'census' as source, p.id, p.first_name, p.middle_name, p.last_name, p.birth_date, p.gender, a.barangay_id,
+                   pi.other_id_number as census_id_number
+            FROM persons p
+            LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+            LEFT JOIN person_identification pi ON p.id = pi.person_id
+            WHERE LOWER(TRIM(p.last_name)) = LOWER(TRIM(:census_last_name))
+            AND LOWER(TRIM(p.first_name)) = LOWER(TRIM(:census_first_name))
+            AND p.birth_date = :census_birth_date
+            UNION ALL
+            SELECT 'temporary' as source, id, first_name, middle_name, last_name, date_of_birth as birth_date, NULL as gender, barangay_id,
+                   id_number as census_id_number
+            FROM temporary_records
+            WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:temp_last_name))
+            AND LOWER(TRIM(first_name)) = LOWER(TRIM(:temp_first_name))
+            AND date_of_birth = :temp_birth_date
         ");
 
-        $stmt->execute([
-            ':person_id' => $person['id'],
-            ':id_type' => $data['id_type'],
-            ':id_number' => $data['id_number'],
-            ':id_number_osca' => $data['id_number'],
-            ':id_number_gsis' => $data['id_number'],
-            ':id_number_sss' => $data['id_number'],
-            ':id_number_tin' => $data['id_number'],
-            ':id_number_philhealth' => $data['id_number'],
-            ':id_type_osca' => $data['id_type'],
-            ':id_type_gsis' => $data['id_type'],
-            ':id_type_sss' => $data['id_type'],
-            ':id_type_tin' => $data['id_type'],
-            ':id_type_philhealth' => $data['id_type']
-        ]);
+        $params = [
+            ':census_first_name' => trim($data['first_name']),
+            ':census_last_name' => trim($data['last_name']),
+            ':census_birth_date' => $data['birth_date'],
+            ':temp_first_name' => trim($data['first_name']),
+            ':temp_last_name' => trim($data['last_name']),
+            ':temp_birth_date' => $data['birth_date']
+        ];
 
-        $idInfo = $stmt->fetch(PDO::FETCH_ASSOC);
+        $stmt->execute($params);
+        $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        if ($idInfo) {
+        // Check if person exists in both records
+        if (count($records) > 1) {
             return [
-                'success' => true,
-                'person_id' => $person['id'],
-                'barangay_id' => $person['barangay_id'],
-                'message' => 'Person verified in census records.'
+                'success' => false,
+                'message' => 'Person found in both census and temporary records. Please contact the barangay office for assistance.',
+                'debug_info' => ['Person exists in multiple records']
             ];
         }
-    }
 
-    return [
-        'success' => false,
-        'message' => 'No matching record found in census data. Please ensure your information matches the census records.'
-    ];
+        // If person exists in exactly one record
+        if (count($records) === 1) {
+            $record = $records[0];
+            
+            // Check if ID number matches
+            if (strtolower(trim($record['census_id_number'])) === strtolower(trim($data['id_number']))) {
+                return [
+                    'success' => true,
+                    'person_id' => $record['id'],
+                    'barangay_id' => $record['barangay_id'],
+                    'message' => 'Person verified in ' . $record['source'] . ' records.',
+                    'source' => $record['source']
+                ];
+            } else {
+                $mismatchDetails[] = "ID number mismatch in " . $record['source'] . " records";
+            }
+        }
+
+        // Check for partial matches in both records
+        $partialParams = [
+            ':first_name' => trim($data['first_name']),
+            ':last_name' => trim($data['last_name']),
+            ':birth_date' => $data['birth_date'],
+            ':id_number' => trim($data['id_number'])
+        ];
+        
+        $stmt = $pdo->prepare("
+            SELECT 'census' as source, first_name, last_name, birth_date, pi.other_id_number as id_number
+            FROM persons p
+            LEFT JOIN person_identification pi ON p.id = pi.person_id
+            WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
+            OR LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name))
+            OR birth_date = :birth_date
+            OR LOWER(TRIM(pi.other_id_number)) = LOWER(TRIM(:id_number))
+            UNION ALL
+            SELECT 'temporary' as source, first_name, last_name, date_of_birth as birth_date, id_number
+            FROM temporary_records
+            WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
+            OR LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name))
+            OR date_of_birth = :birth_date
+            OR LOWER(TRIM(id_number)) = LOWER(TRIM(:id_number))
+        ");
+        
+        $stmt->execute($partialParams);
+        $partialMatches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        if (!empty($partialMatches)) {
+            foreach ($partialMatches as $match) {
+                if (strtolower(trim($match['last_name'])) !== strtolower(trim($data['last_name']))) {
+                    $mismatchDetails[] = "Last name mismatch in " . $match['source'] . " records: Expected '" . $match['last_name'] . "', Got '" . $data['last_name'] . "'";
+                }
+                if (strtolower(trim($match['first_name'])) !== strtolower(trim($data['first_name']))) {
+                    $mismatchDetails[] = "First name mismatch in " . $match['source'] . " records: Expected '" . $match['first_name'] . "', Got '" . $data['first_name'] . "'";
+                }
+                if ($match['birth_date'] !== $data['birth_date']) {
+                    $mismatchDetails[] = "Birth date mismatch in " . $match['source'] . " records: Expected '" . $match['birth_date'] . "', Got '" . $data['birth_date'] . "'";
+                }
+                if (strtolower(trim($match['id_number'])) !== strtolower(trim($data['id_number']))) {
+                    $mismatchDetails[] = "ID number mismatch in " . $match['source'] . " records: Expected '" . $match['id_number'] . "', Got '" . $data['id_number'] . "'";
+                }
+            }
+        }
+
+        return [
+            'success' => false,
+            'message' => 'No matching record found. Please ensure your information matches the records.',
+            'debug_info' => $mismatchDetails
+        ];
+    } catch (PDOException $e) {
+        return [
+            'success' => false,
+            'message' => 'An error occurred during verification. Please try again later.',
+            'debug_info' => ['Database error: ' . $e->getMessage()]
+        ];
+    }
 }
 
 // ------------------------------------------------------
@@ -444,39 +512,78 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     $password = $_POST['password'];
     $confirmPassword = $_POST['confirmPassword'];
     $person_id = isset($_POST['person_id']) ? trim($_POST['person_id']) : null;
+    $barangay_id = null; // Initialize barangay_id
     $errors = [];
 
-    // Verify person in census records
-    $verificationResult = verifyPersonInCensus($pdo, [
+    // Debug output
+    writeDebugLog("POST data received: " . print_r($_POST, true));
+
+    // Accept birth_date as Y-m-d (from HTML5 date input)
+    $birth_date = $_POST['birth_date'];
+    if (preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $birth_date)) {
+        writeDebugLog("Received birth date: " . $birth_date);
+    } else {
+        writeDebugLog("Invalid birth date format. Input was: " . $_POST['birth_date']);
+        $errors[] = "Invalid birth date format. Please use YYYY-MM-DD format.";
+    }
+
+    // Verify person in census or temporary records
+    $verificationData = [
         'first_name' => $_POST['first_name'],
         'middle_name' => $_POST['middle_name'],
         'last_name' => $_POST['last_name'],
-        'birth_date' => $_POST['birth_date'],
+        'birth_date' => $birth_date,
         'gender' => $_POST['gender'],
-        'id_type' => $_POST['id_type'],
         'id_number' => $_POST['id_number']
-    ]);
+    ];
+    
+    writeDebugLog("Verification data: " . print_r($verificationData, true));
+    
+    $verificationResult = verifyPersonInCensus($pdo, $verificationData);
+    
+    writeDebugLog("Verification result: " . print_r($verificationResult, true));
 
     if (!$verificationResult['success']) {
         $errors[] = $verificationResult['message'];
+        if (isset($verificationResult['debug_info'])) {
+            writeDebugLog("Debug info: " . print_r($verificationResult['debug_info'], true));
+        }
     } else {
         $person_id = $verificationResult['person_id'];
+        $barangay_id = $verificationResult['barangay_id'];
+        
+        // If verified from temporary records, we'll use the temporary record directly
+        if ($verificationResult['source'] === 'temporary') {
+            // Get the temporary record details
+            $stmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
+            $stmt->execute([$person_id]);
+            $tempRecord = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($tempRecord) {
+                // Use the temporary record ID directly as the person_id
+                // No need to create a new person record
+                writeDebugLog("Using temporary record directly with ID: " . $person_id);
+            }
+        }
     }
 
     // Verify person_id is provided - this confirms the person exists in the database
     if (empty($person_id)) {
         $errors[] = "Identity verification failed. Only verified residents can register.";
     } else {
-        // Verify the person_id exists and is not already linked to a user
-        $stmt = $pdo->prepare("SELECT id, user_id FROM persons WHERE id = ?");
-        $stmt->execute([$person_id]);
-        $person = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$person) {
-            $errors[] = "The provided identity verification has failed.";
-        } elseif (!empty($person['user_id'])) {
-            $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
+        // Only check the persons table for user_id if the match was from census
+        if ($verificationResult['source'] === 'census') {
+            $stmt = $pdo->prepare("SELECT id, user_id FROM persons WHERE id = ?");
+            $stmt->execute([$person_id]);
+            $person = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$person) {
+                $errors[] = "The provided identity verification has failed.";
+            } elseif (!empty($person['user_id'])) {
+                $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
+            }
         }
+        // If source is 'temporary', skip this check and proceed
     }
 
     // Validate email
@@ -491,13 +598,15 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $errors[] = "Password is required.";
     } elseif (strlen($password) < 8) {
         $errors[] = "Password must be at least 8 characters long.";
-    }    // Confirm password check
+    }
+
+    // Confirm password check
     if (empty($confirmPassword)) {
         $errors[] = "Please confirm your password.";
     } elseif ($password !== $confirmPassword) {
         $errors[] = "Passwords do not match.";
     }
-    
+
     // Validate ID upload
     if (!isset($_FILES['govt_id']) || $_FILES['govt_id']['error'] !== UPLOAD_ERR_OK) {
         $errors[] = "Government ID is required for registration.";
@@ -513,16 +622,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         }
     }
 
-    // Validate ID expiration date
-    if (!empty($_POST['id_expiration'])) {
-        $expirationDate = strtotime($_POST['id_expiration']);
-        if ($expirationDate === false) {
-            $errors[] = "Invalid ID expiration date format.";
-        } elseif ($expirationDate < strtotime('today')) {
-            $errors[] = "ID has already expired. Please provide a valid ID.";
-        }
-    }
-
     // Validate ID type
     if (empty($_POST['id_type'])) {
         $errors[] = "ID type is required.";
@@ -530,6 +629,16 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $idType = trim($_POST['id_type']);
         if (strlen($idType) > 50) {
             $errors[] = "ID type must not exceed 50 characters.";
+        }
+    }
+
+    // Validate ID expiration date only if provided
+    if (!empty($_POST['id_expiration'])) {
+        $expirationDate = strtotime($_POST['id_expiration']);
+        if ($expirationDate === false) {
+            $errors[] = "Invalid ID expiration date format.";
+        } elseif ($expirationDate < strtotime('today')) {
+            $errors[] = "ID has already expired. Please provide a valid ID.";
         }
     }
 
@@ -560,76 +669,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $stmt->execute([$email]);
         if ($stmt->rowCount() > 0) {
             $errors[] = "This email is already registered.";
-        }        if (empty($errors)) {
-            // Show loading animation immediately after verification
-            echo "<!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset='UTF-8'>
-                <title>Processing Registration</title>
-                <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-                <style>
-                    body, .swal2-popup {
-                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                    }
-                    .swal2-title, .swal2-html-container {
-                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                    }
-                    .email-animation {
-                        text-align: center;
-                        margin: 20px auto;
-                    }
-                    .email-animation i {
-                        font-size: 40px;
-                        color: #3b82f6;
-                    }
-                    @keyframes fly {
-                        0% { transform: translateY(0) scale(0.8); opacity: 0; }
-                        20% { transform: translateY(-5px) scale(0.9); opacity: 0.6; }
-                        50% { transform: translateY(-15px) scale(1); opacity: 1; }
-                        80% { transform: translateY(-25px) scale(0.9); opacity: 0.6; }
-                        100% { transform: translateY(-35px) scale(0.8); opacity: 0; }
-                    }
-                    .envelope {
-                        animation: fly 2s infinite;
-                        display: inline-block;
-                    }
-                    .btn-login {
-                        background-color: #3b82f6;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 5px;
-                        font-size: 16px;
-                        cursor: pointer;
-                        margin-top: 20px;
-                        transition: background-color 0.3s;
-                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                    }
-                    .btn-login:hover {
-                        background-color: #2563eb;
-                    }
-                </style>
-                <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css' />
-            </head>
-            <body>
-                <script>
-                    let timerInterval;
-                    Swal.fire({
-                        title: 'Processing Registration',
-                        html: '<div class=\"email-animation\"><i class=\"fas fa-envelope envelope\"></i></div><p>Please wait while we process your registration...</p>',
-                        allowOutsideClick: false,
-                        showConfirmButton: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
-                    });
-                </script>
-            </body>
-            </html>";
-            flush();
-            ob_flush();
-        
+        }
+
+        if (empty($errors)) {
             try {
                 // Begin transaction
                 $pdo->beginTransaction();
@@ -646,7 +688,9 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $idImageData = null;
                 if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
                     $idImageData = file_get_contents($_FILES['govt_id']['tmp_name']);
-                }                // Insert the new user record with all available information
+                }
+
+                // Insert the new user record with all available information
                 $stmt = $pdo->prepare("INSERT INTO users (
                     email, 
                     phone,
@@ -669,14 +713,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $phone,
                     $passwordHash, 
                     $role_id,
-                    $verificationResult['barangay_id'], // Use barangay_id from census records
+                    $barangay_id,
                     $personData['first_name'],
                     $personData['last_name'],
                     $personData['gender'],
                     $verificationToken, 
                     $verificationExpiry,
                     $idImageData,
-                    $_POST['id_expiration'] ?? null,
+                    !empty($_POST['id_expiration']) ? $_POST['id_expiration'] : null,
                     $_POST['id_type'] ?? null
                 ])) {
                     throw new Exception("Failed to create user account.");
@@ -844,7 +888,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
 
     if (!empty($errors)) {
+        // Format the error message with detailed information
         $errorMessage = implode("\n", $errors);
+        if (isset($verificationResult['debug_info']) && !empty($verificationResult['debug_info'])) {
+            $errorMessage .= "\n\nDetailed Information:\n" . implode("\n", $verificationResult['debug_info']);
+        }
+        
         echo "<!DOCTYPE html>
         <html>
         <head>
@@ -858,14 +907,28 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 .swal2-title, .swal2-html-container {
                     font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
                 }
+                .error-details {
+                    text-align: left;
+                    margin-top: 15px;
+                    padding: 10px;
+                    background-color: #f8f9fc;
+                    border-radius: 5px;
+                    font-size: 14px;
+                }
             </style>
         </head>
         <body>
             <script>
                 Swal.fire({
                     icon: 'error',
-                    title: 'Error',
-                    text: '$errorMessage'
+                    title: 'Verification Failed',
+                    html: `Your information does not match our records.<br><br>
+                           <div class='error-details'>
+                           <strong>Please check the following:</strong><br>
+                           " . nl2br(htmlspecialchars($errorMessage)) . "
+                           </div>`,
+                    confirmButtonText: 'Try Again',
+                    confirmButtonColor: '#3b82f6'
                 }).then(() => {
                     window.location.href = '../pages/register.php';
                 });

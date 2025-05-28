@@ -102,7 +102,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
         <label for="id_expiration">
           <i class="fas fa-calendar-times"></i> ID Expiration Date
         </label>
-        <input type="date" id="id_expiration" name="id_expiration" required>
+        <input type="date" id="id_expiration" name="id_expiration">
       </div>
 
       <div class="input-group">

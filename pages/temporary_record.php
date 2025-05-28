@@ -1,9 +1,51 @@
 <?php
-require_once 'header.php';
+// Handle form submission and redirect BEFORE including header.php or any output
 require_once '../config/dbconn.php';
+// Only start session if not already active
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+
+$current_admin_id = $_SESSION['user_id'];
+$barangay_id = $_SESSION['barangay_id'];
+
+// Show add or edit success message if redirected after add/edit
+if (isset($_SESSION['add_success']) && $_SESSION['add_success']) {
+    echo "<script>
+        Swal.fire({
+            icon: 'success',
+            title: 'Success!',
+            text: 'Temporary record has been added successfully.',
+            confirmButtonColor: '#3085d6',
+            confirmButtonText: 'OK',
+            customClass: {
+                confirmButton: 'swal2-confirm-button'
+            }
+        });
+    </script>";
+    unset($_SESSION['add_success']);
+}
+if (isset($_SESSION['edit_success']) && $_SESSION['edit_success']) {
+    echo "<script>
+        Swal.fire({
+            icon: 'success',
+            title: 'Success!',
+            text: 'Temporary record has been updated successfully.',
+            confirmButtonColor: '#3085d6',
+            confirmButtonText: 'OK',
+            customClass: {
+                confirmButton: 'swal2-confirm-button'
+            }
+        });
+    </script>";
+    unset($_SESSION['edit_success']);
+}
 
 // Handle delete request
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'delete') {
+if (
+    $_SERVER['REQUEST_METHOD'] === 'POST' &&
+    isset($_POST['action']) && $_POST['action'] === 'delete'
+) {
     header('Content-Type: application/json');
     try {
         if (!isset($_POST['record_id']) || empty($_POST['record_id'])) {
@@ -18,7 +60,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         $checkStmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
         $checkStmt->execute([$record_id]);
         $record = $checkStmt->fetch(PDO::FETCH_ASSOC);
-        
+
         if (!$record) {
             error_log("Record not found: " . $record_id);
             echo json_encode(['success' => false, 'message' => 'Record not found']);
@@ -28,7 +70,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
         // If record exists, proceed with deletion
         $stmt = $pdo->prepare("DELETE FROM temporary_records WHERE id = ?");
         $result = $stmt->execute([$record_id]);
-        
+
         if ($result) {
             // Log the deletion in audit trail
             $auditStmt = $pdo->prepare("
@@ -60,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['
 }
 
 // Handle form submission
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST['action'] !== 'delete')) {
     try {
         if (isset($_POST['record_id']) && !empty($_POST['record_id'])) {
             // Get old record data for audit trail
@@ -74,7 +116,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     last_name = ?, suffix = ?, first_name = ?, middle_name = ?, 
                     date_of_birth = ?, place_of_birth = ?, 
                     months_residency = ?, days_residency = ?,
-                    house_number = ?, street = ?, barangay = ?, municipality = ?, province = ?, region = ?,
+                    house_number = ?, street = ?, barangay_id = ?, municipality = ?, province = ?, region = ?,
+                    id_type = ?, id_number = ?,
                     updated_at = NOW()
                 WHERE id = ?
             ");
@@ -90,10 +133,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_POST['days_residency'],
                 $_POST['house_number'],
                 $_POST['street'],
-                $_POST['barangay'],
+                $barangay_id,
                 $_POST['municipality'],
                 $_POST['province'],
                 $_POST['region'],
+                $_POST['id_type'],
+                $_POST['id_number'],
                 $_POST['record_id']
             ]);
 
@@ -109,10 +154,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'days_residency' => $_POST['days_residency'],
                 'house_number' => $_POST['house_number'],
                 'street' => $_POST['street'],
-                'barangay' => $_POST['barangay'],
+                'barangay_id' => $barangay_id,
                 'municipality' => $_POST['municipality'],
                 'province' => $_POST['province'],
-                'region' => $_POST['region']
+                'region' => $_POST['region'],
+                'id_type' => $_POST['id_type'],
+                'id_number' => $_POST['id_number']
             ];
 
             $auditStmt = $pdo->prepare("
@@ -130,18 +177,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 "Updated temporary record for {$_POST['last_name']}, {$_POST['first_name']}"
             ]);
 
-            echo "<script>
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: 'Temporary record has been updated successfully.',
-                    confirmButtonColor: '#3085d6',
-                    confirmButtonText: 'OK',
-                    customClass: {
-                        confirmButton: 'swal2-confirm-button'
-                    }
-                });
-            </script>";
+            $_SESSION['edit_success'] = true;
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
         } else {
             // Insert new record
             $stmt = $pdo->prepare("
@@ -149,9 +187,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     last_name, suffix, first_name, middle_name, 
                     date_of_birth, place_of_birth, 
                     months_residency, days_residency,
-                    house_number, street, barangay, municipality, province, region,
+                    house_number, street, barangay_id, municipality, province, region,
+                    id_type, id_number,
                     created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             ");
 
             $stmt->execute([
@@ -165,65 +204,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $_POST['days_residency'],
                 $_POST['house_number'],
                 $_POST['street'],
-                $_POST['barangay'],
+                $barangay_id,
                 $_POST['municipality'],
                 $_POST['province'],
-                $_POST['region']
+                $_POST['region'],
+                $_POST['id_type'],
+                $_POST['id_number']
             ]);
 
-            $newRecordId = $pdo->lastInsertId();
-
-            // Log the insertion in audit trail
-            $newRecord = [
-                'last_name' => $_POST['last_name'],
-                'suffix' => $_POST['suffix'],
-                'first_name' => $_POST['first_name'],
-                'middle_name' => $_POST['middle_name'],
-                'date_of_birth' => $_POST['date_of_birth'],
-                'place_of_birth' => $_POST['place_of_birth'],
-                'months_residency' => $_POST['months_residency'],
-                'days_residency' => $_POST['days_residency'],
-                'house_number' => $_POST['house_number'],
-                'street' => $_POST['street'],
-                'barangay' => $_POST['barangay'],
-                'municipality' => $_POST['municipality'],
-                'province' => $_POST['province'],
-                'region' => $_POST['region']
-            ];
-
-            $auditStmt = $pdo->prepare("
-                INSERT INTO audit_trails (
-                    user_id, action, table_name, record_id, new_values, description
-                ) VALUES (?, ?, ?, ?, ?, ?)
-            ");
-            $auditStmt->execute([
-                $_SESSION['user_id'],
-                'INSERT',
-                'temporary_records',
-                $newRecordId,
-                json_encode($newRecord),
-                "Added new temporary record for {$_POST['last_name']}, {$_POST['first_name']}"
-            ]);
-
-            echo "<script>
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success!',
-                    text: 'Temporary record has been added successfully.',
-                    confirmButtonColor: '#3085d6',
-                    confirmButtonText: 'OK',
-                    customClass: {
-                        confirmButton: 'swal2-confirm-button'
-                    }
-                });
-            </script>";
+            $_SESSION['add_success'] = true;
+            header('Location: ' . $_SERVER['PHP_SELF']);
+            exit;
         }
     } catch (PDOException $e) {
         echo "<script>
             Swal.fire({
                 icon: 'error',
                 title: 'Error!',
-                text: 'Failed to process temporary record. Please try again.',
+                text: 'Failed to process temporary record. " . addslashes($e->getMessage()) . "',
                 confirmButtonColor: '#3085d6',
                 confirmButtonText: 'OK',
                 customClass: {
@@ -234,12 +232,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     }
 }
 
+require_once 'header.php';
+
 // Fetch existing records
 $stmt = $pdo->query("
     SELECT * FROM temporary_records 
     ORDER BY created_at DESC
 ");
 $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch all barangays for the dropdown
+$barangayStmt = $pdo->query("SELECT id, name FROM barangay ORDER BY name");
+$barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <div class="container mx-auto px-4 py-8">
@@ -310,28 +314,62 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         <input type="text" name="street" id="street" required
                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
-                    <!-- Barangay -->
+                    <!-- Barangay Name (read-only) -->
                     <div>
-                        <label for="barangay" class="block text-sm font-medium text-gray-700">Barangay *</label>
-                        <input type="text" name="barangay" id="barangay" required
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <label for="barangay_name" class="block text-sm font-medium text-gray-700">Barangay</label>
+                        <input type="text" name="barangay_name" id="barangay_name" value="<?php
+                            $barangayName = '';
+                            foreach ($barangays as $b) {
+                                if ($b['id'] == $barangay_id) {
+                                    $barangayName = $b['name'];
+                                    break;
+                                }
+                            }
+                            echo htmlspecialchars(strtoupper($barangayName));
+                        ?>" readonly
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Municipality -->
                     <div>
                         <label for="municipality" class="block text-sm font-medium text-gray-700">Municipality *</label>
-                        <input type="text" name="municipality" id="municipality" required
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="text" name="municipality" id="municipality" value="III" readonly
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Province -->
                     <div>
                         <label for="province" class="block text-sm font-medium text-gray-700">Province *</label>
-                        <input type="text" name="province" id="province" required
-                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
+                        <input type="text" name="province" id="province" value="SAN RAFAEL" readonly
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Region -->
                     <div>
                         <label for="region" class="block text-sm font-medium text-gray-700">Region *</label>
-                        <input type="text" name="region" id="region" required
+                        <input type="text" name="region" id="region" value="III" readonly
+                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
+                    </div>
+                    <!-- Type of ID -->
+                    <div class="relative">
+                        <label for="id_type" class="block text-sm font-medium text-gray-700">Type of ID *</label>
+                        <select name="id_type" id="id_type" required
+                            class="mt-1 block w-full rounded-md border border-gray-300 bg-white py-2 px-3 shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-500 focus:outline-none transition duration-150 ease-in-out appearance-none pr-10">
+                            <option value="">Select ID Type</option>
+                            <option value="OSCA ID">OSCA ID</option>
+                            <option value="GSIS ID">GSIS ID</option>
+                            <option value="SSS ID">SSS ID</option>
+                            <option value="TIN ID">TIN ID</option>
+                            <option value="PHILHEALTH ID">PHILHEALTH ID</option>
+                            <option value="OTHER">OTHER</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-gray-400">
+                            <svg class="h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                <path fill-rule="evenodd" d="M10 14a1 1 0 01-.707-.293l-4-4a1 1 0 111.414-1.414L10 11.586l3.293-3.293a1 1 0 111.414 1.414l-4 4A1 1 0 0110 14z" clip-rule="evenodd" />
+                            </svg>
+                        </div>
+                    </div>
+                    <!-- ID Number -->
+                    <div>
+                        <label for="id_number" class="block text-sm font-medium text-gray-700">ID Number *</label>
+                        <input type="text" name="id_number" id="id_number" required
                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Residency Duration -->
@@ -384,6 +422,15 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 </thead>
                 <tbody class="bg-white divide-y divide-gray-200" id="temporaryRecordsTableBody">
                     <?php foreach ($records as $record): ?>
+                        <?php
+                            $barangayName = '';
+                            foreach ($barangays as $b) {
+                                if ($b['id'] == $record['barangay_id']) {
+                                    $barangayName = $b['name'];
+                                    break;
+                                }
+                            }
+                        ?>
                         <tr
                             data-id="<?= htmlspecialchars($record['id']) ?>"
                             data-lastname="<?= htmlspecialchars($record['last_name']) ?>"
@@ -394,10 +441,12 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                             data-pob="<?= htmlspecialchars($record['place_of_birth']) ?>"
                             data-housenumber="<?= htmlspecialchars($record['house_number']) ?>"
                             data-street="<?= htmlspecialchars($record['street']) ?>"
-                            data-barangay="<?= htmlspecialchars($record['barangay']) ?>"
+                            data-barangay="<?= htmlspecialchars(strtoupper($barangayName)) ?>"
                             data-municipality="<?= htmlspecialchars($record['municipality']) ?>"
                             data-province="<?= htmlspecialchars($record['province']) ?>"
                             data-region="<?= htmlspecialchars($record['region']) ?>"
+                            data-idtype="<?= htmlspecialchars($record['id_type']) ?>"
+                            data-idnumber="<?= htmlspecialchars($record['id_number']) ?>"
                             data-monthsresidency="<?= htmlspecialchars($record['months_residency']) ?>"
                             data-daysresidency="<?= htmlspecialchars($record['days_residency']) ?>"
                             data-createdat="<?= htmlspecialchars(date('M d, Y', strtotime($record['created_at']))) ?>">
@@ -407,7 +456,7 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                     ($record['suffix'] ? ' ' . $record['suffix'] : '')) ?>
                             </td>
                             <td class="px-4 py-3 text-sm text-gray-900">
-                                <?= htmlspecialchars($record['house_number'] . ', ' . $record['street'] . ', ' . $record['barangay'] . ', ' . $record['municipality'] . ', ' . $record['province'] . ', ' . $record['region']) ?>
+                                <?= htmlspecialchars($record['house_number'] . ', ' . $record['street'] . ', ' . strtoupper($barangayName) . ', ' . $record['municipality'] . ', ' . $record['province'] . ', ' . $record['region']) ?>
                             </td>
                             <td class="px-4 py-3 text-sm text-gray-900">
                                 <?= htmlspecialchars($record['months_residency'] . 'm ' . $record['days_residency'] . 'd') ?>
@@ -436,15 +485,27 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <div class="bg-white rounded-2xl shadow-2xl max-w-2xl w-full p-10 relative">
                 <button id="closeViewModal" class="absolute top-4 right-4 text-gray-400 hover:text-blue-700 text-3xl transition-colors duration-150 focus:outline-none">&times;</button>
                 <h2 class="text-3xl font-extrabold text-blue-800 mb-6 border-b pb-3">Temporary Record Details</h2>
-                <div class="grid grid-cols-2 gap-x-8 gap-y-4">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                    <!-- Personal Info -->
+                    <div class="col-span-2 font-bold text-blue-700 border-b pb-1 mb-2">Personal Information</div>
                     <div class="font-semibold text-gray-700">Name:</div>
                     <div id="viewFullName" class="text-gray-900 whitespace-normal"></div>
                     <div class="font-semibold text-gray-700">Date of Birth:</div>
                     <div id="viewDOB" class="text-gray-900"></div>
                     <div class="font-semibold text-gray-700">Place of Birth:</div>
                     <div id="viewPOB" class="text-gray-900 whitespace-normal"></div>
+                    <!-- Identification -->
+                    <div class="col-span-2 font-bold text-blue-700 border-b pb-1 mt-4 mb-2">Identification</div>
+                    <div class="font-semibold text-gray-700">Type of ID:</div>
+                    <div id="viewIDType" class="text-gray-900"></div>
+                    <div class="font-semibold text-gray-700">ID Number:</div>
+                    <div id="viewIDNumber" class="text-gray-900"></div>
+                    <!-- Address -->
+                    <div class="col-span-2 font-bold text-blue-700 border-b pb-1 mt-4 mb-2">Address</div>
                     <div class="font-semibold text-gray-700">Address:</div>
                     <div id="viewAddress" class="text-gray-900 whitespace-normal break-words"></div>
+                    <!-- Residency -->
+                    <div class="col-span-2 font-bold text-blue-700 border-b pb-1 mt-4 mb-2">Residency</div>
                     <div class="font-semibold text-gray-700">Length of Residency:</div>
                     <div id="viewResidency" class="text-gray-900"></div>
                     <div class="font-semibold text-gray-700">Date Added:</div>
@@ -458,6 +519,35 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Check for success messages and show SweetAlert
+        <?php if (isset($_SESSION['add_success']) && $_SESSION['add_success']): ?>
+            Swal.fire({
+                icon: 'success',
+                title: 'Success!',
+                text: 'Temporary record has been added successfully.',
+                confirmButtonColor: '#3085d6',
+                confirmButtonText: 'OK',
+                customClass: {
+                    confirmButton: 'swal2-confirm-button'
+                }
+            });
+            <?php unset($_SESSION['add_success']); ?>
+        <?php endif; ?>
+
+        <?php if (isset($_SESSION['edit_success']) && $_SESSION['edit_success']): ?>
+            Swal.fire({
+                icon: 'success',
+                title: 'Success!',
+                text: 'Temporary record has been updated successfully.',
+                confirmButtonColor: '#3085d6',
+                confirmButtonText: 'OK',
+                customClass: {
+                    confirmButton: 'swal2-confirm-button'
+                }
+            });
+            <?php unset($_SESSION['edit_success']); ?>
+        <?php endif; ?>
+
         // Add custom styles for SweetAlert2 buttons
         const style = document.createElement('style');
         style.textContent = `
@@ -524,50 +614,50 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         console.log('Sending delete request for record:', recordId); // Debug log
 
                         fetch(window.location.href, {
-                            method: 'POST',
-                            body: formData,
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest'
-                            }
-                        })
-                        .then(response => {
-                            console.log('Response status:', response.status); // Debug log
-                            if (!response.ok) {
-                                throw new Error('Network response was not ok');
-                            }
-                            return response.json();
-                        })
-                        .then(data => {
-                            console.log('Response data:', data); // Debug log
-                            if (data.success) {
-                                Swal.fire({
-                                    icon: 'success',
-                                    title: 'Deleted!',
-                                    text: data.message,
-                                    confirmButtonColor: '#3085d6',
-                                    customClass: {
-                                        confirmButton: 'swal2-confirm-button'
-                                    }
-                                }).then(() => {
-                                    // Remove the row from the table
-                                    row.remove();
-                                });
-                            } else {
-                                Swal.fire({
-                                    icon: 'error',
-                                    title: 'Error!',
-                                    text: data.message || 'Failed to delete record',
-                                    confirmButtonColor: '#3085d6',
-                                    customClass: {
-                                        confirmButton: 'swal2-confirm-button'
-                                    }
-                                });
-                            }
-                        })
-                        .catch(error => {
-                            console.error('Delete error:', error);
-                            window.location.reload();
-                        });
+                                method: 'POST',
+                                body: formData,
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            })
+                            .then(response => {
+                                console.log('Response status:', response.status); // Debug log
+                                if (!response.ok) {
+                                    throw new Error('Network response was not ok');
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                console.log('Response data:', data); // Debug log
+                                if (data.success) {
+                                    Swal.fire({
+                                        icon: 'success',
+                                        title: 'Deleted!',
+                                        text: data.message,
+                                        confirmButtonColor: '#3085d6',
+                                        customClass: {
+                                            confirmButton: 'swal2-confirm-button'
+                                        }
+                                    }).then(() => {
+                                        // Remove the row from the table
+                                        row.remove();
+                                    });
+                                } else {
+                                    Swal.fire({
+                                        icon: 'error',
+                                        title: 'Error!',
+                                        text: data.message || 'Failed to delete record',
+                                        confirmButtonColor: '#3085d6',
+                                        customClass: {
+                                            confirmButton: 'swal2-confirm-button'
+                                        }
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Delete error:', error);
+                                window.location.reload();
+                            });
                     }
                 });
             });
@@ -589,10 +679,10 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     const residency = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
                     const dateAdded = row.querySelector('td:nth-child(4)').textContent.toLowerCase();
 
-                    const matches = name === searchTerm || 
-                                  address === searchTerm || 
-                                  residency === searchTerm || 
-                                  dateAdded === searchTerm;
+                    const matches = name === searchTerm ||
+                        address === searchTerm ||
+                        residency === searchTerm ||
+                        dateAdded === searchTerm;
 
                     row.style.display = matches ? '' : 'none';
                 });
@@ -600,7 +690,7 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 // Show "no results" message if no matches found
                 const visibleRows = Array.from(rows).filter(row => row.style.display !== 'none');
                 const noResultsRow = document.getElementById('noResultsRow');
-                
+
                 if (visibleRows.length === 0 && searchTerm !== '') {
                     if (!noResultsRow) {
                         const newRow = document.createElement('tr');
@@ -696,10 +786,67 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                         confirmButton: 'swal2-confirm-button'
                     }
                 });
+                return;
             }
 
             if (isValid) {
-                form.submit();
+                // Create FormData object
+                const formData = new FormData(form);
+
+                // Show loading state
+                const submitBtn = document.getElementById('submitBtn');
+                const originalBtnText = submitBtn.textContent;
+                submitBtn.textContent = 'Processing...';
+                submitBtn.disabled = true;
+
+                // Send AJAX request
+                fetch(window.location.href, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                    return response.text();
+                })
+                .then(() => {
+                    // Show success message
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success!',
+                        text: formData.get('record_id') ? 'Temporary record has been updated successfully.' : 'Temporary record has been added successfully.',
+                        confirmButtonColor: '#3085d6',
+                        confirmButtonText: 'OK',
+                        customClass: {
+                            confirmButton: 'swal2-confirm-button'
+                        }
+                    }).then(() => {
+                        // Reset form and button state
+                        form.reset();
+                        submitBtn.textContent = originalBtnText;
+                        submitBtn.disabled = false;
+                        document.getElementById('record_id').value = '';
+                        
+                        // Reload the page to show updated data
+                        window.location.reload();
+                    });
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error!',
+                        text: 'An error occurred while processing your request.',
+                        confirmButtonColor: '#3085d6',
+                        customClass: {
+                            confirmButton: 'swal2-confirm-button'
+                        }
+                    });
+                    // Reset button state
+                    submitBtn.textContent = originalBtnText;
+                    submitBtn.disabled = false;
+                });
             } else {
                 Swal.fire({
                     icon: 'error',
@@ -735,7 +882,7 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
             btn.addEventListener('click', function() {
                 const row = btn.closest('tr');
                 const recordId = row.getAttribute('data-id');
-                
+
                 // Populate form fields
                 document.getElementById('record_id').value = recordId;
                 document.getElementById('last_name').value = row.getAttribute('data-lastname');
@@ -746,10 +893,11 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 document.getElementById('place_of_birth').value = row.getAttribute('data-pob');
                 document.getElementById('house_number').value = row.getAttribute('data-housenumber');
                 document.getElementById('street').value = row.getAttribute('data-street');
-                document.getElementById('barangay').value = row.getAttribute('data-barangay');
                 document.getElementById('municipality').value = row.getAttribute('data-municipality');
                 document.getElementById('province').value = row.getAttribute('data-province');
                 document.getElementById('region').value = row.getAttribute('data-region');
+                document.getElementById('id_type').value = row.getAttribute('data-idtype');
+                document.getElementById('id_number').value = row.getAttribute('data-idnumber');
                 document.getElementById('months_residency').value = row.getAttribute('data-monthsresidency');
                 document.getElementById('days_residency').value = row.getAttribute('data-daysresidency');
 
@@ -808,6 +956,8 @@ $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
                     document.getElementById('viewDOB').textContent = '';
                 }
                 document.getElementById('viewPOB').textContent = row.getAttribute('data-pob') || '';
+                document.getElementById('viewIDType').textContent = row.getAttribute('data-idtype') || '';
+                document.getElementById('viewIDNumber').textContent = row.getAttribute('data-idnumber') || '';
                 // Compose address
                 const address = [
                     row.getAttribute('data-housenumber'),
