@@ -365,8 +365,9 @@ function processIdWithDocumentAI() {
 function verifyPersonInCensus($pdo, $data) {
     // Prepare the query to find matching person
     $stmt = $pdo->prepare("
-        SELECT p.id, p.first_name, p.middle_name, p.last_name, p.birth_date, p.gender
+        SELECT p.id, p.first_name, p.middle_name, p.last_name, p.birth_date, p.gender, a.barangay_id
         FROM persons p
+        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
         WHERE LOWER(p.first_name) = LOWER(:first_name)
         AND LOWER(p.last_name) = LOWER(:last_name)
         AND p.birth_date = :birth_date
@@ -422,6 +423,7 @@ function verifyPersonInCensus($pdo, $data) {
             return [
                 'success' => true,
                 'person_id' => $person['id'],
+                'barangay_id' => $person['barangay_id'],
                 'message' => 'Person verified in census records.'
             ];
         }
@@ -667,7 +669,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $phone,
                     $passwordHash, 
                     $role_id,
-                    32, // Set Tambubong barangay (ID 32) as default 
+                    $verificationResult['barangay_id'], // Use barangay_id from census records
                     $personData['first_name'],
                     $personData['last_name'],
                     $personData['gender'],
