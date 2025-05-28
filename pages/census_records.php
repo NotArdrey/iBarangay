@@ -138,6 +138,7 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                 <td class="px-6 py-4 whitespace-nowrap"><?= htmlspecialchars($resident['years_of_residency']) ?> years</td>
                 <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                   <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">View</a>
+                  <button onclick="deleteResident(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</button>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -262,6 +263,50 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
       updateButtonStyles(allButton);
       filterResidents('all');
     });
+
+    function deleteResident(id) {
+      Swal.fire({
+        title: 'Are you sure?',
+        text: "You won't be able to revert this!",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, delete it!'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          // Send delete request
+          fetch(`../functions/delete_resident.php?id=${id}`, {
+            method: 'DELETE'
+          })
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              Swal.fire(
+                'Deleted!',
+                'Resident has been deleted.',
+                'success'
+              ).then(() => {
+                window.location.reload();
+              });
+            } else {
+              Swal.fire(
+                'Error!',
+                data.message || 'Something went wrong.',
+                'error'
+              );
+            }
+          })
+          .catch(error => {
+            Swal.fire(
+              'Error!',
+              'Something went wrong.',
+              'error'
+            );
+          });
+        }
+      });
+    }
   </script>
 </body>
 
