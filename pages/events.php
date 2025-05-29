@@ -190,7 +190,7 @@ $stmt = $pdo->prepare("
 $stmt->execute([':bid' => $bid]);
 $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-require __DIR__ . '/../pages/header.php';
+require __DIR__ . '/../components/header.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">

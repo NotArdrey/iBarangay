@@ -1,6 +1,6 @@
 <?php
 require "../config/dbconn.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Fetch households for selection
 $stmt = $pdo->prepare("SELECT id AS household_id FROM households WHERE barangay_id = ? ORDER BY id");

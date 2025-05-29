@@ -324,7 +324,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['edit_resident_submit'
     exit;
 }
 
-require_once __DIR__ . "/../pages/header.php";
+require_once __DIR__ . "/../components/header.php";
 ?>
 
 

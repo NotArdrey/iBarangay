@@ -4,8 +4,21 @@ session_start();
 $error = isset($_SESSION['login_error']) ? $_SESSION['login_error'] : '';
 unset($_SESSION['login_error']);
 
-
-session_regenerate_id(true);
+// Add session management code
+if (isset($_SESSION['user_id'])) {
+    // If user is already logged in, check if they're trying to log in as a different user
+    if (isset($_POST['email'])) {
+        // Get the email being used to log in
+        $email = trim($_POST['email']);
+        
+        // If the email is different from the current session's email, show warning
+        if ($email !== $_SESSION['email']) {
+            $_SESSION['login_error'] = "You are already logged in as " . $_SESSION['email'] . ". Please log out first before logging in as a different user.";
+            header("Location: login.php");
+            exit;
+        }
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -70,7 +83,7 @@ session_regenerate_id(true);
         <span>Google</span>
       </button>
       <div class="signup">
-        <span>Don’t have an account?</span>
+        <span>Don't have an account?</span>
         <a href="../pages/register.php" class="alt-link">Sign up</a>
       </div>
     </div>

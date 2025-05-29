@@ -5,6 +5,7 @@
 header("Cross-Origin-Opener-Policy: same-origin-allow-popups");
 
 session_start();
+session_regenerate_id(true); // Regenerate session ID at the start
 require __DIR__ . "/../config/dbconn.php";
 
 /**
@@ -121,6 +122,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
     $password = $_POST['password'];
 
     try {
+        // Check if user is already logged in with a different account
+        if (isset($_SESSION['user_id']) && isset($_SESSION['email']) && $_SESSION['email'] !== $email) {
+            throw new Exception("You are already logged in as " . $_SESSION['email'] . ". Please log out first before logging in as a different user.");
+        }
+
         // Fetch user data with person information
         $stmt = $pdo->prepare("
             SELECT u.id, u.email, u.password, u.email_verified_at, u.is_active,

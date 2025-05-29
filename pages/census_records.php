@@ -1,7 +1,7 @@
 <?php
 require "../config/dbconn.php";
 require "../functions/manage_census.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Use the real household ID from the household_members table (not just the household's auto-increment id)
 $stmt = $pdo->prepare("

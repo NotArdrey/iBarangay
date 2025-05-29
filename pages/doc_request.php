@@ -131,7 +131,7 @@ if (isset($_GET['action'])) {
                         $mail->Password   = 'eisy hpjz rdnt bwrp';
                         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                         $mail->Port       = 587;
-                        $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
+                        $mail->setFrom('noreply@barangayhub.com','iBarangay');
                         $mail->addAddress($userInfo['email'], $userInfo['name']);
                         $mail->Subject = 'Your account has been banned';
                         // properly terminate the string and remove the stray backslash
@@ -345,7 +345,7 @@ if (isset($_GET['action'])) {
 // ----------------------------------------------------
 // 3. Only include header + HTML if no specific action
 // ----------------------------------------------------
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // EXAMPLE: Hard-coded barangay_id=1 to filter requests
 

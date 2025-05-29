@@ -241,6 +241,20 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
+
+<li>
+  <a href="../pages/barangay_backup.php" class="nav-link">
+    <span class="icon-container">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" 
+          d="M16.5 10.5V6m0 0l-3 3m3-3l3 3M4.5 19.5h15a3 3 0 003-3 2.993 2.993 0 00-2.88-3H19.5V9a4.5 4.5 0 00-9 0v4.5H3.38A2.993 2.993 0 00.5 16.5a3 3 0 003 3z" />
+      </svg>
+    </span>
+    <span class="font-medium text-gray-700">Backup and Restoration</span>
+  </a>
+</li>
+
+
 <!-- Log out -->
 <li>
   <form id="logoutForm" action="../functions/logout.php" method="post">

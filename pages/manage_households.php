@@ -1,6 +1,6 @@
 <?php
 require "../config/dbconn.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Function to generate Philippine HSN (Household Serial Number) based on actual PSA system
 function generateHouseholdId($pdo, $barangay_id) {
