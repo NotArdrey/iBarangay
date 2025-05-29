@@ -6,6 +6,20 @@ require "../vendor/autoload.php";
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
+// Configure PHPMailer
+function configureMailer() {
+    $mail = new PHPMailer(true);
+    $mail->isSMTP();
+    $mail->Host = 'smtp.gmail.com';
+    $mail->SMTPAuth = true;
+    $mail->Username = 'barangayhub2@gmail.com';
+    $mail->Password = 'eisy hpjz rdnt bwrp';
+    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+    $mail->Port = 587;
+    $mail->setFrom('noreply@ibarangay.com', 'iBarangay System');
+    return $mail;
+}
+
 // Add this line to ensure $conn is set from $pdo
 $conn = $pdo;
 
@@ -624,6 +638,7 @@ require "../components/navbar.php";
         input[type="text"], 
         input[type="datetime-local"], 
         input[type="number"],
+        input[type="tel"],
         textarea, 
         select {
             width: 100%;
@@ -900,40 +915,6 @@ require "../components/navbar.php";
         #notifDropdown.show { display: block; }
         .notif-item { padding: 10px 14px; border-bottom: 1px solid #eee; }
         .notif-item:last-child { border-bottom: none; }
-
-        /* Add these styles to your existing CSS */
-        .contact-input-wrapper {
-            position: relative;
-        }
-
-        .contact-input-wrapper input[type="tel"] {
-            width: 100%;
-            padding: 0.75rem 1rem 0.75rem 2.5rem;
-            border: 1px solid var(--border-light);
-            border-radius: 6px;
-            font-size: 1rem;
-            transition: all 0.3s ease;
-        }
-
-        .contact-input-wrapper input[type="tel"]:focus {
-            border-color: var(--primary-color);
-            box-shadow: 0 0 0 3px rgba(0, 86, 179, 0.1);
-            outline: none;
-        }
-
-        .contact-input-wrapper input[type="tel"]::placeholder {
-            color: #999;
-        }
-
-        .contact-help {
-            color: #666;
-            font-size: 0.8rem;
-            margin-top: 0.25rem;
-        }
-
-        .contact-input-wrapper input[type="tel"].invalid {
-            border-color: var(--error-color);
-        }
     </style>
 </head>
 <body>
@@ -1018,7 +999,7 @@ require "../components/navbar.php";
                 <!-- Participants Section -->
                 <div class="form-section">
                     <h3><i class="fas fa-users"></i> Other Participants</h3>
-                    <p class="text-light">Add other people involved in this case (witnesses, other complainants, respondents, etc.)</p>
+                    <p class="text-light">Add other people involved in this case (witnesses, other complainants, accused, etc.)</p>
                     
                     <div id="participantContainer" class="participants-container">
                         <!-- Participants will be added here dynamically -->
@@ -1205,30 +1186,53 @@ require "../components/navbar.php";
 
     <script>
     document.addEventListener('DOMContentLoaded', function() {
+        // Form validation and submission
+        document.getElementById('blotterForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const description = document.getElementById('description').value;
+            if (description.length < 10) {
+                Swal.fire({
+                    title: 'Invalid Description',
+                    text: 'Please provide a detailed description (at least 10 characters)',
+                    icon: 'error'
+                });
+                return;
+            }
+
+            // Show confirmation dialog
+            Swal.fire({
+                title: 'Submit Blotter Case?',
+                text: 'Are you sure you want to submit this blotter case? You will receive email notifications about the progress.',
+                icon: 'question',
+                showCancelButton: true,
+                confirmButtonColor: '#0056b3',
+                cancelButtonColor: '#dc3545',
+                confirmButtonText: 'Yes, submit it!',
+                cancelButtonText: 'No, review first'
+            }).then((result) => {
+                if (result.isConfirmed) {
+                    // Show loading state
+                    Swal.fire({
+                        title: 'Submitting...',
+                        text: 'Please wait while we process your request',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+
+                    // Submit the form
+                    this.submit();
+                }
+            });
+        });
+
         // Participant management
         const participantContainer = document.getElementById('participantContainer');
         const addRegisteredBtn = document.getElementById('addRegisteredBtn');
         const addExternalBtn = document.getElementById('addExternalBtn');
         let participantCount = 0;
-
-        // Format phone number
-        function formatPhoneNumber(input) {
-            // Remove all non-numeric characters
-            let number = input.value.replace(/\D/g, '');
-            
-            // Format as: XXX-XXX-XXXX
-            if (number.length > 0) {
-                if (number.length <= 3) {
-                    number = number;
-                } else if (number.length <= 6) {
-                    number = number.slice(0, 3) + '-' + number.slice(3);
-                } else {
-                    number = number.slice(0, 3) + '-' + number.slice(3, 6) + '-' + number.slice(6, 10);
-                }
-            }
-            
-            input.value = number;
-        }
 
         // Add Registered Resident
         addRegisteredBtn.addEventListener('click', function() {
@@ -1267,29 +1271,16 @@ require "../components/navbar.php";
                         <input type="text" name="participants[${participantCount}][last_name]" placeholder="Last Name" required>
                     </div>
                     <div class="grid-2" style="gap: 0.5rem; margin-top: 0.5rem;">
-                        <div class="contact-input-wrapper" style="position: relative;">
-                            <i class="fas fa-phone" style="position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: #666;"></i>
-                            <input type="tel" 
-                                   name="participants[${participantCount}][contact_number]" 
-                                   placeholder="Contact Number (e.g., 0912-345-6789)" 
-                                   pattern="[0-9]{3}-[0-9]{3}-[0-9]{4}"
-                                   maxlength="12"
-                                   style="padding-left: 35px;"
-                                   oninput="formatPhoneNumber(this)"
-                                   onkeypress="return event.charCode >= 48 && event.charCode <= 57">
-                            <small class="contact-help" style="display: block; color: #666; font-size: 0.8rem; margin-top: 0.25rem;">
-                                Format: XXX-XXX-XXXX
-                            </small>
-                        </div>
+                        <input type="tel" name="participants[${participantCount}][contact_number]" placeholder="Contact Number">
                         <input type="text" name="participants[${participantCount}][address]" placeholder="Address">
                     </div>
                     <div class="grid-2" style="gap: 0.5rem; margin-top: 0.5rem;">
                         <input type="number" name="participants[${participantCount}][age]" placeholder="Age" min="1" max="120">
                         <select name="participants[${participantCount}][gender]" required>
                             <option value="">Select Gender</option>
-                            <option value="male">Male</option>
-                            <option value="female">Female</option>
-                            <option value="other">Other</option>
+                            <option value="Male">Male</option>
+                            <option value="Female">Female</option>
+                            <option value="Others">Others</option>
                         </select>
                     </div>
                     <select name="participants[${participantCount}][role]" class="form-control" required style="margin-top: 0.5rem;">
@@ -1304,40 +1295,6 @@ require "../components/navbar.php";
             `;
             participantContainer.appendChild(participantDiv);
             participantCount++;
-        });
-
-        // Form validation
-        document.getElementById('blotterForm').addEventListener('submit', function(e) {
-            const description = document.getElementById('description').value;
-            if (description.length < 10) {
-                e.preventDefault();
-                Swal.fire({
-                    title: 'Invalid Description',
-                    text: 'Please provide a detailed description (at least 10 characters)',
-                    icon: 'error'
-                });
-            }
-
-            // Validate phone numbers
-            const phoneInputs = document.querySelectorAll('input[type="tel"]');
-            let hasInvalidPhone = false;
-            phoneInputs.forEach(input => {
-                if (input.value && !input.value.match(/^\d{3}-\d{3}-\d{4}$/)) {
-                    hasInvalidPhone = true;
-                    input.style.borderColor = 'red';
-                } else {
-                    input.style.borderColor = '';
-                }
-            });
-
-            if (hasInvalidPhone) {
-                e.preventDefault();
-                Swal.fire({
-                    title: 'Invalid Phone Number',
-                    text: 'Please enter valid phone numbers in the format: XXX-XXX-XXXX',
-                    icon: 'error'
-                });
-            }
         });
     });
     </script>

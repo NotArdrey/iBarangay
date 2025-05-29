@@ -1792,7 +1792,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
                   <button class="complete-btn text-green-600 hover:text-green-900" data-id="<?= $case['id'] ?>">Close</button>
                 <?php endif; ?>
                 <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Dismiss</button>
-                <?php if (in_array($case['status'], ['closed', 'solved', 'endorsed_to_court'])): ?>
+                <?php if (in_array($case['status'], ['closed', 'solved'])): ?>
                   <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
                 <?php endif; ?>
               <?php endif; ?>
@@ -2329,6 +2329,16 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('editDescription').value = payload.case.description;
       document.getElementById('editStatus').value      = payload.case.status || '';
 
+      // Only show intervention section if case is closed or solved
+      const interventionSection = document.querySelector('.space-y-2:has(#editInterventionContainer)');
+      if (interventionSection) {
+        if (['closed', 'solved'].includes(payload.case.status)) {
+          interventionSection.style.display = 'block';
+        } else {
+          interventionSection.style.display = 'none';
+        }
+      }
+
       // Populate participants
       payload.participants.forEach((p, idx) => {
         const tmpl = p.participant_type === 'registered' ? registeredTemplate : unregisteredTemplate;
@@ -2427,6 +2437,15 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         })
       };
+      
+      // Only include interventions if case is closed or solved
+      const interventionContainer = document.getElementById('editInterventionContainer');
+      if (interventionContainer && ['closed', 'solved'].includes(formData.status)) {
+        formData.interventions = Array.from(interventionContainer.querySelectorAll('input[type="checkbox"]:checked'))
+          .map(cb => parseInt(cb.value));
+      } else {
+        formData.interventions = [];
+      }
       
       // Validation
       if (!formData.location || !formData.description || !formData.participants.length) {

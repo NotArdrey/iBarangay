@@ -52,14 +52,16 @@ require "../components/navbar.php";
 // Modified SQL query to remove references to "blotter_schedule_proposals"
 $stmt = $pdo->prepare("
     SELECT bc.*, 
-           GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+           GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories,
+           bp.role
     FROM blotter_cases bc
     JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+    JOIN persons p ON bp.person_id = p.id
     LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
     LEFT JOIN case_categories cc ON bcc.category_id = cc.id
-    WHERE bp.person_id = ?
-      AND bc.status != 'deleted' -- Ensure deleted cases are not shown, but all others are
-    GROUP BY bc.id
+    WHERE p.user_id = ?
+      AND bc.status != 'deleted'
+    GROUP BY bc.id, bp.role
     ORDER BY bc.created_at DESC
 ");
 $stmt->execute([$user_id]);
@@ -732,20 +734,27 @@ unset($case);
                             <!-- Proposal Status and Actions -->
                             <?php if ($case['proposal_status'] === 'proposed' && !$case['user_confirmed']): ?>
                             <div class="schedule-actions">
-                                <button class="btn btn-success" onclick="respondToProposal(<?= $case['current_proposal_id'] ?>, 'confirm')">
-                                    <i class="fas fa-check"></i>
-                                    Confirm Availability
-                                </button>
-                                <button class="btn btn-danger" onclick="respondToProposal(<?= $case['current_proposal_id'] ?>, 'reject')">
-                                    <i class="fas fa-times"></i>
-                                    Can't Attend
-                                </button>
+                                <form method="post" action="handle_schedule.php" style="display: inline;">
+                                    <input type="hidden" name="action" value="confirm">
+                                    <input type="hidden" name="proposal_id" value="<?= $case['current_proposal_id'] ?>">
+                                    <button type="submit" class="btn btn-success" onclick="return confirm('Are you sure you can attend this schedule?')">
+                                        <i class="fas fa-check"></i> Confirm Availability
+                                    </button>
+                                </form>
+                                
+                                <form method="post" action="handle_schedule.php" style="display: inline;">
+                                    <input type="hidden" name="action" value="reject">
+                                    <input type="hidden" name="proposal_id" value="<?= $case['current_proposal_id'] ?>">
+                                    <div style="margin-top: 10px;">
+                                        <textarea name="remarks" placeholder="Please provide reason for conflict" required style="width: 100%; margin-bottom: 10px;"></textarea>
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you cannot attend this schedule?')">
+                                            <i class="fas fa-times"></i> Can't Attend
+                                        </button>
+                                    </div>
+                                </form>
                             </div>
                             <?php elseif ($case['user_confirmed'] && !$case['captain_confirmed']): ?>
-                            <div class="conflict-alert">
-                                <i class="fas fa-hourglass-half"></i>
-                                You've confirmed your availability. Waiting for captain's final confirmation.
-                            </div>
+                            <div class="alert alert-info">You have confirmed. Waiting for Captain's confirmation.</div>
                             <?php elseif ($case['proposal_status'] === 'both_confirmed'): ?>
                             <div style="background: #ecfdf5; color: #059669; padding: 1rem; border-radius: 6px; margin-top: 1rem;">
                                 <i class="fas fa-check-circle"></i>
@@ -803,7 +812,19 @@ unset($case);
 
                     <?php
                     // Fetch schedule proposal for this case
-                    $stmt = $pdo->prepare("SELECT * FROM schedule_proposals WHERE blotter_case_id=? AND user_id=? ORDER BY created_at DESC LIMIT 1");
+                    $stmt = $pdo->prepare("
+                        SELECT sp.*, 
+                               sp.user_remarks,
+                               sp.captain_remarks,
+                               sp.conflict_reason
+                        FROM schedule_proposals sp
+                        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+                        JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+                        JOIN persons p ON bp.person_id = p.id
+                        WHERE bc.id = ? AND p.user_id = ?
+                        ORDER BY sp.created_at DESC 
+                        LIMIT 1
+                    ");
                     $stmt->execute([$case['id'], $user_id]);
                     $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
                     if ($proposal):
@@ -813,12 +834,34 @@ unset($case);
                             <strong>Proposed:</strong> <?= date('M d, Y', strtotime($proposal['proposed_date'])) ?> <?= date('H:i', strtotime($proposal['proposed_time'])) ?><br>
                             <strong>Status:</strong> <?= ucfirst($proposal['status']) ?><br>
                             <strong>Captain:</strong> <?= $proposal['captain_confirmed'] ? 'Confirmed' : 'Pending' ?><br>
-                            <?php if ($proposal['remarks']): ?>
-                                <div style="font-size:12px;color:#888;">Remarks: <?= htmlspecialchars($proposal['remarks']) ?></div>
+                            <?php if (isset($proposal['user_remarks']) && $proposal['user_remarks']): ?>
+                                <div style="font-size:12px;color:#888;">Your remarks: <?= htmlspecialchars($proposal['user_remarks']) ?></div>
+                            <?php endif; ?>
+                            <?php if (isset($proposal['captain_remarks']) && $proposal['captain_remarks']): ?>
+                                <div style="font-size:12px;color:#888;">Captain's remarks: <?= htmlspecialchars($proposal['captain_remarks']) ?></div>
+                            <?php endif; ?>
+                            <?php if (isset($proposal['conflict_reason']) && $proposal['conflict_reason']): ?>
+                                <div style="font-size:12px;color:#888;">Conflict reason: <?= htmlspecialchars($proposal['conflict_reason']) ?></div>
                             <?php endif; ?>
                             <?php if ($proposal['status'] === 'proposed' && !$proposal['user_confirmed']): ?>
-                                <button class="btn btn-success" onclick="userConfirmSchedule(<?= $proposal['id'] ?>)">Confirm Availability</button>
-                                <button class="btn btn-danger" onclick="userRejectSchedule(<?= $proposal['id'] ?>)">Can't Attend</button>
+                                <form method="post" action="handle_schedule.php" style="display: inline;">
+                                    <input type="hidden" name="action" value="confirm">
+                                    <input type="hidden" name="proposal_id" value="<?= $proposal['id'] ?>">
+                                    <button type="submit" class="btn btn-success" onclick="return confirm('Are you sure you can attend this schedule?')">
+                                        <i class="fas fa-check"></i> Confirm Availability
+                                    </button>
+                                </form>
+                                
+                                <form method="post" action="handle_schedule.php" style="display: inline;">
+                                    <input type="hidden" name="action" value="reject">
+                                    <input type="hidden" name="proposal_id" value="<?= $proposal['id'] ?>">
+                                    <div style="margin-top: 10px;">
+                                        <textarea name="remarks" placeholder="Please provide reason for conflict" required style="width: 100%; margin-bottom: 10px;"></textarea>
+                                        <button type="submit" class="btn btn-danger" onclick="return confirm('Are you sure you cannot attend this schedule?')">
+                                            <i class="fas fa-times"></i> Can't Attend
+                                        </button>
+                                    </div>
+                                </form>
                             <?php elseif ($proposal['user_confirmed'] && !$proposal['captain_confirmed']): ?>
                                 <div class="alert alert-info">You have confirmed. Waiting for Captain's confirmation.</div>
                             <?php elseif ($proposal['status'] === 'both_confirmed'): ?>
@@ -828,49 +871,6 @@ unset($case);
                             <?php endif; ?>
                         </div>
                     </div>
-                    <script>
-                    function userConfirmSchedule(proposalId) {
-                      Swal.fire({
-                        title: 'Confirm your availability?',
-                        icon: 'question',
-                        showCancelButton: true
-                      }).then(async (result) => {
-                        if (!result.isConfirmed) return;
-                        const res = await fetch('../api/scheduling_api.php', {
-                          method: 'POST',
-                          headers: {'Content-Type': 'application/json'},
-                          body: JSON.stringify({ action: 'user_confirm', proposal_id: proposalId })
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                          Swal.fire('Confirmed!', '', 'success').then(() => location.reload());
-                        } else {
-                          Swal.fire('Error', data.message || 'Failed', 'error');
-                        }
-                      });
-                    }
-                    function userRejectSchedule(proposalId) {
-                      Swal.fire({
-                        title: 'Cannot attend?',
-                        input: 'textarea',
-                        inputLabel: 'Remarks (reason for conflict)',
-                        showCancelButton: true
-                      }).then(async (result) => {
-                        if (!result.isConfirmed) return;
-                        const res = await fetch('../api/scheduling_api.php', {
-                          method: 'POST',
-                          headers: {'Content-Type': 'application/json'},
-                          body: JSON.stringify({ action: 'user_reject', proposal_id: proposalId, remarks: result.value })
-                        });
-                        const data = await res.json();
-                        if (data.success) {
-                          Swal.fire('Submitted!', '', 'success').then(() => location.reload());
-                        } else {
-                          Swal.fire('Error', data.message || 'Failed', 'error');
-                        }
-                      });
-                    }
-                    </script>
                     <?php endif; ?>
                 </div>
                 <?php endforeach; ?>
