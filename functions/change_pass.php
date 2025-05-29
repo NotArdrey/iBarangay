@@ -9,8 +9,19 @@ require "../config/dbconn.php";
  * Audit Trail logging function.
  */
 function logAuditTrail($pdo, $user_id, $action, $table_name = null, $record_id = null, $description = '') {
-    $stmt = $pdo->prepare("INSERT INTO AuditTrail (admin_user_id, action, table_name, record_id, description) VALUES (?, ?, ?, ?, ?)");
-    $stmt->execute([$user_id, $action, $table_name, $record_id, $description]);
+    try {
+        $stmt = $pdo->prepare("INSERT INTO audit_trails (user_id, action, table_name, record_id, description) VALUES (?, ?, ?, ?, ?)");
+        $stmt->execute([
+            $user_id ?? 1, // Use 1 (system user) if no user_id is provided
+            $action,
+            $table_name,
+            $record_id,
+            $description
+        ]);
+    } catch (PDOException $e) {
+        error_log("Error logging audit trail: " . $e->getMessage());
+        // Don't throw the error - just log it and continue
+    }
 }
 
 // Ensure this script is only accessed via POST.
@@ -23,7 +34,8 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 if (isset($_POST['resend']) && $_POST['resend'] == 1) {
     $email = isset($_POST['email']) ? $_POST['email'] : '';
     
-    // Ensure you have the sendPasswordReset() function defined/required before using it.
+    // Include the forget_pass.php file to use sendPasswordReset function
+    require_once "forget_pass.php";
     $message = sendPasswordReset($email, $pdo);  
     $_SESSION['success'] = $message;
     header("Location: ../pages/change_pass.php?email=" . urlencode($email));
@@ -56,7 +68,7 @@ if ($new_password !== $confirm_password) {
 }
 
 // --- Token Verification ---
-$stmt = $pdo->prepare("SELECT user_id, verification_token, verification_expiry FROM Users WHERE email = ?");
+$stmt = $pdo->prepare("SELECT id, verification_token, verification_expiry FROM users WHERE email = ?");
 $stmt->execute([$email]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -74,14 +86,14 @@ if ($token !== $user['verification_token'] || strtotime($user['verification_expi
 }
 
 // --- Update the Password ---
-$password_hash = password_hash($new_password, PASSWORD_DEFAULT);
-$stmt = $pdo->prepare("UPDATE Users SET password_hash = ?, verification_token = NULL, verification_expiry = NULL WHERE email = ?");
+$password_hash = password_hash($new_password, PASSWORD_DEFAULT); // Using password_hash() for better security
+$stmt = $pdo->prepare("UPDATE users SET password = ?, verification_token = NULL, verification_expiry = NULL WHERE email = ?");
 $stmt->execute([$password_hash, $email]);
 
 // Log the password change event.
-logAuditTrail($pdo, $user['user_id'], "CHANGE PASSWORD", "Users", $user['user_id'], "User changed password successfully.");
+logAuditTrail($pdo, $user['id'], "CHANGE PASSWORD", "users", $user['id'], "User changed password successfully.");
 
 $_SESSION['success'] = "Password successfully changed. You may now log in.";
-header("Location: ../pages/index.php");
+header("Location: ../pages/login.php");
 exit;
 ?>

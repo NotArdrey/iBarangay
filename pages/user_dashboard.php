@@ -994,6 +994,188 @@ $stmt = null;
     .toggle-icon.expanded {
       transform: rotate(180deg);
     }
+    
+    .nav-btn {
+        width: 48px;
+        height: 48px;
+        font-size: 1rem;
+    }
+}
+
+/* Simple animations */
+.carousel-slide {
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+</style>
+
+    <!-- Services Section -->
+    <section class="services-section" id="services">
+        <div class="services-container">
+            <div class="section-header">
+                <h2>Services</h2>
+                <p>Complete barangay services at your fingertips</p>
+            </div>
+
+            <!-- Barangay Certificates Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('certificates')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-certificate"></i></div>
+                    <h3>Barangay Certificates</h3>
+                    <p>Official documents and certifications</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="certificates-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="certificates-grid" style="display: none;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_clearance';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-file-alt"></i></div>
+                        <div class="service-content">
+                            <h4>Barangay Clearance</h4>
+                            <p>Required for employment, business permits, and various transactions</p>
+                            <a href="../pages/services.php?documentType=barangay_clearance" class="service-cta">
+                                Request <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_indigency';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-hand-holding-heart"></i></div>
+                        <div class="service-content">
+                            <h4>Certificate of Indigency</h4>
+                            <p>For accessing social welfare programs and financial assistance</p>
+                            <a href="../pages/services.php?documentType=barangay_indigency" class="service-cta">
+                                Apply <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=business_permit_clearance';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-store"></i></div>
+                        <div class="service-content">
+                            <h4>Business Permit Clearance</h4>
+                            <p>Barangay clearance required for business license applications</p>
+                            <a href="../pages/services.php?documentType=business_permit_clearance" class="service-cta">
+                                Apply <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=cedula';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-id-card"></i></div>
+                        <div class="service-content">
+                            <h4>Community Tax Certificate (Sedula)</h4>
+                            <p>Annual tax certificate required for government transactions</p>
+                            <a href="../pages/services.php?documentType=cedula" class="service-cta">
+                                Get Certificate <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=proof_of_residency';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-home"></i></div>
+                        <div class="service-content">
+                            <h4>Certificate of Residency</h4>
+                            <p>Official proof of residence in the barangay</p>
+                            <a href="../pages/services.php?documentType=proof_of_residency" class="service-cta">
+                                Request <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Other Services Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('other')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-hands-helping"></i></div>
+                    <h3>Other Services</h3>
+                    <p>Social services and community assistance</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="other-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="other-grid" style="display: none;">
+                    <?php 
+                    // Fetch active custom services
+                    $services_stmt = $pdo->prepare("
+                        SELECT * FROM custom_services 
+                        WHERE barangay_id = ? AND is_active = 1 
+                        ORDER BY display_order, name
+                    ");
+                    $services_stmt->execute([$barangay_id]);
+                    $custom_services = $services_stmt->fetchAll();
+
+                    if (count($custom_services) > 0):
+                        foreach ($custom_services as $service): 
+                    ?>
+                        <div class="service-item" onclick="viewCustomService(<?php echo htmlspecialchars(json_encode($service)); ?>)">
+                            <div class="service-icon"><i class="fas <?php echo htmlspecialchars($service['icon']); ?>"></i></div>
+                            <div class="service-content">
+                                <h4><?php echo htmlspecialchars($service['name']); ?></h4>
+                                <p><?php echo htmlspecialchars($service['description']); ?></p>
+                                <a href="#" class="service-cta">
+                                    Request Service <i class="fas fa-arrow-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                    <?php 
+                        endforeach;
+                    else:
+                    ?>
+                        <div class="col-span-full text-center py-8">
+                            <p class="text-gray-500">No custom services available at the moment.</p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
+
+            <!-- Blotter Services Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('blotter')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-file-signature"></i></div>
+                    <h3>Blotter Services</h3>
+                    <p>Incident reporting and documentation</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="blotter-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="blotter-grid" style="display: none;">
+                    <div class="service-item" onclick="window.location.href='../pages/blotter_request.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                        <div class="service-content">
+                            <h4>File a Blotter Report</h4>
+                            <p>Report incidents and request official documentation</p>
+                            <a href="../pages/blotter_request.php" class="service-cta">
+                                File Report <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+
+                    <div class="service-item" onclick="window.location.href='../pages/blotter_status.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-search"></i></div>
+                        <div class="service-content">
+                            <h4>Check Blotter Status</h4>
+                            <p>Track the status of your blotter requests</p>
+                            <a href="../pages/blotter_status.php" class="service-cta">
+                                Check Status <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <style>
+    /* Services Section - Consistent styling */
 
     .services-grid {
       display: grid;
@@ -3346,6 +3528,115 @@ $stmt = null;
       }
     }
 
+    // Lazy loading for images
+    const lazyImages = document.querySelectorAll('img[data-src]');
+    const lazyLoad = target => {
+      const io = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const img = entry.target;
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+            observer.disconnect();
+          }
+        });
+      });
+      io.observe(target);
+    };
+    lazyImages.forEach(lazyLoad);
+  </script>
+
+<!-- Custom Service Details Modal -->
+<div id="customServiceModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-4">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold" id="modalCustomServiceTitle"></h2>
+            <button onclick="closeCustomServiceModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="space-y-6">
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Description</h3>
+                <p id="modalCustomServiceDescription" class="text-gray-600"></p>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Requirements</h3>
+                <ul id="modalCustomServiceRequirements" class="list-disc pl-5 text-gray-600 space-y-2"></ul>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Process Guide</h3>
+                <ol id="modalCustomServiceGuide" class="list-decimal pl-5 text-gray-600 space-y-2"></ol>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Processing Time</h3>
+                    <p id="modalCustomServiceTime" class="text-gray-600"></p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Fees</h3>
+                    <p id="modalCustomServiceFees" class="text-gray-600"></p>
+                </div>
+            </div>
+            <div class="mt-6 text-center">
+                <button onclick="closeCustomServiceModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-200">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function viewCustomService(service) {
+    // Set modal content
+    document.getElementById('modalCustomServiceTitle').textContent = service.name;
+    document.getElementById('modalCustomServiceDescription').textContent = service.description;
+    
+    // Format requirements as list
+    const requirementsList = document.getElementById('modalCustomServiceRequirements');
+    requirementsList.innerHTML = '';
+    if (service.requirements) {
+        service.requirements.split('\n').forEach(req => {
+            if (req.trim()) {
+                const li = document.createElement('li');
+                li.textContent = req.trim();
+                requirementsList.appendChild(li);
+            }
+        });
+    }
+    
+    // Format guide as numbered list
+    const guideList = document.getElementById('modalCustomServiceGuide');
+    guideList.innerHTML = '';
+    if (service.detailed_guide) {
+        service.detailed_guide.split('\n').forEach(step => {
+            if (step.trim()) {
+                const li = document.createElement('li');
+                li.textContent = step.trim();
+                guideList.appendChild(li);
+            }
+        });
+    }
+    
+    document.getElementById('modalCustomServiceTime').textContent = service.processing_time || 'Not specified';
+    document.getElementById('modalCustomServiceFees').textContent = service.fees || 'Not specified';
+    
+    // Show modal
+    document.getElementById('customServiceModal').style.display = 'flex';
+}
+
+function closeCustomServiceModal() {
+    document.getElementById('customServiceModal').style.display = 'none';
+}
+
+// Close modal when clicking outside
+document.getElementById('customServiceModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeCustomServiceModal();
+    }
+});
+</script>
     // Intersection Observer for fade-in animations
     const observerOptions = {
       threshold: 0.1,
