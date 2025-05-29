@@ -1,13 +1,13 @@
 <?php
 session_start();
 require_once '../config/dbconn.php';
-include 'header.php';
+require_once '../components/header.php';
 
 // Check if user has appropriate role
-if (!in_array($_SESSION['role_id'], [3,4,5,6,7])) {
-    header("Location: ../index.php");
-    exit();
-}
+//if (!in_array($_SESSION['role_id'], [3,4,5,6,7])) {
+    //header("Location: ../login.php");
+    //exit();
+//}
 
 $barangay_id = $_SESSION['barangay_id'];
 
@@ -94,27 +94,7 @@ $services = $stmt->fetchAll();
                 </button>
             </div>
             <form id="addServiceForm" onsubmit="submitService(event)">
-                <div class="mb-4">
-                    <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceType">
-                        Service Type
-                    </label>
-                    <select id="serviceType" name="service_type" required
-                            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
-                        <option value="general">General Service</option>
-                        <option value="health">Health Service</option>
-                        <option value="education">Educational Service</option>
-                        <option value="social">Social Service</option>
-                        <option value="community">Community Service</option>
-                        <option value="business">Business-related Service</option>
-                        <option value="environmental">Environmental Service</option>
-                        <option value="emergency">Emergency Service</option>
-                        <option value="legal">Legal Service</option>
-                        <option value="financial">Financial Service</option>
-                        <option value="technical">Technical Service</option>
-                        <option value="other">Other</option>
-                    </select>
-                </div>
-
+                <input type="hidden" name="service_type" value="general">
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceName">
                         Service Name
@@ -122,7 +102,6 @@ $services = $stmt->fetchAll();
                     <input type="text" id="serviceName" name="name" required
                            class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceDescription">
                         Description
@@ -131,7 +110,6 @@ $services = $stmt->fetchAll();
                               class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                               rows="3"></textarea>
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceIcon">
                         Icon
@@ -156,7 +134,6 @@ $services = $stmt->fetchAll();
                         <option value="fa-file-alt">📄 Documentation</option>
                     </select>
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceRequirements">
                         Requirements (One per line)
@@ -165,7 +142,6 @@ $services = $stmt->fetchAll();
                               class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                               rows="4" placeholder="- Valid ID&#10;- Proof of residency&#10;- Application form"></textarea>
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceGuide">
                         Step-by-Step Guide (One step per line)
@@ -174,7 +150,6 @@ $services = $stmt->fetchAll();
                               class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                               rows="4" placeholder="1. Submit requirements&#10;2. Pay the fee&#10;3. Wait for processing"></textarea>
                 </div>
-
                 <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                     <div>
                         <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceProcessingTime">
@@ -193,7 +168,6 @@ $services = $stmt->fetchAll();
                                class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline">
                     </div>
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="servicePriority">
                         Priority Level
@@ -205,7 +179,6 @@ $services = $stmt->fetchAll();
                         <option value="urgent">Urgent</option>
                     </select>
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="serviceAvailability">
                         Service Availability
@@ -217,7 +190,6 @@ $services = $stmt->fetchAll();
                         <option value="limited">Limited Availability</option>
                     </select>
                 </div>
-
                 <div class="mb-4">
                     <label class="block text-gray-700 text-sm font-bold mb-2" for="additionalNotes">
                         Additional Notes (Optional)
@@ -226,7 +198,6 @@ $services = $stmt->fetchAll();
                               class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
                               rows="3" placeholder="Any additional information about the service"></textarea>
                 </div>
-
                 <div class="flex justify-end">
                     <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
                         Add Service
@@ -380,15 +351,19 @@ $services = $stmt->fetchAll();
     // Form Submissions
     function submitService(event) {
         event.preventDefault();
-        
         const formData = new FormData(event.target);
-        
-        // Add additional fields
-        formData.append('service_type', document.getElementById('serviceType').value);
-        formData.append('priority', document.getElementById('servicePriority').value);
-        formData.append('availability', document.getElementById('serviceAvailability').value);
-        formData.append('additional_notes', document.getElementById('additionalNotes').value);
-
+        // Only require the following fields:
+        const requiredFields = ['name', 'description', 'requirements', 'detailed_guide', 'processing_time', 'fees'];
+        const missingFields = requiredFields.filter(field => !formData.get(field));
+        if (missingFields.length > 0) {
+            Swal.fire({
+                title: 'Validation Error',
+                text: 'Please fill in all required fields',
+                icon: 'error',
+                confirmButtonText: 'OK'
+            });
+            return;
+        }
         fetch('../functions/add_service.php', {
             method: 'POST',
             body: formData

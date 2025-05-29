@@ -86,6 +86,11 @@ $stmt->execute([$barangay_id]);
 $council = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $stmt = null;
 
+// Fetch custom services for this barangay
+$other_services = [];
+$stmt = $conn->prepare("SELECT * FROM custom_services WHERE barangay_id = ? AND is_active = 1 ORDER BY display_order, name");
+$stmt->execute([$barangay_id]);
+$other_services = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 ?>
 <!DOCTYPE html>
@@ -1269,71 +1274,18 @@ $stmt = null;
                 </div>
                 
                 <div class="services-grid" id="other-grid">
-                  <div class="service-item" onclick="window.location.href='../pages/ayuda_request.php';">
-                    <div class="service-icon"><i class="fas fa-hand-holding-usd"></i></div>
-                    <div class="service-content">
-                      <h4>Financial Assistance (Ayuda)</h4>
-                      <p>Emergency financial assistance for community members in need</p>
-                      <a href="../pages/ayuda_request.php" class="service-cta">
-                        Apply for Assistance <i class="fas fa-arrow-right"></i>
-                      </a>
+                  <?php foreach ($other_services as $service): ?>
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?service_id=<?= $service['id'] ?>';">
+                      <div class="service-icon"><i class="fas <?= htmlspecialchars($service['icon']) ?>"></i></div>
+                      <div class="service-content">
+                        <h4><?= htmlspecialchars($service['name']) ?></h4>
+                        <p><?= htmlspecialchars($service['description']) ?></p>
+                        <a href="../pages/services.php?service_id=<?= $service['id'] ?>" class="service-cta">
+                          View Details <i class="fas fa-arrow-right"></i>
+                        </a>
+                      </div>
                     </div>
-                  </div>
-
-                  <div class="service-item" onclick="window.location.href='../pages/scholarship_application.php';">
-                    <div class="service-icon"><i class="fas fa-graduation-cap"></i></div>
-                    <div class="service-content">
-                      <h4>Educational Scholarship</h4>
-                      <p>Scholarship programs for deserving students in the community</p>
-                      <a href="../pages/scholarship_application.php" class="service-cta">
-                        Apply for Scholarship <i class="fas fa-arrow-right"></i>
-                      </a>
-                    </div>
-                  </div>
-
-                  <div class="service-item" onclick="window.location.href='../pages/medical_assistance.php';">
-                    <div class="service-icon"><i class="fas fa-heart"></i></div>
-                    <div class="service-content">
-                      <h4>Medical Assistance Program</h4>
-                      <p>Healthcare support and medical aid for community members</p>
-                      <a href="../pages/medical_assistance.php" class="service-cta">
-                        Request Assistance <i class="fas fa-arrow-right"></i>
-                      </a>
-                    </div>
-                  </div>
-
-                  <div class="service-item" onclick="window.location.href='../pages/senior_citizen_services.php';">
-                    <div class="service-icon"><i class="fas fa-users"></i></div>
-                    <div class="service-content">
-                      <h4>Senior Citizen Services</h4>
-                      <p>Special services and benefits for senior citizens</p>
-                      <a href="../pages/senior_citizen_services.php" class="service-cta">
-                        Learn More <i class="fas fa-arrow-right"></i>
-                      </a>
-                    </div>
-                  </div>
-
-                  <div class="service-item" onclick="window.location.href='../pages/pwd_services.php';">
-                    <div class="service-icon"><i class="fas fa-wheelchair"></i></div>
-                    <div class="service-content">
-                      <h4>PWD Services</h4>
-                      <p>Services and assistance for Persons with Disabilities</p>
-                      <a href="../pages/pwd_services.php" class="service-cta">
-                        Access Services <i class="fas fa-arrow-right"></i>
-                      </a>
-                    </div>
-                  </div>
-
-                  <div class="service-item" onclick="window.location.href='../pages/livelihood_programs.php';">
-                    <div class="service-icon"><i class="fas fa-seedling"></i></div>
-                    <div class="service-content">
-                      <h4>Livelihood Programs</h4>
-                      <p>Skills training and livelihood opportunities for residents</p>
-                      <a href="../pages/livelihood_programs.php" class="service-cta">
-                        Join Program <i class="fas fa-arrow-right"></i>
-                      </a>
-                    </div>
-                  </div>
+                  <?php endforeach; ?>
                 </div>
               </div>
 

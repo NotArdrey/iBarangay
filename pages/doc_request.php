@@ -408,8 +408,8 @@ if (isset($_GET['action'])) {
     exit;
 }
 
-// Only include header + HTML if no specific action
-require_once "../pages/header.php";
+// Replace the old header include with the navbar component
+require_once '../components/header.php';
 
 // 1) Fetch all "Pending" doc requests (FIFO => earliest date first)
 $stmt = $pdo->prepare("

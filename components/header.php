@@ -202,7 +202,7 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
-<?php if (in_array($_SESSION['role_id'], [3,4,5,6,7])): ?>
+
 <!-- Manage Services (Officials Only) -->
 <li>
   <a href="../pages/manage_services.php" class="nav-link">
@@ -216,10 +216,10 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     <span class="font-medium text-gray-700">Manage Services</span>
   </a>
 </li>
-<?php endif; ?>
 
-<?php if (in_array($_SESSION['role_id'], [3,4,5,6,7])): ?>
-<!-- Edit Document Prices (Officials Only) -->
+
+<!--?php if (in_array($_SESSION['role_id'], [3,4,5,6,7])): ?>
+<!  -- Edit Document Prices (Officials Only) -->
 <li>
   <a href="../functions/edit_document_prices.php" class="nav-link">
     <span class="icon-container">
@@ -231,7 +231,7 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     <span class="font-medium text-gray-700">Edit Document Prices</span>
   </a>
 </li>
-<?php endif; ?>
+<!--?php endif; ?> -->
 
 <!-- Blotter -->
 <li>

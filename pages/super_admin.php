@@ -785,6 +785,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['delete_event_id'])) 
                     closeModal();
                 }
             };
+            window.openModal = openModal;
         </script>
     </main>
 </body>

@@ -2,6 +2,13 @@
 session_start();
 require_once '../config/dbconn.php';
 
+// Ensure user is logged in and has barangay_id
+if (!isset($_SESSION['barangay_id']) || !is_numeric($_SESSION['barangay_id'])) {
+    http_response_code(403);
+    echo json_encode(['success' => false, 'message' => 'Access denied. Barangay not set in session.']);
+    exit();
+}
+
 // Check if user has appropriate role
 if (!in_array($_SESSION['role_id'], [3,4,5,6,7])) {
     http_response_code(403);

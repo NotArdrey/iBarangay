@@ -2,15 +2,17 @@
 session_start();
 require_once '../config/dbconn.php';
 
-// Check if user has appropriate role
-if (!in_array($_SESSION['role_id'], [3,4,5,6,7])) {
+// Ensure the user's barangay_id is set in the session and is valid
+if (!isset($_SESSION['barangay_id']) || !is_numeric($_SESSION['barangay_id'])) {
     http_response_code(403);
-    echo json_encode(['success' => false, 'message' => 'Unauthorized']);
+    echo json_encode(['success' => false, 'message' => 'Barangay not set in session. Please log in again.']);
     exit();
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Sanitize and validate input
+    // Always use the barangay_id from the session (never from user input)
+    $barangay_id = (int)$_SESSION['barangay_id'];
+    
     $name = trim($_POST['name'] ?? '');
     $description = trim($_POST['description'] ?? '');
     $icon = trim($_POST['icon'] ?? 'fa-file');
@@ -22,7 +24,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $priority = trim($_POST['priority'] ?? 'normal');
     $availability = trim($_POST['availability'] ?? 'always');
     $additional_notes = trim($_POST['additional_notes'] ?? '');
-    $barangay_id = $_SESSION['barangay_id'];
+    $category_id = null; // Set to null for custom services
 
     // Validate required fields
     $errors = [];
@@ -46,7 +48,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Start transaction
         $pdo->beginTransaction();
 
-        // Get the current max display_order
+        // Get the current max display_order for this barangay only
         $stmt = $pdo->prepare("
             SELECT MAX(display_order) as max_order 
             FROM custom_services 
@@ -56,17 +58,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = $stmt->fetch();
         $display_order = ($result['max_order'] ?? 0) + 1;
 
-        // Insert new service
+        // Insert new service (category_id can be NULL)
         $stmt = $pdo->prepare("
             INSERT INTO custom_services (
-                barangay_id, name, description, icon,
+                category_id, barangay_id, name, description, icon,
                 requirements, detailed_guide, processing_time, fees, 
-                display_order, is_active, service_type, priority_level,
-                availability_type, additional_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                service_type, priority_level, availability_type, additional_notes,
+                display_order, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ");
-        
         $stmt->execute([
+            $category_id,
             $barangay_id,
             $name,
             $description,
@@ -75,15 +77,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $detailed_guide,
             $processing_time,
             $fees,
-            $display_order,
             $service_type,
             $priority,
             $availability,
-            $additional_notes
+            $additional_notes,
+            $display_order
         ]);
 
-        // Log the action
+        // Get the inserted service ID
         $service_id = $pdo->lastInsertId();
+
+        // Log the action
         $stmt = $pdo->prepare("
             INSERT INTO audit_trails (user_id, action, table_name, record_id, description)
             VALUES (?, 'INSERT', 'custom_services', ?, ?)
@@ -102,13 +106,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'message' => 'Service added successfully',
             'service_id' => $service_id
         ]);
+
     } catch (PDOException $e) {
         // Rollback transaction on error
         $pdo->rollBack();
         error_log($e->getMessage());
         echo json_encode([
             'success' => false, 
-            'message' => 'Database error occurred while adding service. Error: ' . $e->getMessage()
+            'message' => 'Database error occurred while adding service'
         ]);
     } catch (Exception $e) {
         // Rollback transaction on error
@@ -116,7 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         error_log($e->getMessage());
         echo json_encode([
             'success' => false, 
-            'message' => 'An unexpected error occurred. Error: ' . $e->getMessage()
+            'message' => 'An unexpected error occurred'
         ]);
     }
 } else {
