@@ -101,6 +101,16 @@ if (isset($_SESSION['user_id'])) {
     $stmt = $pdo->prepare("SELECT * FROM persons WHERE user_id = ?");
     $stmt->execute([$_SESSION['user_id']]);
 }
+
+// Fetch active custom services for the user's barangay
+$stmt = $pdo->prepare("
+    SELECT * FROM custom_services 
+    WHERE barangay_id = ? AND is_active = 1
+    ORDER BY display_order, name
+");
+$stmt->execute([$barangay_id]);
+$custom_services = $stmt->fetchAll();
+
 ?>
 
 <!DOCTYPE html>
@@ -661,71 +671,37 @@ if (isset($_SESSION['user_id'])) {
                 </div>
                 
                 <div class="services-grid" id="other-grid" style="display: none;">
-                    <div class="service-item" onclick="window.location.href='../pages/ayuda_request.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-hand-holding-usd"></i></div>
-                        <div class="service-content">
-                            <h4>Financial Assistance (Ayuda)</h4>
-                            <p>Emergency financial assistance for community members in need</p>
-                            <a href="../pages/ayuda_request.php" class="service-cta">
-                                Apply for Assistance <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
+                    <?php 
+                    // Fetch active custom services
+                    $services_stmt = $pdo->prepare("
+                        SELECT * FROM custom_services 
+                        WHERE barangay_id = ? AND is_active = 1 
+                        ORDER BY display_order, name
+                    ");
+                    $services_stmt->execute([$barangay_id]);
+                    $custom_services = $services_stmt->fetchAll();
 
-                    <div class="service-item" onclick="window.location.href='../pages/scholarship_application.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-graduation-cap"></i></div>
-                        <div class="service-content">
-                            <h4>Educational Scholarship</h4>
-                            <p>Scholarship programs for deserving students in the community</p>
-                            <a href="../pages/scholarship_application.php" class="service-cta">
-                                Apply for Scholarship <i class="fas fa-arrow-right"></i>
-                            </a>
+                    if (count($custom_services) > 0):
+                        foreach ($custom_services as $service): 
+                    ?>
+                        <div class="service-item" onclick="viewCustomService(<?php echo htmlspecialchars(json_encode($service)); ?>)">
+                            <div class="service-icon"><i class="fas <?php echo htmlspecialchars($service['icon']); ?>"></i></div>
+                            <div class="service-content">
+                                <h4><?php echo htmlspecialchars($service['name']); ?></h4>
+                                <p><?php echo htmlspecialchars($service['description']); ?></p>
+                                <a href="#" class="service-cta">
+                                    Request Service <i class="fas fa-arrow-right"></i>
+                                </a>
+                            </div>
                         </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/medical_assistance.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-heart"></i></div>
-                        <div class="service-content">
-                            <h4>Medical Assistance Program</h4>
-                            <p>Healthcare support and medical aid for community members</p>
-                            <a href="../pages/medical_assistance.php" class="service-cta">
-                                Request Assistance <i class="fas fa-arrow-right"></i>
-                            </a>
+                    <?php 
+                        endforeach;
+                    else:
+                    ?>
+                        <div class="col-span-full text-center py-8">
+                            <p class="text-gray-500">No custom services available at the moment.</p>
                         </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/senior_citizen_services.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-users"></i></div>
-                        <div class="service-content">
-                            <h4>Senior Citizen Services</h4>
-                            <p>Special services and benefits for senior citizens</p>
-                            <a href="../pages/senior_citizen_services.php" class="service-cta">
-                                Learn More <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/pwd_services.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-wheelchair"></i></div>
-                        <div class="service-content">
-                            <h4>PWD Services</h4>
-                            <p>Services and assistance for Persons with Disabilities</p>
-                            <a href="../pages/pwd_services.php" class="service-cta">
-                                Access Services <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
-
-                    <div class="service-item" onclick="window.location.href='../pages/livelihood_programs.php';" style="cursor:pointer;">
-                        <div class="service-icon"><i class="fas fa-seedling"></i></div>
-                        <div class="service-content">
-                            <h4>Livelihood Programs</h4>
-                            <p>Skills training and livelihood opportunities for residents</p>
-                            <a href="../pages/livelihood_programs.php" class="service-cta">
-                                Join Program <i class="fas fa-arrow-right"></i>
-                            </a>
-                        </div>
-                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
 
@@ -1545,6 +1521,98 @@ function toggleCategory(categoryName) {
     };
     lazyImages.forEach(lazyLoad);
   </script>
+
+<!-- Custom Service Details Modal -->
+<div id="customServiceModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-4">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold" id="modalCustomServiceTitle"></h2>
+            <button onclick="closeCustomServiceModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="space-y-6">
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Description</h3>
+                <p id="modalCustomServiceDescription" class="text-gray-600"></p>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Requirements</h3>
+                <ul id="modalCustomServiceRequirements" class="list-disc pl-5 text-gray-600 space-y-2"></ul>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Process Guide</h3>
+                <ol id="modalCustomServiceGuide" class="list-decimal pl-5 text-gray-600 space-y-2"></ol>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Processing Time</h3>
+                    <p id="modalCustomServiceTime" class="text-gray-600"></p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Fees</h3>
+                    <p id="modalCustomServiceFees" class="text-gray-600"></p>
+                </div>
+            </div>
+            <div class="mt-6 text-center">
+                <button onclick="closeCustomServiceModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-200">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function viewCustomService(service) {
+    // Set modal content
+    document.getElementById('modalCustomServiceTitle').textContent = service.name;
+    document.getElementById('modalCustomServiceDescription').textContent = service.description;
+    
+    // Format requirements as list
+    const requirementsList = document.getElementById('modalCustomServiceRequirements');
+    requirementsList.innerHTML = '';
+    if (service.requirements) {
+        service.requirements.split('\n').forEach(req => {
+            if (req.trim()) {
+                const li = document.createElement('li');
+                li.textContent = req.trim();
+                requirementsList.appendChild(li);
+            }
+        });
+    }
+    
+    // Format guide as numbered list
+    const guideList = document.getElementById('modalCustomServiceGuide');
+    guideList.innerHTML = '';
+    if (service.detailed_guide) {
+        service.detailed_guide.split('\n').forEach(step => {
+            if (step.trim()) {
+                const li = document.createElement('li');
+                li.textContent = step.trim();
+                guideList.appendChild(li);
+            }
+        });
+    }
+    
+    document.getElementById('modalCustomServiceTime').textContent = service.processing_time || 'Not specified';
+    document.getElementById('modalCustomServiceFees').textContent = service.fees || 'Not specified';
+    
+    // Show modal
+    document.getElementById('customServiceModal').style.display = 'flex';
+}
+
+function closeCustomServiceModal() {
+    document.getElementById('customServiceModal').style.display = 'none';
+}
+
+// Close modal when clicking outside
+document.getElementById('customServiceModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeCustomServiceModal();
+    }
+});
+</script>
 </body>
 </html>
 

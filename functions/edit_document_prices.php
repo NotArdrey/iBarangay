@@ -45,36 +45,80 @@ foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
 <html lang="en">
 <head>
   <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Edit Document Prices</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
-    <!-- SweetAlert2 -->
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+  <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+  <style>
+    .price-input {
+      transition: all 0.3s ease;
+    }
+    .price-input:focus {
+      transform: scale(1.02);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    .table-row {
+      transition: all 0.2s ease;
+    }
+    .table-row:hover {
+      transform: translateX(5px);
+    }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-10px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+    .fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
+  </style>
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
     <header class="mb-6">
-      <h1 class="text-3xl font-bold text-blue-800">Edit Document Prices</h1>
+      <h1 class="text-3xl font-bold text-gray-800">Edit Document Prices</h1>
+      <p class="text-gray-600">Customize document fees for your barangay</p>
     </header>
-    <?php if (!empty($success)) echo '<div class="mb-4 p-2 bg-green-100 text-green-800 rounded">'.$success.'</div>'; ?>
-    <form method="post">
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+
+    <?php if (!empty($success)): ?>
+    <div class="mb-4 p-4 bg-green-100 text-green-800 rounded-lg shadow-sm fade-in flex items-center">
+      <i class="fas fa-check-circle mr-2"></i>
+      <?php echo $success; ?>
+    </div>
+    <?php endif; ?>
+
+    <form method="post" class="fade-in">
+      <div class="bg-white rounded-lg shadow-md overflow-hidden">
         <div class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50">
               <tr>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Default Price</th>
-                <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Your Barangay Price</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document Type</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Default Price</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Custom Price</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
               <?php foreach ($docs as $doc): ?>
-              <tr class="hover:bg-gray-50 transition-colors">
-                <td class="px-4 py-3 text-sm text-gray-900 border-b"><?= htmlspecialchars($doc['name']) ?></td>
-                <td class="px-4 py-3 text-sm text-gray-900 border-b">₱<?= number_format($doc['default_fee'], 2) ?></td>
-                <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                  <input type="number" step="0.01" min="0" name="prices[<?= $doc['id'] ?>]" value="<?= isset($prices[$doc['id']]) ? $prices[$doc['id']] : $doc['default_fee'] ?>" class="border rounded px-2 py-1 w-32">
+              <tr class="table-row">
+                <td class="px-6 py-4 text-sm text-gray-900"><?= htmlspecialchars($doc['name']) ?></td>
+                <td class="px-6 py-4 text-sm text-gray-600">
+                  <span class="bg-gray-100 px-3 py-1 rounded-full">
+                    ₱<?= number_format($doc['default_fee'], 2) ?>
+                  </span>
+                </td>
+                <td class="px-6 py-4 text-sm text-gray-900">
+                  <div class="flex items-center space-x-2">
+                    <span class="text-gray-500">₱</span>
+                    <input 
+                      type="number" 
+                      step="0.01" 
+                      min="0" 
+                      name="prices[<?= $doc['id'] ?>]" 
+                      value="<?= isset($prices[$doc['id']]) ? $prices[$doc['id']] : $doc['default_fee'] ?>" 
+                      class="price-input border border-gray-300 rounded px-3 py-2 w-32 focus:border-blue-500 focus:outline-none"
+                    >
+                  </div>
                 </td>
               </tr>
               <?php endforeach; ?>
@@ -82,8 +126,42 @@ foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
           </table>
         </div>
       </div>
-      <button type="submit" class="mt-4 bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition">Save Prices</button>
+      <div class="mt-4">
+        <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition-colors flex items-center">
+          <i class="fas fa-save mr-2"></i>
+          <span>Save Changes</span>
+        </button>
+      </div>
     </form>
   </div>
+
+  <script>
+    // Add smooth transitions when changing input values
+    document.querySelectorAll('.price-input').forEach(input => {
+      input.addEventListener('change', function() {
+        this.classList.add('scale-110');
+        setTimeout(() => this.classList.remove('scale-110'), 200);
+      });
+    });
+
+    // Show confirmation on form submit
+    document.querySelector('form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      Swal.fire({
+        title: 'Save Changes?',
+        text: 'Are you sure you want to update the document prices?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#3B82F6',
+        cancelButtonColor: '#6B7280',
+        confirmButtonText: 'Yes, save changes',
+        cancelButtonText: 'Cancel'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          this.submit();
+        }
+      });
+    });
+  </script>
 </body>
 </html>

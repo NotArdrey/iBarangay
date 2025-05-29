@@ -29,6 +29,7 @@ $sql = "
         p.middle_name AS person_middle_name,
         p.last_name AS person_last_name,
         p.birth_date AS person_birth_date,
+        p.birth_place AS person_birth_place,
         p.gender AS person_gender,
         p.civil_status AS person_civil_status,
         p.contact_number AS person_contact,
@@ -110,35 +111,35 @@ foreach ($barangayOfficials as $official) {
 // PREPARE DOCUMENT DATA
 // ======================================
 // Personal Information
-$firstName = $docRequest['first_name'] ?: $docRequest['person_first_name'];
-$middleName = $docRequest['middle_name'] ?: $docRequest['person_middle_name'];
-$lastName = $docRequest['last_name'] ?: $docRequest['person_last_name'];
-$birthDate = $docRequest['birth_date'] ?: $docRequest['person_birth_date'];
-$birthPlace = $docRequest['birth_place'] ?: 'SAN RAFAEL, BULACAN';
-$gender = $docRequest['gender'] ?: $docRequest['person_gender'];
-$civilStatus = $docRequest['civil_status'] ?: $docRequest['person_civil_status'];
-$contactNumber = $docRequest['contact_number'] ?: $docRequest['person_contact'];
-$purpose = $docRequest['purpose'] ?: 'FOR GENERAL PURPOSES';
-$yearsOfResidence = $docRequest['years_of_residence'] ?: '0';
+$firstName = $docRequest['first_name'] ?? $docRequest['person_first_name'] ?? '';
+$middleName = $docRequest['middle_name'] ?? $docRequest['person_middle_name'] ?? '';
+$lastName = $docRequest['last_name'] ?? $docRequest['person_last_name'] ?? '';
+$birthDate = $docRequest['date_of_birth'] ?? $docRequest['person_birth_date'] ?? null;
+$birthPlace = $docRequest['place_of_birth'] ?? $docRequest['person_birth_place'] ?? 'SAN RAFAEL, BULACAN';
+$gender = $docRequest['sex'] ?? $docRequest['person_gender'] ?? '';
+$civilStatus = $docRequest['civil_status'] ?? $docRequest['person_civil_status'] ?? '';
+$contactNumber = $docRequest['cp_number'] ?? $docRequest['person_contact'] ?? '';
+$purpose = $docRequest['purpose'] ?? 'FOR GENERAL PURPOSES';
+$yearsOfResidence = $docRequest['years_of_residence'] ?? '0';
 
 // Format address
 $address = '';
-if ($docRequest['address_no']) {
+if (!empty($docRequest['address_no'])) {
     $address .= $docRequest['address_no'] . ' ';
 }
-if ($docRequest['street']) {
+if (!empty($docRequest['street'])) {
     $address .= $docRequest['street'] . ', ';
 }
 $address .= strtoupper($docRequest['barangay_name'] . ', SAN RAFAEL, BULACAN');
 
 // Business specific information
-$businessName = $docRequest['business_name'] ?: '';
-$businessNature = $docRequest['business_nature'] ?: '';
-$businessLocation = $docRequest['business_location'] ?: $address;
+$businessName = $docRequest['business_name'] ?? '';
+$businessNature = $docRequest['business_nature'] ?? '';
+$businessLocation = $docRequest['business_location'] ?? $address;
 
 // Construction/Building specific information
-$constructionLocation = $docRequest['construction_location'] ?: $address;
-$titleNumber = $docRequest['title_number'] ?: '';
+$constructionLocation = $docRequest['construction_location'] ?? $address;
+$titleNumber = $docRequest['title_number'] ?? '';
 
 // Format name variations
 $middle = $middleName ? ' ' . $middleName . ' ' : ' ';

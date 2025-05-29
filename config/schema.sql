@@ -1155,6 +1155,87 @@ ADD COLUMN place_issued VARCHAR(255) AFTER date_issued,
 ADD COLUMN or_number VARCHAR(100) AFTER place_issued,
 ADD COLUMN cp_number VARCHAR(100) AFTER or_number,
 ADD COLUMN amount DECIMAL(10,2) AFTER cp_number;
+
+
+-- Table for custom service categories
+CREATE TABLE service_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    icon VARCHAR(50) DEFAULT 'fa-cog',
+    display_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE
+);
+
+-- Table for custom services
+CREATE TABLE custom_services (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL,
+    barangay_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    detailed_guide TEXT,
+    requirements TEXT,
+    processing_time VARCHAR(100),
+    fees VARCHAR(100),
+    icon VARCHAR(50) DEFAULT 'fa-file',
+    url_path VARCHAR(255),
+    display_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (category_id) REFERENCES service_categories(id) ON DELETE CASCADE,
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE
+);
+
+-- Table for service requirements
+CREATE TABLE service_requirements (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    service_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_required BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (service_id) REFERENCES custom_services(id) ON DELETE CASCADE
+);
+
+-- Table for service requests
+CREATE TABLE service_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    service_id INT NOT NULL,
+    user_id INT NOT NULL,
+    status ENUM('pending', 'processing', 'completed', 'rejected', 'cancelled') DEFAULT 'pending',
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (service_id) REFERENCES custom_services(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Table for service request attachments
+CREATE TABLE service_request_attachments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    request_id INT NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50),
+    file_size INT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE CASCADE
+);
+
+
+
+-- Create indexes for better performance
+CREATE INDEX idx_custom_services_barangay ON custom_services(barangay_id);
+CREATE INDEX idx_service_requests_status ON service_requests(status);
+CREATE INDEX idx_service_requests_created ON service_requests(created_at); 
 FLUSH PRIVILEGES;
+
 SELECT * FROM document_requests;
 

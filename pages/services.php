@@ -5,7 +5,11 @@ require_once "../config/dbconn.php";
 // Check for pending requests - UPDATED to use new table structure
 $hasPendingRequest = false;
 $pendingRequests = [];
+$hasPendingBlotter = false;
+$pendingBlotterCases = [];
+
 if (isset($_SESSION['user_id'])) {
+    // First check for pending document requests
     $stmt = $pdo->prepare("
         SELECT 
             dr.id,
@@ -17,7 +21,6 @@ if (isset($_SESSION['user_id'])) {
             dr.last_name,
             dr.purpose,
             dr.business_name,
-            dr.business_type,
             dt.name as document_name, 
             dt.code as document_code
         FROM document_requests dr
@@ -29,6 +32,21 @@ if (isset($_SESSION['user_id'])) {
     $stmt->execute([$_SESSION['user_id']]);
     $pendingRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $hasPendingRequest = count($pendingRequests) > 0;
+
+    // Check for pending blotter cases in ANY barangay where the user is involved
+    $stmt = $pdo->prepare("
+        SELECT bc.id, bc.case_number, bc.status, b.name as barangay_name, bc.description,
+               bc.incident_date, bp.role
+        FROM blotter_cases bc
+        JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+        JOIN persons p ON bp.person_id = p.id
+        JOIN barangay b ON bc.barangay_id = b.id
+        WHERE p.user_id = ? 
+        AND bc.status IN ('pending', 'open', 'processing')
+    ");
+    $stmt->execute([$_SESSION['user_id']]);
+    $pendingBlotterCases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $hasPendingBlotter = count($pendingBlotterCases) > 0;
 }
 
 // Handle form submission for document requests - UPDATED VERSION
@@ -41,6 +59,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($currentTime < $startTime || $currentTime > $endTime) {
             throw new Exception("Document requests can only be submitted between 8:00 AM and 5:00 PM.");
+        }
+
+        // Check if user has pending blotter cases in ANY barangay
+        if ($hasPendingBlotter) {
+            $caseDetails = [];
+            foreach ($pendingBlotterCases as $case) {
+                $caseDetails[] = "Case #" . $case['case_number'] . " in " . $case['barangay_name'];
+            }
+            throw new Exception("You have pending blotter case(s): " . implode(", ", $caseDetails) . ". Document requests are not allowed until your case(s) are resolved.");
         }
 
         // Check if user has pending requests
@@ -711,6 +738,23 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     <p>Please come back during operating hours.</p>
                 </div>
                 <?php endif; ?>
+
+                <?php if ($hasPendingBlotter): ?>
+                <div class="blotter-warning" style="background: #dc3545; color: white; padding: 1rem; border-radius: 5px; margin-bottom: 1rem;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <p style="margin: 0.5rem 0;"><strong>Document Request Restricted</strong></p>
+                    <p style="margin: 0.5rem 0;">You currently have pending blotter case(s):</p>
+                    <ul style="margin: 0.5rem 0; padding-left: 2rem;">
+                        <?php foreach ($pendingBlotterCases as $case): ?>
+                        <li>Case #<?= htmlspecialchars($case['case_number']) ?> in <?= htmlspecialchars($case['barangay_name']) ?>
+                            <br>
+                            <small>Status: <?= ucfirst($case['status']) ?> | Role: <?= ucfirst($case['role']) ?></small>
+                        </li>
+                        <?php endforeach; ?>
+                    </ul>
+                    <p style="margin: 0.5rem 0;">Document requests are not allowed until your case(s) are resolved.</p>
+                </div>
+                <?php endif; ?>
                 
                 <form method="POST" action="" enctype="multipart/form-data" id="docRequestForm">
                     <div class="form-row">
@@ -878,6 +922,7 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
     // Use barangayPrices in JS
     var barangayPrices = <?= json_encode($barangayPrices) ?>;
     var isWithinTimeGateJS = <?= json_encode($isWithinTimeGate) ?>;
+    var hasPendingBlotterJS = <?= json_encode($hasPendingBlotter) ?>;
 
     // Photo upload functions
     function openCamera() {
@@ -1119,20 +1164,6 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
         // Form submission handler
         if (form && submitBtn) {
             form.addEventListener('submit', function(e) {
-                // Special validation for indigency photo
-                const selectedOption = documentTypeSelect.options[documentTypeSelect.selectedIndex];
-                const documentCode = selectedOption.dataset.code;
-                
-                if (documentCode === 'barangay_indigency') {
-                    const photoInput = document.getElementById('userPhoto');
-                    if (!photoInput.files || photoInput.files.length === 0) {
-                        e.preventDefault();
-                        Swal.fire('Error', 'Please upload or take a photo for the Certificate of Indigency.', 'error');
-                        return;
-                    }
-                }
-                
-                // Validate form before submission
                 if (!form.checkValidity()) {
                     return; // Let browser handle validation errors
                 }
@@ -1143,6 +1174,15 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     Swal.fire({
                         title: 'Outside Operating Hours',
                         text: 'Document requests can only be submitted between 8:00 AM and 5:00 PM.',
+                        icon: 'error'
+                    });
+                    return;
+                }
+
+                if (hasPendingBlotterJS) {
+                    Swal.fire({
+                        title: 'Request Restricted',
+                        text: 'You have pending blotter case(s). Document requests are not allowed until your case(s) are resolved.',
                         icon: 'error'
                     });
                     return;
@@ -1207,10 +1247,12 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
             }
         }
 
-        // Initial check for submit button state based on time gate
-        if (!isWithinTimeGateJS && submitBtn) {
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Unavailable (8AM-5PM)';
+        // Initial check for submit button state based on time gate and blotter cases
+        if (!isWithinTimeGateJS || hasPendingBlotterJS) {
+            if (submitBtn) {
+                submitBtn.disabled = true;
+                submitBtn.textContent = !isWithinTimeGateJS ? 'Unavailable (8AM-5PM)' : 'Restricted - Pending Blotter Case';
+            }
         }
     });
     </script>
