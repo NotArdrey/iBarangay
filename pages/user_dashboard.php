@@ -1595,11 +1595,12 @@ $stmt = null;
         dots.forEach((dot, index) => {
           dot.classList.toggle('active', index === activeDotIndex);
         });
-        
+
         // Update navigation buttons
         prevBtn.disabled = currentIndex === 0;
         nextBtn.disabled = currentIndex >= totalSlides - slidesPerView;
-        
+
+
         // Update button opacity
         prevBtn.style.opacity = prevBtn.disabled ? '0.3' : '1';
         nextBtn.style.opacity = nextBtn.disabled ? '0.3' : '1';
@@ -1612,14 +1613,16 @@ $stmt = null;
           updateCarousel();
         }
       }
-      
+
       function goToNext() {
         if (currentIndex < totalSlides - slidesPerView) {
           currentIndex = Math.min(totalSlides - slidesPerView, currentIndex + slidesPerView);
           updateCarousel();
         }
       }
-      
+
+
+
       // Event listeners
       prevBtn.addEventListener('click', goToPrev);
       nextBtn.addEventListener('click', goToNext);
@@ -1648,7 +1651,7 @@ $stmt = null;
       function handleSwipe() {
         const swipeThreshold = 50;
         const diff = touchStartX - touchEndX;
-        
+
         if (Math.abs(diff) > swipeThreshold) {
           if (diff > 0) {
             // Swipe left - next
@@ -1659,7 +1662,7 @@ $stmt = null;
           }
         }
       }
-      
+
       // Keyboard navigation
       track.addEventListener('keydown', (e) => {
         if (e.key === 'ArrowLeft') {

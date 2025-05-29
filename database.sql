@@ -129,4 +129,18 @@ INSERT INTO service_categories (barangay_id, name, description, icon) VALUES
 INSERT INTO custom_services (barangay_id, category_id, name, description, icon, url_path) VALUES
 (32, 1, 'Medical Mission Registration', 'Register for upcoming medical missions', 'fa-hospital', '/pages/medical_mission.php'),
 (32, 2, 'Tutorial Program', 'Free tutoring for elementary students', 'fa-book', '/pages/tutorial_program.php'),
-(32, 3, 'Food Bank', 'Emergency food assistance for families', 'fa-utensils', '/pages/food_bank.php'); 
+(32, 3, 'Food Bank', 'Emergency food assistance for families', 'fa-utensils', '/pages/food_bank.php');
+
+-- Add composite indexes for document requests
+CREATE INDEX idx_doc_requests_status_barangay ON document_requests(status, barangay_id, request_date);
+CREATE INDEX idx_doc_requests_person ON document_requests(person_id);
+CREATE INDEX idx_doc_requests_doctype ON document_requests(document_type_id);
+
+-- Add index for person lookups
+CREATE INDEX idx_persons_name ON persons(last_name, first_name);
+
+-- Add index for blotter case searches
+CREATE INDEX idx_blotter_cases_status_barangay ON blotter_cases(status, barangay_id, incident_date);
+
+-- Add index for user authentication
+CREATE INDEX idx_users_email_active ON users(email, is_active); 

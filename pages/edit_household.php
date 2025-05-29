@@ -1,7 +1,7 @@
 <?php
 ob_start(); // Start output buffering
 require "../config/dbconn.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Validate household ID
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {

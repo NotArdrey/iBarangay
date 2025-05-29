@@ -5,6 +5,7 @@ require "../config/dbconn.php";
 use Dompdf\Dompdf;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception; 
+require_once '../includes/DatabaseCache.php';
 
 // Make sure the user is actually logged in
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
@@ -98,55 +99,102 @@ if (isset($_GET['action'])) {
             }
 
         } elseif ($action === 'get_requests') {
-            // Get pending requests
-            $stmtPending = $pdo->prepare("
+            // Get pending requests with pagination
+            $page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+            $limit = 25;
+            $offset = ($page - 1) * $limit;
+
+            $stmt = $pdo->prepare("
                 SELECT 
                     dr.id AS document_request_id,
                     dr.request_date,
                     dr.status,
-                    dr.price,
                     dr.proof_image_path,
+                    dr.price,
                     dt.name AS document_name,
                     dt.code AS document_code,
-                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+                    CONCAT(p.last_name, ', ', p.first_name, ' ', COALESCE(p.middle_name, '')) as requester_name,
                     p.contact_number,
-                    p.birth_date,
-                    p.gender,
-                    p.civil_status,
-                    COALESCE(u.id, 0) AS user_id,
-                    COALESCE(u.is_active, TRUE) AS is_active
+                    p.email,
+                    b.name as barangay_name,
+                    u.email as user_email
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
-                LEFT JOIN users u ON p.user_id = u.id
-                WHERE dr.barangay_id = :bid
-                  AND LOWER(dr.status) = 'pending'
-                  AND (u.is_active IS NULL OR u.is_active = TRUE)
+                JOIN users u ON p.user_id = u.id
+                JOIN barangay b ON dr.barangay_id = b.id
+                WHERE dr.status = :status 
+                AND u.is_active = TRUE
                 ORDER BY dr.request_date ASC
+                LIMIT :limit OFFSET :offset
             ");
-            $stmtPending->execute([':bid'=>$bid]);
-            $pending = $stmtPending->fetchAll(PDO::FETCH_ASSOC);
 
-            // Get completed requests
-            $stmtCompleted = $pdo->prepare("
+            $stmt->bindValue(':status', 'Pending', PDO::PARAM_STR);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $pendingRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Get total count for pagination
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*) 
+                FROM document_requests dr
+                JOIN users u ON dr.person_id = u.id
+                WHERE dr.status = :status 
+                AND u.is_active = TRUE
+            ");
+            $stmt->bindValue(':status', 'Pending', PDO::PARAM_STR);
+            $stmt->execute();
+            $totalPending = $stmt->fetchColumn();
+            $totalPages = ceil($totalPending / $limit);
+
+            // Get completed requests with pagination
+            $stmt = $pdo->prepare("
                 SELECT 
                     dr.id AS document_request_id,
                     dr.request_date,
-                    dr.status,
                     dr.completed_at,
+                    dr.status,
+                    dr.proof_image_path,
+                    dr.price,
                     dt.name AS document_name,
-                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name
+                    dt.code AS document_code,
+                    CONCAT(p.last_name, ', ', p.first_name, ' ', COALESCE(p.middle_name, '')) as requester_name,
+                    p.contact_number,
+                    u.email,
+                    b.name as barangay_name,
+                    u.email as user_email
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
-                WHERE dr.barangay_id = :bid
-                  AND LOWER(dr.status) IN ('completed', 'complete')
-                ORDER BY dr.request_date DESC
+                JOIN users u ON p.user_id = u.id
+                JOIN barangay b ON dr.barangay_id = b.id
+                WHERE dr.status = :status 
+                AND u.is_active = TRUE
+                ORDER BY dr.completed_at DESC
+                LIMIT :limit OFFSET :offset
             ");
-            $stmtCompleted->execute([':bid'=>$bid]);
-            $completed = $stmtCompleted->fetchAll(PDO::FETCH_ASSOC);
 
-            echo json_encode(['pending'=>$pending,'completed'=>$completed]);
+            $stmt->bindValue(':status', 'Complete', PDO::PARAM_STR);
+            $stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+            $stmt->execute();
+            $completedRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Get total count for completed requests
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*) 
+                FROM document_requests dr
+                JOIN users u ON dr.person_id = u.id
+                WHERE dr.status = :status 
+                AND u.is_active = TRUE
+            ");
+            $stmt->bindValue(':status', 'Complete', PDO::PARAM_STR);
+            $stmt->execute();
+            $totalCompleted = $stmt->fetchColumn();
+            $totalCompletedPages = ceil($totalCompleted / $limit);
+
+            echo json_encode(['pending'=>$pendingRequests,'completed'=>$completedRequests]);
             exit;
 
         } elseif ($action === 'ban_user') {
@@ -409,9 +457,16 @@ if (isset($_GET['action'])) {
 }
 
 // Only include header + HTML if no specific action
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
-// 1) Fetch all "Pending" doc requests (FIFO => earliest date first)
+// Get document types from cache
+$documentTypes = DatabaseCache::getDocumentTypes($pdo);
+
+// Get pending requests with pagination
+$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
+$limit = 25;
+$offset = ($page - 1) * $limit;
+
 $stmt = $pdo->prepare("
     SELECT 
         dr.id AS document_request_id,
@@ -421,45 +476,88 @@ $stmt = $pdo->prepare("
         dr.price,
         dt.name AS document_name,
         dt.code AS document_code,
-        CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+        CONCAT(p.last_name, ', ', p.first_name, ' ', COALESCE(p.middle_name, '')) as requester_name,
         p.contact_number,
-        p.birth_date,
-        p.gender,
-        p.civil_status,
-        b.name AS barangay_name,
-        COALESCE(u.id, 0) AS user_id,
-        COALESCE(u.is_active, TRUE) AS is_active
+        u.email,
+        b.name as barangay_name,
+        u.email as user_email
     FROM document_requests dr
     JOIN document_types dt ON dr.document_type_id = dt.id
     JOIN persons p ON dr.person_id = p.id
     LEFT JOIN users u ON p.user_id = u.id
     JOIN barangay b ON dr.barangay_id = b.id
-    WHERE dr.barangay_id = :bid
-      AND LOWER(dr.status) = 'pending'
-      AND (u.is_active IS NULL OR u.is_active = TRUE)
+    WHERE dr.status = :status 
+    AND (u.is_active = TRUE OR u.id IS NULL)
     ORDER BY dr.request_date ASC
+    LIMIT :limit OFFSET :offset
 ");
-$stmt->execute([':bid' => $bid]);
-$docRequests = $stmt->fetchAll();
 
-// 2) Fetch all "Complete" doc requests (History)
-$stmtHist = $pdo->prepare("
+$stmt->bindValue(':status', 'Pending', PDO::PARAM_STR);
+$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
+$pendingRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Get total count for pagination
+$stmt = $pdo->prepare("
+    SELECT COUNT(*) 
+    FROM document_requests dr
+    JOIN persons p ON dr.person_id = p.id
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE dr.status = :status 
+    AND (u.is_active = TRUE OR u.id IS NULL)
+");
+$stmt->bindValue(':status', 'Pending', PDO::PARAM_STR);
+$stmt->execute();
+$totalPending = $stmt->fetchColumn();
+$totalPages = ceil($totalPending / $limit);
+
+// Get completed requests with pagination
+$stmt = $pdo->prepare("
     SELECT 
         dr.id AS document_request_id,
         dr.request_date,
-        dr.status,
         dr.completed_at,
+        dr.status,
+        dr.proof_image_path,
+        dr.price,
         dt.name AS document_name,
-        CONCAT(p.first_name, ' ', p.last_name) AS requester_name
+        dt.code AS document_code,
+        CONCAT(p.last_name, ', ', p.first_name, ' ', COALESCE(p.middle_name, '')) as requester_name,
+        p.contact_number,
+        u.email,
+        b.name as barangay_name,
+        u.email as user_email
     FROM document_requests dr
     JOIN document_types dt ON dr.document_type_id = dt.id
     JOIN persons p ON dr.person_id = p.id
-    WHERE dr.barangay_id = :bid
-      AND LOWER(dr.status) IN ('completed', 'complete')
-    ORDER BY dr.request_date DESC
+    LEFT JOIN users u ON p.user_id = u.id
+    JOIN barangay b ON dr.barangay_id = b.id
+    WHERE dr.status = :status 
+    AND (u.is_active = TRUE OR u.id IS NULL)
+    ORDER BY dr.completed_at DESC
+    LIMIT :limit OFFSET :offset
 ");
-$stmtHist->execute([':bid'=>$bid]);
-$completedRequests = $stmtHist->fetchAll();
+
+$stmt->bindValue(':status', 'Complete', PDO::PARAM_STR);
+$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
+$stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+$stmt->execute();
+$completedRequests = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Get total count for completed requests
+$stmt = $pdo->prepare("
+    SELECT COUNT(*) 
+    FROM document_requests dr
+    JOIN persons p ON dr.person_id = p.id
+    LEFT JOIN users u ON p.user_id = u.id
+    WHERE dr.status = :status 
+    AND (u.is_active = TRUE OR u.id IS NULL)
+");
+$stmt->bindValue(':status', 'Complete', PDO::PARAM_STR);
+$stmt->execute();
+$totalCompleted = $stmt->fetchColumn();
+$totalCompletedPages = ceil($totalCompleted / $limit);
 ?>
 
 <!DOCTYPE html>
@@ -563,7 +661,7 @@ $completedRequests = $stmtHist->fetchAll();
     <section id="pending" class="tab-content active">
       <header class="mb-6">
         <h1 class="text-3xl font-bold text-blue-800">Pending Document Requests</h1>
-        <p class="text-gray-600 mt-2">Total pending requests: <span class="font-semibold"><?= count($docRequests) ?></span></p>
+        <p class="text-gray-600 mt-2">Total pending requests: <span class="font-semibold"><?= $totalPending ?></span></p>
       </header>
 
       <input type="text" id="pendingSearch" 
@@ -599,8 +697,8 @@ $completedRequests = $stmtHist->fetchAll();
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <?php if (!empty($docRequests)): ?>
-                <?php foreach ($docRequests as $req): ?>
+              <?php if (!empty($pendingRequests)): ?>
+                <?php foreach ($pendingRequests as $req): ?>
                 <tr class="hover:bg-gray-50 transition-colors">
                   <td class="px-4 py-3 text-sm text-gray-900 border-b">
                     <?= htmlspecialchars($req['requester_name']) ?>
@@ -665,7 +763,7 @@ $completedRequests = $stmtHist->fetchAll();
     <section id="completed" class="tab-content">
       <header class="mb-6">
         <h1 class="text-3xl font-bold text-green-800">Document Requests History</h1>
-        <p class="text-gray-600 mt-2">Total completed requests: <span class="font-semibold"><?= count($completedRequests) ?></span></p>
+        <p class="text-gray-600 mt-2">Total completed requests: <span class="font-semibold"><?= $totalCompleted ?></span></p>
       </header>
 
       <input type="text" id="completedSearch" 
@@ -773,7 +871,7 @@ $completedRequests = $stmtHist->fetchAll();
         const tBody = table.querySelector('tbody');
         const rows = Array.from(tBody.querySelectorAll('tr'));
         const currentHeader = table.querySelectorAll('th')[columnIndex];
-        const isAsc = currentHeader.getAttribute('data-sort-dir') === 'asc';
+        const isAsc = currentHeader.gibute('data-sort-dir') === 'asc';
         currentHeader.setAttribute('data-sort-dir', isAsc ? 'desc' : 'asc');
 
         table.querySelectorAll('th').forEach((th, idx) => {

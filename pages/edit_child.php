@@ -1,6 +1,6 @@
 <?php
 require "../config/dbconn.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Check if ID is provided
 if (!isset($_GET['id'])) {
