@@ -831,14 +831,25 @@ function saveResident($pdo, $data, $barangay_id) {
                 $occupation = $data['family_member_occupation'][$key] ?? '';
                 $income = $data['family_member_income'][$key] ?? null;
                 
+                // Validate civil status
+                if (!in_array($civil_status, ['SINGLE', 'MARRIED', 'WIDOW/WIDOWER', 'SEPARATED'])) {
+                    throw new Exception("Invalid civil status value for family member: " . $civil_status);
+                }
+                
                 // Convert income to numeric if not empty
                 if (!empty($income)) {
                     $income = str_replace(['₱', ','], '', $income);
                     $income = is_numeric($income) ? (float)$income : null;
                 }
                 
+                // Ensure household_id is not null
+                $household_id = $data['household_id'] ?? null;
+                if ($household_id === null) {
+                    throw new Exception("Household ID is required for family members");
+                }
+                
                 $stmt_family->execute([
-                    ':household_id' => $data['household_id'] ?? null,
+                    ':household_id' => $household_id,
                     ':person_id' => $person_id,
                     ':name' => trim($name),
                     ':relationship' => trim($relationship),
@@ -1630,14 +1641,25 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
                 $occupation = $data['family_member_occupation'][$key] ?? '';
                 $income = $data['family_member_income'][$key] ?? null;
                 
+                // Validate civil status
+                if (!in_array($civil_status, ['SINGLE', 'MARRIED', 'WIDOW/WIDOWER', 'SEPARATED'])) {
+                    throw new Exception("Invalid civil status value for family member: " . $civil_status);
+                }
+                
                 // Convert income to numeric if not empty
                 if (!empty($income)) {
                     $income = str_replace(['₱', ','], '', $income);
                     $income = is_numeric($income) ? (float)$income : null;
                 }
                 
+                // Ensure household_id is not null
+                $household_id = $data['household_id'] ?? null;
+                if ($household_id === null) {
+                    throw new Exception("Household ID is required for family members");
+                }
+                
                 $stmt_family->execute([
-                    ':household_id' => $data['household_id'] ?? null,
+                    ':household_id' => $household_id,
                     ':person_id' => $person_id,
                     ':name' => trim($name),
                     ':relationship' => trim($relationship),

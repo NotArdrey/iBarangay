@@ -470,6 +470,9 @@ function isCheckboxChecked($form_data, $key)
             const residentTypeSelect = document.getElementById('residentTypeSelect');
             
             if (birthDateInput) {
+                // Add event listener for input change
+                birthDateInput.addEventListener('input', calculateAge);
+                // Add event listener for change event
                 birthDateInput.addEventListener('change', calculateAge);
                 // Calculate initial age if birth date exists
                 if (birthDateInput.value) {
@@ -622,7 +625,7 @@ function isCheckboxChecked($form_data, $key)
 
                     <!-- Gender -->
                     <div class="space-y-2">
-                        <label class="block text-sm font-medium">Gender *</label>
+                        <label class="block text-sm font-medium">Sex *</label>
                         <div class="flex gap-4">
                             <label class="inline-flex items-center">
                                 <input type="radio" name="gender" value="MALE" required <?= isChecked('MALE', $form_data, 'gender') ?>
