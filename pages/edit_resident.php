@@ -226,6 +226,11 @@ try {
     $stmt = $pdo->prepare("SELECT * FROM family_composition WHERE person_id = ?");
     $stmt->execute([$person_id]);
     $family_members = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch living arrangement types for dynamic checkbox generation
+    $stmt = $pdo->prepare("SELECT id, name FROM living_arrangement_types ORDER BY id");
+    $stmt->execute();
+    $living_arrangement_types = $stmt->fetchAll(PDO::FETCH_ASSOC);
 } catch (Exception $e) {
     $_SESSION['error'] = "Error fetching data: " . $e->getMessage();
     header("Location: census_records.php");
@@ -305,11 +310,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'other_id_number' => trim($_POST['other_id_number'] ?? '')
         ];
 
-        $id_sql = "INSERT INTO person_identification (person_id, " . 
-            implode(', ', array_keys($id_data)) . 
-            ") VALUES (:person_id, :" . implode(', :', array_keys($id_data)) . 
-            ") ON DUPLICATE KEY UPDATE " . 
-            implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($id_data)));
+        // First check if record exists
+        $check_sql = "SELECT COUNT(*) FROM person_identification WHERE person_id = :person_id";
+        $check_stmt = $pdo->prepare($check_sql);
+        $check_stmt->execute(['person_id' => $person_id]);
+        $exists = $check_stmt->fetchColumn();
+
+        if ($exists) {
+            // Update existing record
+            $id_sql = "UPDATE person_identification SET " . 
+                implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($id_data))) . 
+                " WHERE person_id = :person_id";
+        } else {
+            // Insert new record
+            $id_sql = "INSERT INTO person_identification (person_id, " . 
+                implode(', ', array_keys($id_data)) . 
+                ") VALUES (:person_id, :" . implode(', :', array_keys($id_data)) . ")";
+        }
         
         $id_data['person_id'] = $person_id;
         $stmt = $pdo->prepare($id_sql);
@@ -325,9 +342,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'region' => 'III'
         ];
 
-        $address_sql = "UPDATE addresses SET " . 
-            implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($address_data))) . 
-            " WHERE person_id = :person_id AND is_primary = 1";
+        // First check if address exists
+        $check_sql = "SELECT COUNT(*) FROM addresses WHERE person_id = :person_id AND is_primary = 1";
+        $check_stmt = $pdo->prepare($check_sql);
+        $check_stmt->execute(['person_id' => $person_id]);
+        $exists = $check_stmt->fetchColumn();
+
+        if ($exists) {
+            // Update existing address
+            $address_sql = "UPDATE addresses SET " . 
+                implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($address_data))) . 
+                " WHERE person_id = :person_id AND is_primary = 1";
+        } else {
+            // Insert new address
+            $address_data['is_primary'] = 1;
+            $address_sql = "INSERT INTO addresses (person_id, is_primary, " . 
+                implode(', ', array_keys($address_data)) . 
+                ") VALUES (:person_id, :is_primary, :" . implode(', :', array_keys($address_data)) . ")";
+        }
         
         $address_data['person_id'] = $person_id;
         $stmt = $pdo->prepare($address_sql);
@@ -341,9 +373,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0
             ];
 
-            $household_sql = "UPDATE household_members SET " . 
-                implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($household_data))) . 
-                " WHERE person_id = :person_id";
+            // First check if household membership exists
+            $check_sql = "SELECT COUNT(*) FROM household_members WHERE person_id = :person_id";
+            $check_stmt = $pdo->prepare($check_sql);
+            $check_stmt->execute(['person_id' => $person_id]);
+            $exists = $check_stmt->fetchColumn();
+
+            if ($exists) {
+                // Update existing membership
+                $household_sql = "UPDATE household_members SET " . 
+                    implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($household_data))) . 
+                    " WHERE person_id = :person_id";
+            } else {
+                // Insert new membership
+                $household_sql = "INSERT INTO household_members (person_id, " . 
+                    implode(', ', array_keys($household_data)) . 
+                    ") VALUES (:person_id, :" . implode(', :', array_keys($household_data)) . ")";
+            }
             
             $household_data['person_id'] = $person_id;
             $stmt = $pdo->prepare($household_sql);
@@ -366,13 +412,35 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'living_common_law_spouse' => 'common_law_spouse'
         ];
 
-        $living_sql = "INSERT INTO person_living_arrangements (person_id, arrangement_type_id) 
-            VALUES (?, (SELECT id FROM living_arrangement_types WHERE name = ?))";
+        // First, get all arrangement type IDs
+        $arrangement_types = [];
+        $stmt = $pdo->prepare("SELECT id, LOWER(name) as name FROM living_arrangement_types");
+        $stmt->execute();
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $arrangement_types[$row['name']] = $row['id'];
+        }
+
+        $living_sql = "INSERT INTO person_living_arrangements (person_id, arrangement_type_id, details) VALUES (?, ?, ?)";
         $living_stmt = $pdo->prepare($living_sql);
 
         foreach ($living_fields as $field => $type) {
             if (isset($_POST[$field]) && $_POST[$field] == 1) {
-                $living_stmt->execute([$person_id, $type]);
+                $type_id = $arrangement_types[strtolower($type)] ?? null;
+                if ($type_id !== null) {
+                    $living_stmt->execute([$person_id, $type_id, null]);
+                }
+            }
+        }
+
+        // Handle "Others" field for living arrangements
+        if (isset($_POST['living_others']) && $_POST['living_others'] == 1) {
+            $others_type_id = $arrangement_types['others'] ?? null;
+            if ($others_type_id !== null) {
+                $living_stmt->execute([
+                    $person_id, 
+                    $others_type_id, 
+                    $_POST['living_others_specify'] ?? null
+                ]);
             }
         }
 
@@ -434,48 +502,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'person_economic_problems' => [
                 'loss_income' => isset($_POST['problem_lack_income']) ? 1 : 0,
                 'unemployment' => isset($_POST['problem_loss_income']) ? 1 : 0,
-                'high_cost_living' => isset($_POST['problem_employment']) ? 1 : 0,
-                'skills_training' => isset($_POST['problem_employment']) ? 1 : 0,
-                'skills_training_details' => $_POST['problem_employment_details'] ?? null,
-                'livelihood' => isset($_POST['problem_employment']) ? 1 : 0,
-                'livelihood_details' => $_POST['problem_employment_details'] ?? null,
-                'other_economic' => isset($_POST['problem_employment']) ? 1 : 0,
-                'other_economic_details' => $_POST['problem_employment_details'] ?? null
+                'high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
+                'skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
+                'skills_training_details' => $_POST['problem_skills_training_specify'] ?? null,
+                'livelihood' => isset($_POST['problem_livelihood']) ? 1 : 0,
+                'livelihood_details' => $_POST['problem_livelihood_specify'] ?? null,
+                'other_economic' => isset($_POST['problem_economic_others']) ? 1 : 0,
+                'other_economic_details' => $_POST['problem_economic_others_specify'] ?? null
             ],
             'person_social_problems' => [
-                'loneliness' => isset($_POST['problem_social']) ? 1 : 0,
-                'isolation' => isset($_POST['problem_social']) ? 1 : 0,
-                'neglect' => isset($_POST['problem_social']) ? 1 : 0,
-                'recreational' => isset($_POST['problem_social']) ? 1 : 0,
-                'senior_friendly' => isset($_POST['problem_social']) ? 1 : 0,
-                'other_social' => isset($_POST['problem_social']) ? 1 : 0,
-                'other_social_details' => $_POST['problem_social_details'] ?? null
+                'loneliness' => isset($_POST['problem_loneliness']) ? 1 : 0,
+                'isolation' => isset($_POST['problem_helplessness']) ? 1 : 0,
+                'neglect' => isset($_POST['problem_neglect_rejection']) ? 1 : 0,
+                'recreational' => isset($_POST['problem_recreational']) ? 1 : 0,
+                'senior_friendly' => isset($_POST['problem_senior_friendly']) ? 1 : 0,
+                'other_social' => isset($_POST['problem_social_others']) ? 1 : 0,
+                'other_social_details' => $_POST['problem_social_others_specify'] ?? null
             ],
             'person_health_problems' => [
-                'condition_illness' => isset($_POST['problem_health']) ? 1 : 0,
-                'condition_illness_details' => $_POST['problem_health_details'] ?? null,
-                'high_cost_medicine' => isset($_POST['problem_health']) ? 1 : 0,
-                'lack_medical_professionals' => isset($_POST['problem_health']) ? 1 : 0,
-                'lack_sanitation' => isset($_POST['problem_health']) ? 1 : 0,
-                'lack_health_insurance' => isset($_POST['problem_health']) ? 1 : 0,
-                'inadequate_health_services' => isset($_POST['problem_health']) ? 1 : 0,
-                'other_health' => isset($_POST['problem_health']) ? 1 : 0,
-                'other_health_details' => $_POST['problem_health_details'] ?? null
+                'condition_illness' => isset($_POST['problem_condition_illness']) ? 1 : 0,
+                'condition_illness_details' => $_POST['problem_condition_illness_specify'] ?? null,
+                'high_cost_medicine' => isset($_POST['problem_high_cost_medicine']) ? 1 : 0,
+                'lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) ? 1 : 0,
+                'lack_sanitation' => isset($_POST['problem_lack_sanitation']) ? 1 : 0,
+                'lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) ? 1 : 0,
+                'inadequate_health_services' => isset($_POST['problem_inadequate_health_services']) ? 1 : 0,
+                'other_health' => isset($_POST['problem_health_others']) ? 1 : 0,
+                'other_health_details' => $_POST['problem_health_others_specify'] ?? null
             ],
             'person_housing_problems' => [
-                'overcrowding' => isset($_POST['problem_housing']) ? 1 : 0,
-                'no_permanent_housing' => isset($_POST['problem_housing']) ? 1 : 0,
-                'independent_living' => isset($_POST['problem_housing']) ? 1 : 0,
-                'lost_privacy' => isset($_POST['problem_housing']) ? 1 : 0,
-                'squatters' => isset($_POST['problem_housing']) ? 1 : 0,
-                'other_housing' => isset($_POST['problem_housing']) ? 1 : 0,
-                'other_housing_details' => $_POST['problem_housing_details'] ?? null
+                'overcrowding' => isset($_POST['problem_overcrowding']) ? 1 : 0,
+                'no_permanent_housing' => isset($_POST['problem_no_permanent_housing']) ? 1 : 0,
+                'independent_living' => isset($_POST['problem_independent_living']) ? 1 : 0,
+                'lost_privacy' => isset($_POST['problem_lost_privacy']) ? 1 : 0,
+                'squatters' => isset($_POST['problem_squatters']) ? 1 : 0,
+                'other_housing' => isset($_POST['problem_housing_others']) ? 1 : 0,
+                'other_housing_details' => $_POST['problem_housing_others_specify'] ?? null
             ],
             'person_community_problems' => [
-                'desire_participate' => isset($_POST['problem_other']) ? 1 : 0,
-                'skills_to_share' => isset($_POST['problem_other']) ? 1 : 0,
-                'other_community' => isset($_POST['problem_other']) ? 1 : 0,
-                'other_community_details' => $_POST['problem_other_details'] ?? null
+                'desire_participate' => isset($_POST['problem_desire_participate']) ? 1 : 0,
+                'skills_to_share' => isset($_POST['problem_skills_to_share']) ? 1 : 0,
+                'other_community' => isset($_POST['problem_community_others']) ? 1 : 0,
+                'other_community_details' => $_POST['problem_community_others_specify'] ?? null
             ]
         ];
 
@@ -579,14 +647,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         <section id="edit-resident" class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800 mb-6">EDIT RESIDENT RECORD</h2>
             <?php if ($error): ?>
-                <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                    <?= $error ?>
-                </div>
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Error',
+                        text: <?= json_encode($error) ?>,
+                        confirmButtonColor: '#3085d6'
+                    });
+                });
+                </script>
             <?php endif; ?>
             <?php if (isset($_GET['success'])): ?>
-                <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded mb-4">
-                    Record updated successfully!
-                </div>
+                <script>
+                document.addEventListener('DOMContentLoaded', function() {
+                    Swal.fire({
+                        icon: 'success',
+                        title: 'Success',
+                        text: 'Record updated successfully!',
+                        confirmButtonColor: '#3085d6'
+                    });
+                });
+                </script>
             <?php endif; ?>
             <div class="mb-6">
                 <label class="block text-sm font-medium">Resident Type</label>
@@ -1146,68 +1228,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     <div class="bg-gray-50 p-4 rounded-lg mt-6">
                         <h2 class="text-lg font-semibold mb-4">Living/Residing With (Check all applicable)</h2>
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_alone" value="1" class="form-checkbox" <?= in_array('1', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Alone</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_common_law_spouse" value="1" class="form-checkbox" <?= in_array('9', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Common Law Spouse</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_in_laws" value="1" class="form-checkbox" <?= in_array('5', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">In-Laws</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_spouse" value="1" class="form-checkbox" <?= in_array('2', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Spouse</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_care_institutions" value="1" class="form-checkbox" <?= in_array('6', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Care Institutions</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_children" value="1" class="form-checkbox" <?= in_array('3', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Children</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_grandchildren" value="1" class="form-checkbox" <?= in_array('4', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Grandchildren</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_househelps" value="1" class="form-checkbox" <?= in_array('7', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Househelps</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="living_relatives" value="1" class="form-checkbox" <?= in_array('8', $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Relatives</span>
-                                </label>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="living_others" value="1" class="form-checkbox" <?= in_array((string)$others_type_id, $living_arrangements ?? []) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Others</span>
-                                </label>
-                                <input type="text" name="living_others_specify" placeholder="Specify" value="<?= htmlspecialchars($living_others_details ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= in_array((string)$others_type_id, $living_arrangements ?? []) ? '' : 'disabled' ?>>
-                            </div>
+                            <?php foreach ($living_arrangement_types as $type): ?>
+                                <?php if (strtolower($type['name']) === 'others'): ?>
+                                    <div class="flex items-center gap-2">
+                                        <label class="inline-flex items-center whitespace-nowrap">
+                                            <input type="checkbox" name="living_others" value="1" class="form-checkbox" <?= in_array((string)$type['id'], $living_arrangements ?? []) ? 'checked' : '' ?>>
+                                            <span class="ml-2 text-sm font-medium">Others</span>
+                                        </label>
+                                        <input type="text" name="living_others_specify" placeholder="Specify" value="<?= htmlspecialchars($living_others_details ?? '') ?>"
+                                            class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= in_array((string)$type['id'], $living_arrangements ?? []) ? '' : 'disabled' ?>>
+                                    </div>
+                                <?php else: ?>
+                                    <div>
+                                        <label class="inline-flex items-center">
+                                            <input type="checkbox" name="living_<?= strtolower(str_replace(' ', '_', $type['name'])) ?>" value="1" class="form-checkbox" <?= in_array((string)$type['id'], $living_arrangements ?? []) ? 'checked' : '' ?>>
+                                            <span class="ml-2 text-sm font-medium"><?= htmlspecialchars($type['name']) ?></span>
+                                        </label>
+                                    </div>
+                                <?php endif; ?>
+                            <?php endforeach; ?>
                         </div>
                     </div>
                     <!-- Areas of Specialization/Skills (Check all applicable) -->
@@ -1585,6 +1624,141 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </div>
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Add loading overlay
+            const loadingOverlay = document.createElement('div');
+            loadingOverlay.id = 'loadingOverlay';
+            loadingOverlay.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                background: rgba(0, 0, 0, 0.5);
+                display: none;
+                justify-content: center;
+                align-items: center;
+                z-index: 9999;
+            `;
+            loadingOverlay.innerHTML = `
+                <div class="bg-white p-4 rounded-lg shadow-lg flex items-center">
+                    <svg class="animate-spin h-8 w-8 text-blue-600 mr-3" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    <span class="text-lg font-semibold">Saving changes...</span>
+                </div>
+            `;
+            document.body.appendChild(loadingOverlay);
+
+            // Form validation function
+            function validateForm() {
+                const errors = [];
+                const requiredFields = {
+                    'first_name': 'First Name',
+                    'last_name': 'Last Name',
+                    'birth_date': 'Birth Date',
+                    'birth_place': 'Place of Birth',
+                    'gender': 'Sex',
+                    'civil_status': 'Civil Status',
+                    'years_of_residency': 'Years of Residency'
+                };
+
+                // Check required fields
+                for (const [field, label] of Object.entries(requiredFields)) {
+                    const input = document.querySelector(`[name="${field}"]`);
+                    if (!input || !input.value.trim()) {
+                        errors.push(`${label} is required`);
+                    }
+                }
+
+                // Validate birth date format
+                const birthDate = document.querySelector('[name="birth_date"]');
+                if (birthDate && birthDate.value) {
+                    const dateRegex = /^\d{4}-\d{2}-\d{2}$/;
+                    if (!dateRegex.test(birthDate.value)) {
+                        errors.push('Invalid birth date format. Please use YYYY-MM-DD format');
+                    }
+                }
+
+                // Validate years of residency
+                const residency = document.querySelector('[name="years_of_residency"]');
+                const age = document.querySelector('#age');
+                if (residency && age && residency.value) {
+                    const residencyNum = parseInt(residency.value);
+                    const ageNum = parseInt(age.value);
+                    if (residencyNum > ageNum) {
+                        errors.push('Years of residency cannot exceed age');
+                    }
+                }
+
+                // Validate contact number if provided
+                const contactNumber = document.querySelector('[name="contact_number"]');
+                if (contactNumber && contactNumber.value) {
+                    const phoneRegex = /^[0-9]{11}$/;
+                    if (!phoneRegex.test(contactNumber.value)) {
+                        errors.push('Contact number must be 11 digits');
+                    }
+                }
+
+                // Validate family members
+                const familyMembers = document.querySelectorAll('.family-member-row');
+                familyMembers.forEach((row, index) => {
+                    const name = row.querySelector('[name="family_member_name[]"]').value.trim();
+                    const relationship = row.querySelector('[name="family_member_relationship[]"]').value.trim();
+                    const age = row.querySelector('[name="family_member_age[]"]').value.trim();
+                    
+                    if (name || relationship || age) {
+                        if (!name) errors.push(`Family member #${index + 1}: Name is required`);
+                        if (!relationship) errors.push(`Family member #${index + 1}: Relationship is required`);
+                        if (!age) errors.push(`Family member #${index + 1}: Age is required`);
+                        if (age && (isNaN(age) || age < 0 || age > 120)) {
+                            errors.push(`Family member #${index + 1}: Age must be between 0 and 120`);
+                        }
+                    }
+                });
+
+                return errors;
+            }
+
+            // Form submission handler
+            const form = document.querySelector('form');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    e.preventDefault();
+                    
+                    // Validate form
+                    const errors = validateForm();
+                    if (errors.length > 0) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Validation Error',
+                            html: errors.join('<br>'),
+                            confirmButtonColor: '#3085d6'
+                        });
+                        return;
+                    }
+
+                    // Show confirmation dialog
+                    Swal.fire({
+                        title: 'Confirm Update',
+                        text: 'Are you sure you want to update this resident\'s information?',
+                        icon: 'question',
+                        showCancelButton: true,
+                        confirmButtonColor: '#3085d6',
+                        cancelButtonColor: '#d33',
+                        confirmButtonText: 'Yes, update it!'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            // Show loading overlay
+                            loadingOverlay.style.display = 'flex';
+                            
+                            // Submit the form
+                            form.submit();
+                        }
+                    });
+                });
+            }
+
             // Function to setup checkbox-text field pairs
             function setupCheckboxTextFieldPair(checkboxName, textFieldName) {
                 const checkbox = document.querySelector(`input[name='${checkboxName}']`);
