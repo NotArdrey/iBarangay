@@ -146,7 +146,7 @@ try {
     $result = [
         'address' => $extractedData['address'] ?? '',
         'date_of_birth' => $extractedData['dateofbirth'] ?? $extractedData['date_of_birth'] ?? '',
-        'expiration_date' => $extractedData['expirationdate'] ?? $extractedData['expiration_date'] ?? '',
+        'expiration_date' => $extractedData['expirationdate'] ?? $extractedData['expiration_date'] ?? $extractedData['expiry_date'] ?? '',
         'full_name' => $extractedData['fullname'] ?? $extractedData['full_name'] ?? '',
         'given_name' => $extractedData['givenname'] ?? $extractedData['given_name'] ?? $extractedData['first_name'] ?? '',
         'id_number' => $extractedData['idnumber'] ?? $extractedData['id_number'] ?? $extractedData['document_id'] ?? '',
@@ -167,7 +167,6 @@ try {
         ]
     ]);
     exit;
-
 } catch (ApiException $e) {
     // Handle Google API errors
     echo json_encode([
@@ -195,3 +194,4 @@ try {
     }
     exit;
 }
+

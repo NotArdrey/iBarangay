@@ -282,14 +282,31 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
   <!-- Footer -->
   <footer class="footer">
     <p>&copy; 2025 iBarangay. All rights reserved.</p>
-  </footer>
-  <script>
+  </footer>  <script>
     // Mobile menu toggle functionality
     const mobileMenuBtn = document.querySelector('.mobile-menu-btn');
     const navLinks = document.querySelector('.nav-links');
     mobileMenuBtn.addEventListener('click', () => {
       navLinks.classList.toggle('active');
     });
+
+    // Logout confirmation function
+    function confirmLogout() {
+      Swal.fire({
+        title: 'Logout Confirmation',
+        text: 'Are you sure you want to logout?',
+        icon: 'question',
+        showCancelButton: true,
+        confirmButtonColor: '#d33',
+        cancelButtonColor: '#3085d6',
+        confirmButtonText: 'Yes, logout',
+        cancelButtonText: 'Cancel'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          window.location.href = '../functions/logout.php';
+        }
+      });
+    }
 
     // Image modal functionality
     function openImageModal(src) {

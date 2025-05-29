@@ -1,4 +1,24 @@
 <?php
+// Enable all error reporting
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+ini_set('log_errors', 1);
+
+// Set the error log path to an absolute path
+$logPath = 'C:/xampp/php/logs/php_error.log';
+ini_set('error_log', $logPath);
+
+// Test if we can write to the error log
+error_log("=== REGISTRATION DEBUG START ===");
+
+// Function to write debug logs
+function writeDebugLog($message) {
+    global $logPath;
+    $timestamp = date('Y-m-d H:i:s');
+    $logMessage = "[$timestamp] $message\n";
+    error_log($logMessage);
+}
+
 session_start();
 require '../config/dbconn.php';
 use PHPMailer\PHPMailer\PHPMailer;
@@ -80,445 +100,6 @@ if (isset($_GET['token'])) {
         </script>
     </body>
     </html>";
-    exit();
-}
-
-// ------------------------------------------------------
-// Registration Process: Creating a New User Account
-// ------------------------------------------------------
-elseif ($_SERVER["REQUEST_METHOD"] == "POST") {
-    // Retrieve and trim form inputs
-    $email = trim($_POST['email']);
-    $password = $_POST['password'];
-    $confirmPassword = $_POST['confirmPassword'];
-    $person_id = isset($_POST['person_id']) ? trim($_POST['person_id']) : null;
-    $errors = [];
-
-    // Verify person_id is provided - this confirms the person exists in the database
-    if (empty($person_id)) {
-        $errors[] = "Identity verification failed. Only verified residents can register.";
-    } else {
-        // Verify the person_id exists and is not already linked to a user
-        $stmt = $pdo->prepare("SELECT id, user_id FROM persons WHERE id = ?");
-        $stmt->execute([$person_id]);
-        $person = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$person) {
-            $errors[] = "The provided identity verification has failed.";
-        } elseif (!empty($person['user_id'])) {
-            $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
-        }
-    }
-
-    // Validate email
-    if (empty($email)) {
-        $errors[] = "Email is required.";
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $errors[] = "Invalid email format.";
-    }
-
-    // Validate password
-    if (empty($password)) {
-        $errors[] = "Password is required.";
-    } elseif (strlen($password) < 8) {
-        $errors[] = "Password must be at least 8 characters long.";
-    }    // Confirm password check
-    if (empty($confirmPassword)) {
-        $errors[] = "Please confirm your password.";
-    } elseif ($password !== $confirmPassword) {
-        $errors[] = "Passwords do not match.";
-    }
-    
-    // Validate ID upload
-    if (!isset($_FILES['govt_id']) || $_FILES['govt_id']['error'] !== UPLOAD_ERR_OK) {
-        $errors[] = "Government ID is required for registration.";
-    } else {
-        // Check valid file types
-        $allowed_types = ['image/jpeg', 'image/png', 'application/pdf'];
-        $file_info = finfo_open(FILEINFO_MIME_TYPE);
-        $mime_type = finfo_file($file_info, $_FILES['govt_id']['tmp_name']);
-        finfo_close($file_info);
-        
-        if (!in_array($mime_type, $allowed_types)) {
-            $errors[] = "Invalid file type. Only JPG, PNG, and PDF are allowed.";
-        }
-    }
-      // Collect extracted data from ID document (if available)
-    $extractedData = [];
-    $extractableFields = ['full_name', 'given_name', 'middle_name', 'last_name', 'address', 
-                         'date_of_birth', 'id_number', 'type_of_id'];
-    
-    foreach ($extractableFields as $field) {
-        $key = 'extracted_' . $field;
-        if (isset($_POST[$key])) {
-            $extractedData[$field] = $_POST[$key];
-        }
-    }
-
-    // Set role_id for residents (every new user gets role_id = 3)
-    $role_id = 8;
-
-    if (empty($errors)) {
-        // Hash the password
-        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
-        // Generate a verification token and set expiry to 24 hours
-        $verificationToken = bin2hex(random_bytes(16));
-        $verificationExpiry = date('Y-m-d H:i:s', strtotime('+1 day'));
-
-        // Check if the email is already registered
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
-        $stmt->execute([$email]);
-        if ($stmt->rowCount() > 0) {
-            $errors[] = "This email is already registered.";
-        }        if (empty($errors)) {
-            // Show loading animation immediately after verification
-            echo "<!DOCTYPE html>
-            <html>
-            <head>
-                <meta charset='UTF-8'>
-                <title>Processing Registration</title>
-                <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-                <style>
-                    body, .swal2-popup {
-                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                    }
-                    .swal2-title, .swal2-html-container {
-                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                    }
-                    .email-animation {
-                        text-align: center;
-                        margin: 20px auto;
-                    }
-                    .email-animation i {
-                        font-size: 40px;
-                        color: #3b82f6;
-                    }
-                    @keyframes fly {
-                        0% { transform: translateY(0) scale(0.8); opacity: 0; }
-                        20% { transform: translateY(-5px) scale(0.9); opacity: 0.6; }
-                        50% { transform: translateY(-15px) scale(1); opacity: 1; }
-                        80% { transform: translateY(-25px) scale(0.9); opacity: 0.6; }
-                        100% { transform: translateY(-35px) scale(0.8); opacity: 0; }
-                    }
-                    .envelope {
-                        animation: fly 2s infinite;
-                        display: inline-block;
-                    }
-                    .btn-login {
-                        background-color: #3b82f6;
-                        color: white;
-                        border: none;
-                        padding: 10px 20px;
-                        border-radius: 5px;
-                        font-size: 16px;
-                        cursor: pointer;
-                        margin-top: 20px;
-                        transition: background-color 0.3s;
-                        font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                    }
-                    .btn-login:hover {
-                        background-color: #2563eb;
-                    }
-                </style>
-                <link rel='stylesheet' href='https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css' />
-            </head>
-            <body>
-                <script>
-                    let timerInterval;
-                    Swal.fire({
-                        title: 'Processing Registration',
-                        html: '<div class=\"email-animation\"><i class=\"fas fa-envelope envelope\"></i></div><p>Please wait while we process your registration...</p>',
-                        allowOutsideClick: false,
-                        showConfirmButton: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
-                    });
-                </script>
-            </body>
-            </html>";
-            flush();
-            ob_flush();
-        
-            try {
-                // Begin transaction
-                $pdo->beginTransaction();
-                
-                // Get the verified person's information to use in the user account
-                $personStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, gender FROM persons WHERE id = ?");
-                $personStmt->execute([$person_id]);
-                $personData = $personStmt->fetch(PDO::FETCH_ASSOC);
-
-                // Get the phone from the form
-                $phone = trim($_POST['phone'] ?? '');
-                
-                // Read the ID image file into a variable
-                $idImageData = null;
-                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
-                    $idImageData = file_get_contents($_FILES['govt_id']['tmp_name']);
-                }                // Insert the new user record with all available information
-                $stmt = $pdo->prepare("INSERT INTO users (
-                    email, 
-                    phone,
-                    password, 
-                    role_id,
-                    barangay_id, 
-                    first_name,
-                    last_name,
-                    gender,
-                    verification_token, 
-                    verification_expiry,
-                    govt_id_image,
-                    is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
-
-                if (!$stmt->execute([
-                    $email, 
-                    $phone,
-                    $passwordHash, 
-                    $role_id,
-                    32, // Set Tambubong barangay (ID 32) as default 
-                    $personData['first_name'],
-                    $personData['last_name'],
-                    $personData['gender'],
-                    $verificationToken, 
-                    $verificationExpiry,
-                    $idImageData
-                ])) {
-                    throw new Exception("Failed to create user account.");
-                }
-                
-                // Get the newly created user ID
-                $user_id = $pdo->lastInsertId();
-                
-                // Link the user to the verified person record
-                $sql = "UPDATE persons SET user_id = ? WHERE id = ?";
-                $stmt = $pdo->prepare($sql);
-                if (!$stmt->execute([$user_id, $person_id])) {
-                    throw new Exception("Failed to link user account to person record.");
-                }
-                
-                // Handle ID document file - store in filesystem as backup
-                // Note: We've already stored the image in the database above
-                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {                    
-                    // Create a unique filename for the ID document
-                    $fileExt = pathinfo($_FILES['govt_id']['name'], PATHINFO_EXTENSION);
-                    $newFilename = 'id_user_' . $user_id . '_' . time() . '.' . $fileExt;
-                    
-                    // Move the uploaded file to the uploads directory
-                    $uploadPath = __DIR__ . '/../uploads/' . $newFilename;
-                    move_uploaded_file($_FILES['govt_id']['tmp_name'], $uploadPath);
-                    
-                    // Store the file path in the person_identification table as a backup
-                    $checkStmt = $pdo->prepare("SELECT id FROM person_identification WHERE person_id = ?");
-                    $checkStmt->execute([$person_id]);
-                    
-                    if ($checkStmt->rowCount() > 0) {
-                        // Update existing record
-                        $idStmt = $pdo->prepare("UPDATE person_identification SET id_image_path = ? WHERE person_id = ?");
-                        $idStmt->execute(['uploads/' . $newFilename, $person_id]);
-                    } else {
-                        // Create new record
-                        $idStmt = $pdo->prepare("INSERT INTO person_identification (person_id, id_image_path) VALUES (?, ?)");
-                        $idStmt->execute([$person_id, 'uploads/' . $newFilename]);
-                    }
-                }
-                
-                // Commit transaction
-                $pdo->commit();
-                
-                // Create the verification link
-                $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;
-                
-                // Send verification email using PHPMailer
-                $mail = new PHPMailer(true);
-                try {
-                    $mail->isSMTP();
-                    $mail->Host       = 'smtp.gmail.com';
-                    $mail->SMTPAuth   = true;
-                    $mail->Username   = 'barangayhub2@gmail.com';
-                    $mail->Password   = 'eisy hpjz rdnt bwrp';
-                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                    $mail->Port       = 587;
-
-                $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
-                $mail->addAddress($email);
-
-                $mail->isHTML(true);
-                $mail->Subject = 'Email Verification';
-                $mail->Body    = "Thank you for registering. Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>Your link will expire in 24 hours.";
-                $mail->send();
-
-                    $message = "Registration successful! Please check your email to verify your account.";
-                    $icon = "success";
-                    $redirectUrl = "../pages/login.php";
-                    
-                    // Now show the success message with button to return to login
-                    echo "<!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset='UTF-8'>
-                        <title>Registration Success</title>
-                        <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-                        <style>
-                            body, .swal2-popup {
-                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                            }
-                            .swal2-title, .swal2-html-container {
-                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                            }
-                            .btn-login {
-                                background-color: #3b82f6;
-                                color: white;
-                                border: none;
-                                padding: 10px 25px;
-                                border-radius: 5px;
-                                font-size: 16px;
-                                font-weight: 600;
-                                cursor: pointer;
-                                transition: all 0.3s;
-                                box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
-                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                            }
-                            .btn-login:hover {
-                                background-color: #2563eb;
-                                transform: translateY(-2px);
-                                box-shadow: 0 6px 8px rgba(37, 99, 235, 0.3);
-                            }
-                            .btn-login:active {
-                                transform: translateY(0);
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <script>
-                            Swal.fire({
-                                icon: 'success',
-                                title: 'Registration Successful!',
-                                html: 'Your account has been created and a verification email has been sent to your address.<br>Please check your email to verify your account.<br><br><button class=\"btn-login\" onclick=\"window.location.href=\'../pages/login.php\'\">Return to Login</button>',
-                                showConfirmButton: false,
-                                footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Resend verification email?</a>'
-                            });
-                        </script>
-                    </body>
-                    </html>";
-                    exit();
-                } catch (Exception $e) {
-                    // Close the loading animation and show error message
-                    echo "<!DOCTYPE html>
-                    <html>
-                    <head>
-                        <meta charset='UTF-8'>
-                        <title>Email Error</title>
-                        <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-                        <style>
-                            body, .swal2-popup {
-                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                            }
-                            .swal2-title, .swal2-html-container {
-                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                            }
-                            .btn-login {
-                                background-color: #3b82f6;
-                                color: white;
-                                border: none;
-                                padding: 10px 25px;
-                                border-radius: 5px;
-                                font-size: 16px;
-                                font-weight: 600;
-                                cursor: pointer;
-                                transition: all 0.3s;
-                                box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
-                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                            }
-                            .btn-login:hover {
-                                background-color: #2563eb;
-                                transform: translateY(-2px);
-                                box-shadow: 0 6px 8px rgba(37, 99, 235, 0.3);
-                            }
-                            .btn-login:active {
-                                transform: translateY(0);
-                            }
-                        </style>
-                    </head>
-                    <body>
-                        <script>
-                            Swal.fire({
-                                icon: 'error',
-                                title: 'Email Verification Error',
-                                html: 'We couldn\\'t send the verification email. Your account has been created, but you need to verify it.<br><br><button class=\"btn-login\" onclick=\"window.location.href=\\'../pages/login.php\\'\">Return to Login</button>',
-                                showConfirmButton: false,
-                                footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Try sending verification email again?</a>'
-                            });
-                        </script>
-                    </body>
-                    </html>";
-                    exit();
-                }
-            } catch (Exception $e) {
-                // If anything fails, roll back the transaction
-                $pdo->rollBack();
-                $errors[] = $e->getMessage();
-            }
-        }
-    }
-
-    if (!empty($errors)) {
-        $errorMessage = implode("\n", $errors);
-        echo "<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='UTF-8'>
-            <title>Registration Error</title>
-            <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-            <style>
-                body, .swal2-popup {
-                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                }
-                .swal2-title, .swal2-html-container {
-                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
-                }
-            </style>
-        </head>
-        <body>
-            <script>
-                Swal.fire({
-                    icon: 'error',
-                    title: 'Error',
-                    text: '$errorMessage'
-                }).then(() => {
-                    window.location.href = '../pages/register.php';
-                });
-            </script>
-        </body>
-        </html>";
-        exit();
-    } else {
-        echo "<!DOCTYPE html>
-        <html>
-        <head>
-            <meta charset='UTF-8'>
-            <title>Registration Success</title>
-            <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
-        </head>
-        <body>
-            <script>
-                Swal.fire({
-                    icon: 'success',
-                    title: 'Success',
-                    text: '$message',
-                    footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Resend verification email?</a>'
-                }).then(() => {
-                    window.location.href = '$redirectUrl';
-                });
-            </script>
-        </body>
-        </html>";
-        exit();
-    }
-} else {
-    // Direct access without POST data - redirect to registration page
-    header("Location: ../pages/register.php");
     exit();
 }
 
@@ -797,6 +378,590 @@ function processIdWithDocumentAI() {
     HTML;
     
     echo $html;
+    exit();
+}
+
+// Add this function before the registration process
+function verifyPersonInCensus($pdo, $data) {
+    try {
+        $mismatchDetails = [];
+        
+        // First check if person exists in both records
+        $stmt = $pdo->prepare("
+            SELECT 'census' as source, p.id, p.first_name, p.middle_name, p.last_name, p.birth_date, p.gender, a.barangay_id,
+                   pi.other_id_number as census_id_number
+            FROM persons p
+            LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+            LEFT JOIN person_identification pi ON p.id = pi.person_id
+            WHERE LOWER(TRIM(p.last_name)) = LOWER(TRIM(:census_last_name))
+            AND LOWER(TRIM(p.first_name)) = LOWER(TRIM(:census_first_name))
+            AND p.birth_date = :census_birth_date
+            UNION ALL
+            SELECT 'temporary' as source, id, first_name, middle_name, last_name, date_of_birth as birth_date, NULL as gender, barangay_id,
+                   id_number as census_id_number
+            FROM temporary_records
+            WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:temp_last_name))
+            AND LOWER(TRIM(first_name)) = LOWER(TRIM(:temp_first_name))
+            AND date_of_birth = :temp_birth_date
+        ");
+
+        $params = [
+            ':census_first_name' => trim($data['first_name']),
+            ':census_last_name' => trim($data['last_name']),
+            ':census_birth_date' => $data['birth_date'],
+            ':temp_first_name' => trim($data['first_name']),
+            ':temp_last_name' => trim($data['last_name']),
+            ':temp_birth_date' => $data['birth_date']
+        ];
+
+        $stmt->execute($params);
+        $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        // Check if person exists in both records
+        if (count($records) > 1) {
+            return [
+                'success' => false,
+                'message' => 'Person found in both census and temporary records. Please contact the barangay office for assistance.',
+                'debug_info' => ['Person exists in multiple records']
+            ];
+        }
+
+        // If person exists in exactly one record
+        if (count($records) === 1) {
+            $record = $records[0];
+            
+            // Check if ID number matches
+            if (strtolower(trim($record['census_id_number'])) === strtolower(trim($data['id_number']))) {
+                return [
+                    'success' => true,
+                    'person_id' => $record['id'],
+                    'barangay_id' => $record['barangay_id'],
+                    'message' => 'Person verified in ' . $record['source'] . ' records.',
+                    'source' => $record['source']
+                ];
+            } else {
+                $mismatchDetails[] = "ID number mismatch in " . $record['source'] . " records";
+            }
+        }
+
+        // Check for partial matches in both records
+        $partialParams = [
+            ':first_name' => trim($data['first_name']),
+            ':last_name' => trim($data['last_name']),
+            ':birth_date' => $data['birth_date'],
+            ':id_number' => trim($data['id_number'])
+        ];
+        
+        $stmt = $pdo->prepare("
+            SELECT 'census' as source, first_name, last_name, birth_date, pi.other_id_number as id_number
+            FROM persons p
+            LEFT JOIN person_identification pi ON p.id = pi.person_id
+            WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
+            OR LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name))
+            OR birth_date = :birth_date
+            OR LOWER(TRIM(pi.other_id_number)) = LOWER(TRIM(:id_number))
+            UNION ALL
+            SELECT 'temporary' as source, first_name, last_name, date_of_birth as birth_date, id_number
+            FROM temporary_records
+            WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
+            OR LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name))
+            OR date_of_birth = :birth_date
+            OR LOWER(TRIM(id_number)) = LOWER(TRIM(:id_number))
+        ");
+        
+        $stmt->execute($partialParams);
+        $partialMatches = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        if (!empty($partialMatches)) {
+            foreach ($partialMatches as $match) {
+                if (strtolower(trim($match['last_name'])) !== strtolower(trim($data['last_name']))) {
+                    $mismatchDetails[] = "Last name mismatch in " . $match['source'] . " records: Expected '" . $match['last_name'] . "', Got '" . $data['last_name'] . "'";
+                }
+                if (strtolower(trim($match['first_name'])) !== strtolower(trim($data['first_name']))) {
+                    $mismatchDetails[] = "First name mismatch in " . $match['source'] . " records: Expected '" . $match['first_name'] . "', Got '" . $data['first_name'] . "'";
+                }
+                if ($match['birth_date'] !== $data['birth_date']) {
+                    $mismatchDetails[] = "Birth date mismatch in " . $match['source'] . " records: Expected '" . $match['birth_date'] . "', Got '" . $data['birth_date'] . "'";
+                }
+                if (strtolower(trim($match['id_number'])) !== strtolower(trim($data['id_number']))) {
+                    $mismatchDetails[] = "ID number mismatch in " . $match['source'] . " records: Expected '" . $match['id_number'] . "', Got '" . $data['id_number'] . "'";
+                }
+            }
+        }
+
+        return [
+            'success' => false,
+            'message' => 'No matching record found. Please ensure your information matches the records.',
+            'debug_info' => $mismatchDetails
+        ];
+    } catch (PDOException $e) {
+        return [
+            'success' => false,
+            'message' => 'An error occurred during verification. Please try again later.',
+            'debug_info' => ['Database error: ' . $e->getMessage()]
+        ];
+    }
+}
+
+// ------------------------------------------------------
+// Registration Process: Creating a New User Account
+// ------------------------------------------------------
+if ($_SERVER["REQUEST_METHOD"] == "POST") {
+    // Retrieve and trim form inputs
+    $email = trim($_POST['email']);
+    $password = $_POST['password'];
+    $confirmPassword = $_POST['confirmPassword'];
+    $person_id = isset($_POST['person_id']) ? trim($_POST['person_id']) : null;
+    $barangay_id = null; // Initialize barangay_id
+    $errors = [];
+
+    // Debug output
+    writeDebugLog("POST data received: " . print_r($_POST, true));
+
+    // Accept birth_date as Y-m-d (from HTML5 date input)
+    $birth_date = $_POST['birth_date'];
+    if (preg_match('/^\\d{4}-\\d{2}-\\d{2}$/', $birth_date)) {
+        writeDebugLog("Received birth date: " . $birth_date);
+    } else {
+        writeDebugLog("Invalid birth date format. Input was: " . $_POST['birth_date']);
+        $errors[] = "Invalid birth date format. Please use YYYY-MM-DD format.";
+    }
+
+    // Verify person in census or temporary records
+    $verificationData = [
+        'first_name' => $_POST['first_name'],
+        'middle_name' => $_POST['middle_name'],
+        'last_name' => $_POST['last_name'],
+        'birth_date' => $birth_date,
+        'gender' => $_POST['gender'],
+        'id_number' => $_POST['id_number']
+    ];
+    
+    writeDebugLog("Verification data: " . print_r($verificationData, true));
+    
+    $verificationResult = verifyPersonInCensus($pdo, $verificationData);
+    
+    writeDebugLog("Verification result: " . print_r($verificationResult, true));
+
+    if (!$verificationResult['success']) {
+        $errors[] = $verificationResult['message'];
+        if (isset($verificationResult['debug_info'])) {
+            writeDebugLog("Debug info: " . print_r($verificationResult['debug_info'], true));
+        }
+    } else {
+        $person_id = $verificationResult['person_id'];
+        $barangay_id = $verificationResult['barangay_id'];
+        
+        // If verified from temporary records, we'll use the temporary record directly
+        if ($verificationResult['source'] === 'temporary') {
+            // Get the temporary record details
+            $stmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
+            $stmt->execute([$person_id]);
+            $tempRecord = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($tempRecord) {
+                // Use the temporary record ID directly as the person_id
+                // No need to create a new person record
+                writeDebugLog("Using temporary record directly with ID: " . $person_id);
+            }
+        }
+    }
+
+    // Verify person_id is provided - this confirms the person exists in the database
+    if (empty($person_id)) {
+        $errors[] = "Identity verification failed. Only verified residents can register.";
+    } else {
+        // Only check the persons table for user_id if the match was from census
+        if ($verificationResult['source'] === 'census') {
+            $stmt = $pdo->prepare("SELECT id, user_id FROM persons WHERE id = ?");
+            $stmt->execute([$person_id]);
+            $person = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if (!$person) {
+                $errors[] = "The provided identity verification has failed.";
+            } elseif (!empty($person['user_id'])) {
+                $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
+            }
+        }
+        // If source is 'temporary', skip this check and proceed
+    }
+
+    // Validate email
+    if (empty($email)) {
+        $errors[] = "Email is required.";
+    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+        $errors[] = "Invalid email format.";
+    }
+
+    // Validate password
+    if (empty($password)) {
+        $errors[] = "Password is required.";
+    } elseif (strlen($password) < 8) {
+        $errors[] = "Password must be at least 8 characters long.";
+    }
+
+    // Confirm password check
+    if (empty($confirmPassword)) {
+        $errors[] = "Please confirm your password.";
+    } elseif ($password !== $confirmPassword) {
+        $errors[] = "Passwords do not match.";
+    }
+
+    // Validate ID upload
+    if (!isset($_FILES['govt_id']) || $_FILES['govt_id']['error'] !== UPLOAD_ERR_OK) {
+        $errors[] = "Government ID is required for registration.";
+    } else {
+        // Check valid file types
+        $allowed_types = ['image/jpeg', 'image/png', 'application/pdf'];
+        $file_info = finfo_open(FILEINFO_MIME_TYPE);
+        $mime_type = finfo_file($file_info, $_FILES['govt_id']['tmp_name']);
+        finfo_close($file_info);
+        
+        if (!in_array($mime_type, $allowed_types)) {
+            $errors[] = "Invalid file type. Only JPG, PNG, and PDF are allowed.";
+        }
+    }
+
+    // Validate ID type
+    if (empty($_POST['id_type'])) {
+        $errors[] = "ID type is required.";
+    } else {
+        $idType = trim($_POST['id_type']);
+        if (strlen($idType) > 50) {
+            $errors[] = "ID type must not exceed 50 characters.";
+        }
+    }
+
+    // Validate ID expiration date only if provided
+    if (!empty($_POST['id_expiration'])) {
+        $expirationDate = strtotime($_POST['id_expiration']);
+        if ($expirationDate === false) {
+            $errors[] = "Invalid ID expiration date format.";
+        } elseif ($expirationDate < strtotime('today')) {
+            $errors[] = "ID has already expired. Please provide a valid ID.";
+        }
+    }
+
+    // Collect extracted data from ID document (if available)
+    $extractedData = [];
+    $extractableFields = ['full_name', 'given_name', 'middle_name', 'last_name', 'address', 
+                         'date_of_birth', 'id_number', 'type_of_id'];
+    
+    foreach ($extractableFields as $field) {
+        $key = 'extracted_' . $field;
+        if (isset($_POST[$key])) {
+            $extractedData[$field] = $_POST[$key];
+        }
+    }
+
+    // Set role_id for residents (every new user gets role_id = 3)
+    $role_id = 8;
+
+    if (empty($errors)) {
+        // Hash the password
+        $passwordHash = password_hash($password, PASSWORD_DEFAULT);
+        // Generate a verification token and set expiry to 24 hours
+        $verificationToken = bin2hex(random_bytes(16));
+        $verificationExpiry = date('Y-m-d H:i:s', strtotime('+1 day'));
+
+        // Check if the email is already registered
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+        $stmt->execute([$email]);
+        if ($stmt->rowCount() > 0) {
+            $errors[] = "This email is already registered.";
+        }
+
+        if (empty($errors)) {
+            try {
+                // Begin transaction
+                $pdo->beginTransaction();
+                
+                // Get the verified person's information to use in the user account
+                $personStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, gender FROM persons WHERE id = ?");
+                $personStmt->execute([$person_id]);
+                $personData = $personStmt->fetch(PDO::FETCH_ASSOC);
+
+                // Get the phone from the form
+                $phone = trim($_POST['phone'] ?? '');
+                
+                // Read the ID image file into a variable
+                $idImageData = null;
+                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
+                    $idImageData = file_get_contents($_FILES['govt_id']['tmp_name']);
+                }
+
+                // Insert the new user record with all available information
+                $stmt = $pdo->prepare("INSERT INTO users (
+                    email, 
+                    phone,
+                    password, 
+                    role_id,
+                    barangay_id, 
+                    first_name,
+                    last_name,
+                    gender,
+                    verification_token, 
+                    verification_expiry,
+                    govt_id_image,
+                    id_expiration_date,
+                    id_type,
+                    is_active
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
+
+                if (!$stmt->execute([
+                    $email, 
+                    $phone,
+                    $passwordHash, 
+                    $role_id,
+                    $barangay_id,
+                    $personData['first_name'],
+                    $personData['last_name'],
+                    $personData['gender'],
+                    $verificationToken, 
+                    $verificationExpiry,
+                    $idImageData,
+                    !empty($_POST['id_expiration']) ? $_POST['id_expiration'] : null,
+                    $_POST['id_type'] ?? null
+                ])) {
+                    throw new Exception("Failed to create user account.");
+                }
+                
+                // Get the newly created user ID
+                $user_id = $pdo->lastInsertId();
+                
+                // Link the user to the verified person record
+                $sql = "UPDATE persons SET user_id = ? WHERE id = ?";
+                $stmt = $pdo->prepare($sql);
+                if (!$stmt->execute([$user_id, $person_id])) {
+                    throw new Exception("Failed to link user account to person record.");
+                }
+                
+                // Handle ID document file - store in filesystem as backup
+                // Note: We've already stored the image in the database above
+                if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {                    
+                    // Create a unique filename for the ID document
+                    $fileExt = pathinfo($_FILES['govt_id']['name'], PATHINFO_EXTENSION);
+                    $newFilename = 'id_user_' . $user_id . '_' . time() . '.' . $fileExt;
+                    
+                    // Move the uploaded file to the uploads directory
+                    $uploadPath = __DIR__ . '/../uploads/' . $newFilename;
+                    move_uploaded_file($_FILES['govt_id']['tmp_name'], $uploadPath);
+                }
+                
+                // Commit transaction
+                $pdo->commit();
+                
+                // Create the verification link
+                $verificationLink = "https://localhost/Ibarangay/functions/register.php?token=" . $verificationToken;
+                
+                // Send verification email using PHPMailer
+                $mail = new PHPMailer(true);
+                try {
+                    $mail->isSMTP();
+                    $mail->Host       = 'smtp.gmail.com';
+                    $mail->SMTPAuth   = true;
+                    $mail->Username   = 'barangayhub2@gmail.com';
+                    $mail->Password   = 'eisy hpjz rdnt bwrp';
+                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                    $mail->Port       = 587;
+
+                $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
+                $mail->addAddress($email);
+
+                $mail->isHTML(true);
+                $mail->Subject = 'Email Verification';
+                $mail->Body    = "Thank you for registering. Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>Your link will expire in 24 hours.";
+                $mail->send();
+
+                    $message = "Registration successful! Please check your email to verify your account.";
+                    $icon = "success";
+                    $redirectUrl = "../pages/login.php";
+                    
+                    // Now show the success message with button to return to login
+                    echo "<!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset='UTF-8'>
+                        <title>Registration Success</title>
+                        <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+                        <style>
+                            body, .swal2-popup {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .swal2-title, .swal2-html-container {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login {
+                                background-color: #3b82f6;
+                                color: white;
+                                border: none;
+                                padding: 10px 25px;
+                                border-radius: 5px;
+                                font-size: 16px;
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login:hover {
+                                background-color: #2563eb;
+                                transform: translateY(-2px);
+                                box-shadow: 0 6px 8px rgba(37, 99, 235, 0.3);
+                            }
+                            .btn-login:active {
+                                transform: translateY(0);
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <script>
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Registration Successful!',
+                                html: 'Your account has been created and a verification email has been sent to your address.<br>Please check your email to verify your account.<br><br><button class=\"btn-login\" onclick=\"window.location.href=\'../pages/login.php\'\">Return to Login</button>',
+                                showConfirmButton: false,
+                                footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Resend verification email?</a>'
+                            });
+                        </script>
+                    </body>
+                    </html>";
+                    exit();
+                } catch (Exception $e) {
+                    // Close the loading animation and show error message
+                    echo "<!DOCTYPE html>
+                    <html>
+                    <head>
+                        <meta charset='UTF-8'>
+                        <title>Email Error</title>
+                        <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+                        <style>
+                            body, .swal2-popup {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .swal2-title, .swal2-html-container {
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login {
+                                background-color: #3b82f6;
+                                color: white;
+                                border: none;
+                                padding: 10px 25px;
+                                border-radius: 5px;
+                                font-size: 16px;
+                                font-weight: 600;
+                                cursor: pointer;
+                                transition: all 0.3s;
+                                box-shadow: 0 4px 6px rgba(59, 130, 246, 0.2);
+                                font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                            }
+                            .btn-login:hover {
+                                background-color: #2563eb;
+                                transform: translateY(-2px);
+                                box-shadow: 0 6px 8px rgba(37, 99, 235, 0.3);
+                            }
+                            .btn-login:active {
+                                transform: translateY(0);
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <script>
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Email Verification Error',
+                                html: 'We couldn\\'t send the verification email. Your account has been created, but you need to verify it.<br><br><button class=\"btn-login\" onclick=\"window.location.href=\\'../pages/login.php\\'\">Return to Login</button>',
+                                showConfirmButton: false,
+                                footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Try sending verification email again?</a>'
+                            });
+                        </script>
+                    </body>
+                    </html>";
+                    exit();
+                }
+            } catch (Exception $e) {
+                // If anything fails, roll back the transaction
+                $pdo->rollBack();
+                $errors[] = $e->getMessage();
+            }
+        }
+    }
+
+    if (!empty($errors)) {
+        // Format the error message with detailed information
+        $errorMessage = implode("\n", $errors);
+        if (isset($verificationResult['debug_info']) && !empty($verificationResult['debug_info'])) {
+            $errorMessage .= "\n\nDetailed Information:\n" . implode("\n", $verificationResult['debug_info']);
+        }
+        
+        echo "<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <title>Registration Error</title>
+            <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+            <style>
+                body, .swal2-popup {
+                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                }
+                .swal2-title, .swal2-html-container {
+                    font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif !important;
+                }
+                .error-details {
+                    text-align: left;
+                    margin-top: 15px;
+                    padding: 10px;
+                    background-color: #f8f9fc;
+                    border-radius: 5px;
+                    font-size: 14px;
+                }
+            </style>
+        </head>
+        <body>
+            <script>
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Verification Failed',
+                    html: `Your information does not match our records.<br><br>
+                           <div class='error-details'>
+                           <strong>Please check the following:</strong><br>
+                           " . nl2br(htmlspecialchars($errorMessage)) . "
+                           </div>`,
+                    confirmButtonText: 'Try Again',
+                    confirmButtonColor: '#3b82f6'
+                }).then(() => {
+                    window.location.href = '../pages/register.php';
+                });
+            </script>
+        </body>
+        </html>";
+        exit();
+    } else {
+        echo "<!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset='UTF-8'>
+            <title>Registration Success</title>
+            <script src='https://cdn.jsdelivr.net/npm/sweetalert2@11'></script>
+        </head>
+        <body>
+            <script>
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success',
+                    text: '$message',
+                    footer: '<a href=\"../functions/resend_verification.php?email=" . urlencode($email) . "\">Resend verification email?</a>'
+                }).then(() => {
+                    window.location.href = '$redirectUrl';
+                });
+            </script>
+        </body>
+        </html>";
+        exit();
+    }
+} else {
+    // Direct access without POST data - redirect to registration page
+    header("Location: ../pages/register.php");
     exit();
 }
 ?>
