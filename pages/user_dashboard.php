@@ -32,75 +32,95 @@ if ($user_id) {
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
     $row = $stmt->fetch(PDO::FETCH_ASSOC);
 
-    if ($row) {
-        $user_info = $row;
-        $barangay_name = $row['barangay_name'];
-        $barangay_id = $row['barangay_id'];
+    if ($user && isset($user['barangay_id'])) {
+        $barangay_id = $user['barangay_id'];
+        $barangayName = $user['barangay_name'] ? $user['barangay_name'] : '';
+        $userName = trim($user['first_name'] . ' ' . $user['last_name']);
+        $userEmail = $user['email'];
+        $currentDateTime = date('Y-m-d H:i:s');
+
+        // Fetch events using PDO
+        $events_sql = "
+        SELECT *
+          FROM events
+         WHERE barangay_id = ?
+           AND (status = 'scheduled' OR status = 'postponed')
+         ORDER BY
+           CASE WHEN status = 'postponed' THEN 1 ELSE 0 END,
+           start_datetime ASC
+        ";
+        $events_stmt = $pdo->prepare($events_sql);
+        $events_stmt->execute([$barangay_id]);
+        $events_result = $events_stmt->fetchAll();
+      
+        // Check if user has already requested First Time Job Seeker document
+        $firstTimeJobSeekerCheck = $pdo->prepare("
+            SELECT COUNT(*) as count 
+            FROM document_requests dr
+            JOIN document_types dt ON dr.document_type_id = dt.id
+            JOIN persons p ON dr.person_id = p.id
+            WHERE p.user_id = ? 
+            AND dt.name = 'First Time Job Seeker'
+        ");
+        $firstTimeJobSeekerCheck->execute([$user_id]);
+        $result = $firstTimeJobSeekerCheck->fetch(PDO::FETCH_ASSOC);
+        $hasRequestedFirstTimeJobSeeker = $result['count'] > 0;
+
+        // Fetch organizational chart members (excluding programmer, super_admin, and resident roles)
+        $orgChartQuery = $pdo->prepare("
+            SELECT DISTINCT
+                u.first_name,
+                u.last_name,
+                u.email,
+                r.name as role_name,
+                r.description as role_description,
+                ur.start_term_date,
+                ur.end_term_date,
+                ur.is_active,
+                bs.barangay_captain_name,
+                bs.contact_number as barangay_contact
+            FROM users u
+            JOIN user_roles ur ON u.id = ur.user_id
+            JOIN roles r ON ur.role_id = r.id
+            LEFT JOIN barangay_settings bs ON u.barangay_id = bs.barangay_id
+            WHERE ur.barangay_id = ? 
+            AND ur.is_active = TRUE
+            AND r.name NOT IN ('programmer', 'super_admin', 'resident')
+            AND u.is_active = TRUE
+            ORDER BY 
+                CASE r.name
+                    WHEN 'barangay_captain' THEN 1
+                    WHEN 'barangay_secretary' THEN 2
+                    WHEN 'barangay_treasurer' THEN 3
+                    WHEN 'barangay_councilor' THEN 4
+                    WHEN 'barangay_health_worker' THEN 5
+                    WHEN 'chief_officer' THEN 6
+                    ELSE 7
+                END,
+                u.first_name, u.last_name
+        ");
+        $orgChartQuery->execute([$barangay_id]);
+        $orgChartData = $orgChartQuery->fetchAll();
     }
-    $stmt = null;
 }
 
-// NOW INCLUDE NAVBAR AFTER VARIABLES ARE SET
-require "../components/navbar.php";
-//user_dashboard.php PAGE
-// REST OF YOUR CODE CONTINUES...
-$emergency_contacts = [
-    'local_barangay_contact' => null,
-    'pnp_contact' => null,
-    'bfp_contact' => null
-];
-
-// Use the correct column names from your database schema
-$sqlLocal = "SELECT local_barangay_contact FROM barangay_settings WHERE barangay_id = ?";
-$stmtLocal = $conn->prepare($sqlLocal);
-$stmtLocal->execute([$barangay_id]);
-$rowLocal = $stmtLocal->fetch(PDO::FETCH_ASSOC);
-$emergency_contacts['local_barangay_contact'] = $rowLocal && !empty($rowLocal['local_barangay_contact'])
-    ? $rowLocal['local_barangay_contact']
-    : 'No Available Number';
-
-$sqlGlobal = "SELECT pnp_contact, bfp_contact FROM barangay_settings WHERE barangay_id = 0";
-$stmtGlobal = $conn->prepare($sqlGlobal);
-$stmtGlobal->execute();
-$rowGlobal = $stmtGlobal->fetch(PDO::FETCH_ASSOC);
-$emergency_contacts['pnp_contact'] = $rowGlobal && !empty($rowGlobal['pnp_contact'])
-    ? $rowGlobal['pnp_contact']
-    : 'No Available Number';
-$emergency_contacts['bfp_contact'] = $rowGlobal && !empty($rowGlobal['bfp_contact'])
-    ? $rowGlobal['bfp_contact']
-    : 'No Available Number';
-
-$stmt = null;
-
-
-$announcements = [];
-$sql = "SELECT title, description, start_datetime, location, organizer 
-        FROM events 
-        WHERE barangay_id = ? 
-        AND start_datetime >= NOW() 
-        ORDER BY start_datetime ASC 
-        LIMIT 5";
-$stmt = $conn->prepare($sql);
-$stmt->execute([$barangay_id]);
-while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-    $announcements[] = $row;
+// Fetch persons data using PDO
+if (isset($_SESSION['user_id'])) {
+    $stmt = $pdo->prepare("SELECT * FROM persons WHERE user_id = ?");
+    $stmt->execute([$_SESSION['user_id']]);
 }
-$stmt = null;
 
-
-$sql = "SELECT u.first_name, u.last_name, r.name as role
-        FROM users u 
-        JOIN roles r ON u.role_id = r.id 
-        WHERE u.barangay_id = ? 
-          AND r.name IN ('barangay_captain','barangay_secretary','barangay_treasurer','barangay_councilor')
-        ORDER BY FIELD(r.name, 'barangay_captain','barangay_secretary','barangay_treasurer','barangay_councilor')";
-$stmt = $conn->prepare($sql);
+// Fetch active custom services for the user's barangay
+$stmt = $pdo->prepare("
+    SELECT * FROM custom_services 
+    WHERE barangay_id = ? AND is_active = 1
+    ORDER BY display_order, name
+");
 $stmt->execute([$barangay_id]);
-$council = $stmt->fetchAll(PDO::FETCH_ASSOC);
-$stmt = null;
-
+$custom_services = $stmt->fetchAll();
 
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -894,80 +914,116 @@ $stmt = null;
       margin-top: clamp(1rem, 2vw, 2rem);
     }
 
-    .dot {
-      width: clamp(8px, 1vw, 12px);
-      height: clamp(8px, 1vw, 12px);
-      border-radius: 50%;
-      background: #ddd;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      border: none;
-    }
-    .dot {
-      width: clamp(8px, 1vw, 12px);
-      height: clamp(8px, 1vw, 12px);
-      border-radius: 50%;
-      background: #ddd;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      border: none;
-    }
+.dot {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #ddd;
+    cursor: pointer;
+    transition: background 0.2s ease;
+}
 
-    .dot.active {
-      background: var(--primary-color);
-      transform: scale(1.3);
-    }
+.dot.active {
+    background: #666;
+}
 
-    .dot:hover {
-      background: var(--secondary-color);
-    }
+/* No Data State */
+.no-data {
+    text-align: center;
+    padding: 5rem;
+    color: #888;
+    font-size: 1.2rem;
+}
 
-    /* Services Section */
-    .services-section {
-      padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 5vw, 5%);
-      background: var(--bg-light); /* Changed from white to grey */
-    }
+/* Scroll to Top - Minimalist */
+.scroll-top {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    width: 55px;
+    height: 55px;
+    background: #fff;
+    border: 1px solid #ddd;
+    border-radius: 50%;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 1.1rem;
+    color: #666;
+    z-index: 100;
+}
 
-    .services-container {
-      max-width: 1200px;
-      margin: 0 auto;
-    }
+.scroll-top:hover {
+    border-color: #ccc;
+    color: #333;
+}
 
-    .service-category {
-      margin-bottom: clamp(1.5rem, 3vw, 2rem);
-      background: white;
-      border-radius: 20px;
-      padding: 0;
-      box-shadow: var(--shadow-md);
-      border: 1px solid rgba(0,0,0,0.05);
-      overflow: hidden;
-    }
+.scroll-top.show {
+    display: flex;
+}
 
-    .category-header {
-      position: relative;
-      text-align: center;
-      padding: clamp(1.5rem, 3vw, 2.5rem);
-      background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
-      color: white;
-      transition: all 0.3s ease;
-      cursor: pointer;
+/* Responsive - Mobile */
+@media (max-width: 768px) {
+    .about-section {
+        padding: 4rem 5%;
     }
-
-    .category-header:hover {
-      background: linear-gradient(135deg, var(--primary-dark) 0%, #001a33 100%);
+    
+    .section-header {
+        margin-bottom: 4rem;
     }
+    
+    .section-header h2 {
+        font-size: 2.5rem;
+    }
+    
+    .carousel-container {
+        gap: 1.5rem;
+        padding: 1.5rem 0;
+    }
+    
+    .carousel-slide {
+        min-width: 350px;
+        padding: 0 1.5rem;
+    }
+    
+    .official-card {
+        padding: 3rem 1.5rem;
+        min-height: 320px;
+    }
+    
+    .official-avatar {
+        width: 110px;
+        height: 110px;
+        font-size: 1.8rem;
+    }
+    
+    .official-card h3 {
+        font-size: 1.4rem;
+    }
+    
+    .official-card p {
+        font-size: 1.1rem;
+    }
+    
+    .nav-btn {
+        width: 52px;
+        height: 52px;
+        font-size: 1.1rem;
+    }
+    
+    .scroll-top {
+        bottom: 1.5rem;
+        right: 1.5rem;
+        width: 50px;
+        height: 50px;
+    }
+}
 
-    .category-icon {
-      width: clamp(60px, 10vw, 80px);
-      height: clamp(60px, 10vw, 80px);
-      border-radius: 50%;
-      background: rgba(255, 255, 255, 0.2);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto clamp(1rem, 2vw, 1.5rem);
-      font-size: clamp(1.5rem, 3vw, 2rem);
-      color: white;
+@media (max-width: 480px) {
+    .about-section {
+        padding: 3rem 3%;
     }
 
     .category-header h3 {
@@ -994,263 +1050,188 @@ $stmt = null;
     .toggle-icon.expanded {
       transform: rotate(180deg);
     }
-
-    .services-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
-      gap: clamp(1rem, 2vw, 2rem);
-      padding: clamp(1.5rem, 3vw, 2.5rem);
-      transition: all 0.3s ease;
-      opacity: 0;
-      max-height: 0;
-      overflow: hidden;
+    
+    .nav-btn {
+        width: 48px;
+        height: 48px;
+        font-size: 1rem;
     }
+}
 
-    .services-grid.show {
-      opacity: 1;
-      max-height: none;
-    }
+/* Simple animations */
+.carousel-slide {
+    animation: fadeIn 0.3s ease;
+}
 
-    .service-item {
-      background: var(--white);
-      border-radius: 15px;
-      padding: clamp(1.5rem, 3vw, 2rem);
-      border: 2px solid #f1f2f6;
-      transition: all 0.3s ease;
-      position: relative;
-      overflow: hidden;
-      cursor: pointer;
-    }
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+</style>
 
-    .service-item::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      background: linear-gradient(90deg, var(--secondary-color) 0%, #2ecc71 100%);
-      transform: scaleX(0);
-      transition: transform 0.3s ease;
-    }
+    <!-- Services Section -->
+    <section class="services-section" id="services">
+        <div class="services-container">
+            <div class="section-header">
+                <h2>Services</h2>
+                <p>Complete barangay services at your fingertips</p>
+            </div>
 
-    .service-item:hover::before {
-      transform: scaleX(1);
-    }
+            <!-- Barangay Certificates Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('certificates')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-certificate"></i></div>
+                    <h3>Barangay Certificates</h3>
+                    <p>Official documents and certifications</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="certificates-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="certificates-grid" style="display: none;">
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_clearance';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-file-alt"></i></div>
+                        <div class="service-content">
+                            <h4>Barangay Clearance</h4>
+                            <p>Required for employment, business permits, and various transactions</p>
+                            <a href="../pages/services.php?documentType=barangay_clearance" class="service-cta">
+                                Request <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
 
-    .service-item:hover {
-      transform: translateY(-5px);
-      box-shadow: var(--shadow-lg);
-      border-color: #e8e9ef;
-    }
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=barangay_indigency';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-hand-holding-heart"></i></div>
+                        <div class="service-content">
+                            <h4>Certificate of Indigency</h4>
+                            <p>For accessing social welfare programs and financial assistance</p>
+                            <a href="../pages/services.php?documentType=barangay_indigency" class="service-cta">
+                                Apply <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
 
-    .service-icon {
-      width: clamp(50px, 8vw, 60px);
-      height: clamp(50px, 8vw, 60px);
-      border-radius: 12px;
-      background: linear-gradient(135deg, var(--primary-color) 0%, var(--primary-dark) 100%);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin-bottom: clamp(1rem, 2vw, 1.5rem);
-      font-size: clamp(1.2rem, 2vw, 1.5rem);
-      color: white;
-    }
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=business_permit_clearance';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-store"></i></div>
+                        <div class="service-content">
+                            <h4>Business Permit Clearance</h4>
+                            <p>Barangay clearance required for business license applications</p>
+                            <a href="../pages/services.php?documentType=business_permit_clearance" class="service-cta">
+                                Apply <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
 
-    .service-content h4 {
-      font-size: clamp(1.1rem, 2vw, 1.3rem);
-      color: var(--text-dark);
-      margin-bottom: clamp(0.75rem, 1.5vw, 1rem);
-      font-weight: 600;
-      line-height: 1.3;
-    }
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=cedula';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-id-card"></i></div>
+                        <div class="service-content">
+                            <h4>Community Tax Certificate (Sedula)</h4>
+                            <p>Annual tax certificate required for government transactions</p>
+                            <a href="../pages/services.php?documentType=cedula" class="service-cta">
+                                Get Certificate <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
 
-    .service-content p {
-      color: var(--text-light);
-      line-height: 1.6;
-      margin-bottom: clamp(1rem, 2vw, 1.5rem);
-      font-size: clamp(0.85rem, 1.5vw, 0.95rem);
-    }
+                    <div class="service-item" onclick="window.location.href='../pages/services.php?documentType=proof_of_residency';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-home"></i></div>
+                        <div class="service-content">
+                            <h4>Certificate of Residency</h4>
+                            <p>Official proof of residence in the barangay</p>
+                            <a href="../pages/services.php?documentType=proof_of_residency" class="service-cta">
+                                Request <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
 
-    .service-cta {
-      display: inline-flex;
-      align-items: center;
-      gap: 0.5rem;
-      color: var(--secondary-color);
-      text-decoration: none;
-      font-weight: 500;
-      transition: all 0.2s ease;
-      font-size: clamp(0.85rem, 1.5vw, 0.9rem);
-    }
+            <!-- Other Services Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('other')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-hands-helping"></i></div>
+                    <h3>Other Services</h3>
+                    <p>Social services and community assistance</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="other-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="other-grid" style="display: none;">
+                    <?php 
+                    // Fetch active custom services
+                    $services_stmt = $pdo->prepare("
+                        SELECT * FROM custom_services 
+                        WHERE barangay_id = ? AND is_active = 1 
+                        ORDER BY display_order, name
+                    ");
+                    $services_stmt->execute([$barangay_id]);
+                    $custom_services = $services_stmt->fetchAll();
 
-    .service-cta:hover {
-      color: #2980b9;
-      gap: 0.8rem;
-    }
+                    if (count($custom_services) > 0):
+                        foreach ($custom_services as $service): 
+                    ?>
+                        <div class="service-item" onclick="viewCustomService(<?php echo htmlspecialchars(json_encode($service)); ?>)">
+                            <div class="service-icon"><i class="fas <?php echo htmlspecialchars($service['icon']); ?>"></i></div>
+                            <div class="service-content">
+                                <h4><?php echo htmlspecialchars($service['name']); ?></h4>
+                                <p><?php echo htmlspecialchars($service['description']); ?></p>
+                                <a href="#" class="service-cta">
+                                    Request Service <i class="fas fa-arrow-right"></i>
+                                </a>
+                            </div>
+                        </div>
+                    <?php 
+                        endforeach;
+                    else:
+                    ?>
+                        <div class="col-span-full text-center py-8">
+                            <p class="text-gray-500">No custom services available at the moment.</p>
+                        </div>
+                    <?php endif; ?>
+                </div>
+            </div>
 
-    .service-cta i {
-      font-size: 0.8rem;
-      transition: transform 0.2s ease;
-    }
+            <!-- Blotter Services Category -->
+            <div class="service-category">
+                <div class="category-header" onclick="toggleCategory('blotter')" style="cursor: pointer;">
+                    <div class="category-icon"><i class="fas fa-file-signature"></i></div>
+                    <h3>Blotter Services</h3>
+                    <p>Incident reporting and documentation</p>
+                    <div class="toggle-icon">
+                        <i class="fas fa-chevron-down" id="blotter-icon"></i>
+                    </div>
+                </div>
+                
+                <div class="services-grid" id="blotter-grid" style="display: none;">
+                    <div class="service-item" onclick="window.location.href='../pages/blotter_request.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-exclamation-triangle"></i></div>
+                        <div class="service-content">
+                            <h4>File a Blotter Report</h4>
+                            <p>Report incidents and request official documentation</p>
+                            <a href="../pages/blotter_request.php" class="service-cta">
+                                File Report <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
 
-    .service-cta:hover i {
-      transform: translateX(3px);
-    }
+                    <div class="service-item" onclick="window.location.href='../pages/blotter_status.php';" style="cursor:pointer;">
+                        <div class="service-icon"><i class="fas fa-search"></i></div>
+                        <div class="service-content">
+                            <h4>Check Blotter Status</h4>
+                            <p>Track the status of your blotter requests</p>
+                            <a href="../pages/blotter_status.php" class="service-cta">
+                                Check Status <i class="fas fa-arrow-right"></i>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
-    /* Contact Section */
-    .contact-section {
-      padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 5vw, 5%);
-      background: var(--bg-light); /* Ensure grey background */
-    }
-
-    .contact-container {
-      max-width: 1000px;
-      margin: 0 auto;
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
-      gap: clamp(1.5rem, 3vw, 2rem);
-    }
-
-    .contact-card {
-      background: white;
-      border-radius: 20px;
-      overflow: hidden;
-      box-shadow: var(--shadow-md);
-      border: 1px solid rgba(0,0,0,0.05);
-      transition: all 0.3s ease;
-      position: relative;
-    }
-
-    .contact-card:hover {
-      transform: translateY(-5px);
-      box-shadow: var(--shadow-lg);
-    }
-
-    .contact-card::before {
-      content: '';
-      position: absolute;
-      top: 0;
-      left: 0;
-      right: 0;
-      height: 4px;
-      transition: transform 0.3s ease;
-    }
-
-    .emergency-card::before {
-      background: linear-gradient(90deg, #e74c3c 0%, #c0392b 100%);
-    }
-
-    .services-card::before {
-      background: linear-gradient(90deg, #2ecc71 0%, #27ae60 100%);
-    }
-
-    .card-header {
-      text-align: center;
-      padding: clamp(1.5rem, 3vw, 2.5rem) clamp(1rem, 2vw, 2rem) clamp(1rem, 2vw, 1.5rem);
-      border-bottom: 1px solid #f1f2f6;
-    }
-
-    .card-icon {
-      width: clamp(60px, 10vw, 80px);
-      height: clamp(60px, 10vw, 80px);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      margin: 0 auto clamp(1rem, 2vw, 1.5rem);
-      font-size: clamp(1.5rem, 3vw, 2rem);
-      color: white;
-    }
-
-    .emergency-icon {
-      background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-    }
-
-    .services-icon {
-      background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
-    }
-
-    .card-header h3 {
-      font-size: clamp(1.3rem, 2.5vw, 1.8rem);
-      color: var(--text-dark);
-      margin-bottom: 0.5rem;
-      font-weight: 600;
-    }
-
-    .card-header p {
-      color: var(--text-light);
-      font-size: clamp(0.9rem, 1.5vw, 1rem);
-      margin: 0;
-    }
-
-    .contact-info {
-      padding: clamp(1.5rem, 3vw, 2rem);
-    }
-
-    .contact-item {
-      display: flex;
-      flex-direction: column;
-      gap: 0.8rem;
-      margin-bottom: clamp(1.5rem, 3vw, 2rem);
-      padding-bottom: clamp(1rem, 2vw, 1.5rem);
-      border-bottom: 1px solid var(--bg-light);
-    }
-
-    .contact-item:last-child {
-      margin-bottom: 0;
-      padding-bottom: 0;
-      border-bottom: none;
-    }
-
-    .contact-label {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.8rem;
-      font-weight: 500;
-      color: var(--text-dark);
-      font-size: clamp(0.85rem, 1.5vw, 0.95rem);
-      flex-wrap: wrap;
-    }
-
-    .contact-value {
-      color: #34495e;
-      font-size: clamp(0.9rem, 1.5vw, 1rem);
-      line-height: 1.5;
-      font-weight: 400;
-      text-align: center;
-    }
-
-    /* Scroll to Top */
-    .scroll-top {
-      position: fixed;
-      bottom: clamp(1.5rem, 3vw, 2rem);
-      right: clamp(1.5rem, 3vw, 2rem);
-      width: clamp(45px, 7vw, 55px);
-      height: clamp(45px, 7vw, 55px);
-      background: var(--white);
-      border: 1px solid #ddd;
-      border-radius: 50%;
-      display: none;
-      align-items: center;
-      justify-content: center;
-      cursor: pointer;
-      transition: all 0.2s ease;
-      font-size: clamp(1rem, 1.5vw, 1.1rem);
-      color: #666;
-      z-index: 100;
-      box-shadow: var(--shadow-sm);
-    }
-    .dot.active {
-      background: var(--primary-color);
-      transform: scale(1.3);
-    }
-
-    .dot:hover {
-      background: var(--secondary-color);
-    }
-
-    /* Services Section */
+    <style>
+    /* Services Section - Consistent styling */
     .services-section {
       padding: clamp(2rem, 5vw, 4rem) clamp(1rem, 5vw, 5%);
       background: var(--bg-light); /* Changed from white to grey */
@@ -3346,78 +3327,114 @@ $stmt = null;
       }
     }
 
-    // Intersection Observer for fade-in animations
-    const observerOptions = {
-      threshold: 0.1,
-      rootMargin: '0px 0px -50px 0px'
-    };
-
-    const observer = new IntersectionObserver((entries) => {
-      entries.forEach(entry => {
-        if (entry.isIntersecting) {
-          entry.target.style.opacity = '1';
-          entry.target.style.transform = 'translateY(0)';
-        }
+    // Lazy loading for images
+    const lazyImages = document.querySelectorAll('img[data-src]');
+    const lazyLoad = target => {
+      const io = new IntersectionObserver((entries, observer) => {
+        entries.forEach(entry => {
+          if (entry.isIntersecting) {
+            const img = entry.target;
+            img.src = img.dataset.src;
+            img.removeAttribute('data-src');
+            observer.disconnect();
+          }
+        });
       });
-    }, observerOptions);
-
-    // Observe service items
-    document.querySelectorAll('.service-item').forEach(item => {
-      item.style.opacity = '0';
-      item.style.transform = 'translateY(20px)';
-      item.style.transition = 'opacity 0.6s ease, transform 0.6s ease';
-      observer.observe(item);
-    });
-
-    // Handle announcements sidebar position
-    function handleAnnouncementsPosition() {
-      const mobileSidebar = document.getElementById('mobile-announcements');
-      const desktopSidebar = document.getElementById('desktop-announcements');
-      const mainContentArea = document.querySelector('.main-content-area');
-      const heroSection = document.querySelector('.hero');
-      const aboutSection = document.querySelector('.about-section');
-
-      if (window.innerWidth <= 1200) {
-        // Mobile/Tablet view
-        if (mobileSidebar && heroSection && aboutSection) {
-          // Insert mobile sidebar after hero section
-          heroSection.insertAdjacentElement('afterend', mobileSidebar);
-        }
-      }
-    }
-
-    handleAnnouncementsPosition();
-
-    // Performance optimization - Debounce resize events
-    function debounce(func, wait) {
-      let timeout;
-      return function executedFunction(...args) {
-        const later = () => {
-          clearTimeout(timeout);
-          func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-      };
-    }
-
-    // Apply debounce to resize handlers
-    window.addEventListener('resize', debounce(handleAnnouncementsPosition, 250));
-    // Performance optimization - Debounce resize events
-    function debounce(func, wait) {
-      let timeout;
-      return function executedFunction(...args) {
-        const later = () => {
-          clearTimeout(timeout);
-          func(...args);
-        };
-        clearTimeout(timeout);
-        timeout = setTimeout(later, wait);
-      };
-    }
-
-    // Apply debounce to resize handlers
-    window.addEventListener('resize', debounce(handleAnnouncementsPosition, 250));
+      io.observe(target);
+    };
+    lazyImages.forEach(lazyLoad);
   </script>
+
+<!-- Custom Service Details Modal -->
+<div id="customServiceModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
+    <div class="bg-white rounded-lg p-8 max-w-2xl w-full max-h-[90vh] overflow-y-auto mx-4">
+        <div class="flex justify-between items-center mb-6">
+            <h2 class="text-2xl font-bold" id="modalCustomServiceTitle"></h2>
+            <button onclick="closeCustomServiceModal()" class="text-gray-500 hover:text-gray-700">
+                <i class="fas fa-times"></i>
+            </button>
+        </div>
+        <div class="space-y-6">
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Description</h3>
+                <p id="modalCustomServiceDescription" class="text-gray-600"></p>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Requirements</h3>
+                <ul id="modalCustomServiceRequirements" class="list-disc pl-5 text-gray-600 space-y-2"></ul>
+            </div>
+            <div>
+                <h3 class="text-lg font-semibold mb-2">Process Guide</h3>
+                <ol id="modalCustomServiceGuide" class="list-decimal pl-5 text-gray-600 space-y-2"></ol>
+            </div>
+            <div class="grid grid-cols-2 gap-4">
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Processing Time</h3>
+                    <p id="modalCustomServiceTime" class="text-gray-600"></p>
+                </div>
+                <div>
+                    <h3 class="text-lg font-semibold mb-2">Fees</h3>
+                    <p id="modalCustomServiceFees" class="text-gray-600"></p>
+                </div>
+            </div>
+            <div class="mt-6 text-center">
+                <button onclick="closeCustomServiceModal()" class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-6 rounded-lg transition duration-200">
+                    Close
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function viewCustomService(service) {
+    // Set modal content
+    document.getElementById('modalCustomServiceTitle').textContent = service.name;
+    document.getElementById('modalCustomServiceDescription').textContent = service.description;
+    
+    // Format requirements as list
+    const requirementsList = document.getElementById('modalCustomServiceRequirements');
+    requirementsList.innerHTML = '';
+    if (service.requirements) {
+        service.requirements.split('\n').forEach(req => {
+            if (req.trim()) {
+                const li = document.createElement('li');
+                li.textContent = req.trim();
+                requirementsList.appendChild(li);
+            }
+        });
+    }
+    
+    // Format guide as numbered list
+    const guideList = document.getElementById('modalCustomServiceGuide');
+    guideList.innerHTML = '';
+    if (service.detailed_guide) {
+        service.detailed_guide.split('\n').forEach(step => {
+            if (step.trim()) {
+                const li = document.createElement('li');
+                li.textContent = step.trim();
+                guideList.appendChild(li);
+            }
+        });
+    }
+    
+    document.getElementById('modalCustomServiceTime').textContent = service.processing_time || 'Not specified';
+    document.getElementById('modalCustomServiceFees').textContent = service.fees || 'Not specified';
+    
+    // Show modal
+    document.getElementById('customServiceModal').style.display = 'flex';
+}
+
+function closeCustomServiceModal() {
+    document.getElementById('customServiceModal').style.display = 'none';
+}
+
+// Close modal when clicking outside
+document.getElementById('customServiceModal').addEventListener('click', function(e) {
+    if (e.target === this) {
+        closeCustomServiceModal();
+    }
+});
+</script>
 </body>
 </html>
