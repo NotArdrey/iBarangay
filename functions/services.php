@@ -3,7 +3,205 @@
 session_start();
 require_once "../config/dbconn.php";
 
-// Fetch user info for navbar (copy from user_dashboard.php)
+// Handle form submission for document requests
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        // Validate required fields
+        $documentTypeId = $_POST['document_type_id'] ?? '';
+        if (empty($documentTypeId)) {
+            throw new Exception("Please select a document type");
+        }
+
+        // Get user info
+        if (!isset($_SESSION['user_id'])) {
+            throw new Exception("Please log in to submit a request");
+        }
+        $user_id = $_SESSION['user_id'];
+
+        // Get user's person_id from the persons table
+        $stmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = ?");
+        $stmt->execute([$user_id]);
+        $person = $stmt->fetch();
+        
+        if (!$person) {
+            throw new Exception("User profile not found");
+        }
+
+        // Begin transaction for the main request
+        $pdo->beginTransaction();
+        
+        try {
+            // Insert into document_requests table
+            $stmt = $pdo->prepare("
+                INSERT INTO document_requests 
+                (document_type_id, person_id, user_id, barangay_id, requested_by_user_id, status, request_date) 
+                VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+            ");
+            $stmt->execute([
+                $documentTypeId,
+                $person['id'],
+                $user_id,
+                $_SESSION['barangay_id'],
+                $user_id
+            ]);
+            $requestId = $pdo->lastInsertId();
+
+            // Get document type info 
+            $stmt = $pdo->prepare("SELECT id, code FROM document_types WHERE id = ?");
+            $stmt->execute([$documentTypeId]);
+            $documentType = $stmt->fetch();
+
+            // Get attribute type IDs
+            $stmt = $pdo->prepare("
+                SELECT id, code 
+                FROM document_attribute_types 
+                WHERE document_type_id = ?
+            ");
+            $stmt->execute([$documentTypeId]);
+            $attributeTypes = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
+
+            // Prepare attributes array based on document type
+            $attributes = [];
+            switch($documentType['code']) {
+                case 'barangay_clearance':
+                    if (!empty($_POST['purposeClearance'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['clearance_purpose'] ?? null,
+                            'value' => $_POST['purposeClearance']
+                        ];
+                    }
+                    break;
+
+                case 'proof_of_residency':
+                    if (!empty($_POST['residencyDuration'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['residency_duration'] ?? null,
+                            'value' => $_POST['residencyDuration']
+                        ];
+                    }
+                    if (!empty($_POST['residencyPurpose'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['residency_purpose'] ?? null,
+                            'value' => $_POST['residencyPurpose']
+                        ];
+                    }
+                    break;
+
+                case 'barangay_indigency':
+                    if (!empty($_POST['indigencyReason'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['indigency_reason'] ?? null,
+                            'value' => $_POST['indigencyReason']
+                        ];
+                    }
+                    break;
+
+                case 'cedula':
+                case 'community_tax_certificate':
+                    // Handle occupation
+                    $occupation = !empty($_POST['cedulaOccupation']) ? $_POST['cedulaOccupation'] : $_POST['ctcOccupation'] ?? '';
+                    if (!empty($occupation)) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['occupation'] ?? null,
+                            'value' => $occupation
+                        ];
+                    }
+                    
+                    // Handle income fields
+                    $income = !empty($_POST['cedulaIncome']) ? $_POST['cedulaIncome'] : $_POST['ctcIncome'] ?? '';
+                    if (!empty($income)) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['income'] ?? null,
+                            'value' => number_format((float)$income, 2, '.', '')
+                        ];
+                    }
+
+                    // Handle optional fields specific to CTC
+                    if ($documentType['code'] === 'community_tax_certificate') {
+                        if (!empty($_POST['ctcPropertyValue'])) {
+                            $attributes[] = [
+                                'type_id' => $attributeTypes['property_value'] ?? null,
+                                'value' => number_format((float)$_POST['ctcPropertyValue'], 2, '.', '')
+                            ];
+                        }
+                        if (!empty($_POST['ctcBirthplace'])) {
+                            $attributes[] = [
+                                'type_id' => $attributeTypes['birthplace'] ?? null,
+                                'value' => $_POST['ctcBirthplace']
+                            ];
+                        }
+                    }
+                    break;
+
+                case 'business_permit_clearance':
+                    if (!empty($_POST['businessName'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['business_name'] ?? null,
+                            'value' => $_POST['businessName']
+                        ];
+                    }
+                    if (!empty($_POST['businessType'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['business_type'] ?? null,
+                            'value' => $_POST['businessType']
+                        ];
+                    }
+                    if (!empty($_POST['businessAddress'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['business_address'] ?? null,
+                            'value' => $_POST['businessAddress']
+                        ];
+                    }
+                    if (!empty($_POST['businessPurpose'])) {
+                        $attributes[] = [
+                            'type_id' => $attributeTypes['business_purpose'] ?? null,
+                            'value' => $_POST['businessPurpose']
+                        ];
+                    }
+                    break;
+            }
+
+            // Insert attributes if any exist
+            if (!empty($attributes)) {
+                $stmt = $pdo->prepare("
+                    INSERT INTO document_request_attributes 
+                    (request_id, attribute_type_id, value) 
+                    VALUES (?, ?, ?)
+                ");
+                foreach ($attributes as $attr) {
+                    if ($attr['type_id']) {
+                        $stmt->execute([$requestId, $attr['type_id'], $attr['value']]);
+                    }
+                }
+            }
+
+            // If we got here, commit the transaction
+            $pdo->commit();
+
+            // Set success notification
+            $_SESSION['success'] = [
+                'title' => 'Document Request Submitted',
+                'message' => 'Your document request has been submitted successfully.',
+                'processing' => 'Please wait for the processing of your request. You will be notified once it is ready.'
+            ];
+
+            // Redirect back to the user dashboard
+            header('Location: ../pages/user_dashboard.php');
+            exit;
+
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            throw $e;
+        }
+
+    } catch (Exception $e) {        $_SESSION['error'] = $e->getMessage();
+        $redirectTo = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '../pages/services.php';
+        header('Location: ' . $redirectTo);
+        exit;
+    }
+}
+
+// Get user info for the page header
 $userName = '';
 $barangayName = '';
 if (isset($_SESSION['user_id'])) {

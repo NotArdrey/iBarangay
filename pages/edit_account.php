@@ -409,14 +409,14 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
         });
       </script>
     <?php endif; ?>
-    
+
     <?php if (!empty($success_message)): ?>
       <script>
-          Swal.fire({
-            icon: "success",
-            title: "Success",
-            text: <?php echo json_encode($success_message); ?>
-          });
+        Swal.fire({
+          icon: "success",
+          title: "Success",
+          text: <?php echo json_encode($success_message); ?>
+        });
       </script>
     <?php endif; ?>
 
