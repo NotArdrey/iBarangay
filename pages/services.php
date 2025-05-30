@@ -638,7 +638,7 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
     </style>
 </head>
 <body>
-  <?php if (isset($_SESSION['success'])): ?>
+    <?php if (isset($_SESSION['success'])): ?>
     <script>
         Swal.fire({
             title: '<?= $_SESSION['success']['title'] ?>',
