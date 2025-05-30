@@ -998,8 +998,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         confirmButtonColor: '#3085d6'
                     });
                     birthDateInput.focus();
+                } else {
+                    e.preventDefault();
+                    Swal.fire({
+                        title: 'Saving Child Data',
+                        text: 'Please wait while we save the child information...',
+                        allowOutsideClick: false,
+                        allowEscapeKey: false,
+                        showConfirmButton: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+                    
+                    // Submit the form after showing the loading message
+                    setTimeout(() => {
+                        form.submit();
+                    }, 500);
                 }
             });
+
+            // Show success message if PHP indicates success
+            <?php if ($add_success): ?>
+            Swal.fire({
+                icon: 'success',
+                title: 'Success!',
+                text: '<?php echo $add_success; ?>',
+                confirmButtonColor: '#3085d6'
+            });
+            <?php endif; ?>
+
+            // Show error message if PHP indicates error
+            <?php if ($add_error): ?>
+            Swal.fire({
+                icon: 'error',
+                title: 'Error!',
+                text: '<?php echo $add_error; ?>',
+                confirmButtonColor: '#3085d6'
+            });
+            <?php endif; ?>
 
             // Make all text inputs uppercase while typing
             const textInputs = document.querySelectorAll('input[type="text"]:not([readonly]), textarea');

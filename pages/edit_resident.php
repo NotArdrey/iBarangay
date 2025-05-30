@@ -2,7 +2,7 @@
 ob_start(); // Start output buffering
 require "../config/dbconn.php";
 require "../functions/manage_census.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Check if ID is provided
 if (!isset($_GET['id'])) {
@@ -449,18 +449,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $stmt->execute([$person_id]);
 
         $skill_fields = [
-            'skill_medical' => 'medical',
-            'skill_teaching' => 'teaching',
-            'skill_legal_services' => 'legal_services',
-            'skill_dental' => 'dental',
-            'skill_counseling' => 'counseling',
-            'skill_evangelization' => 'evangelization',
-            'skill_farming' => 'farming',
-            'skill_fishing' => 'fishing',
-            'skill_cooking' => 'cooking',
-            'skill_vocational' => 'vocational',
-            'skill_arts' => 'arts',
-            'skill_engineering' => 'engineering'
+            'skill_medical' => 'Medical',
+            'skill_teaching' => 'Teaching',
+            'skill_legal_services' => 'Legal Services',
+            'skill_dental' => 'Dental',
+            'skill_counseling' => 'Counseling',
+            'skill_evangelization' => 'Evangelization',
+            'skill_farming' => 'Farming',
+            'skill_fishing' => 'Fishing',
+            'skill_cooking' => 'Cooking',
+            'skill_vocational' => 'Vocational',
+            'skill_arts' => 'Arts',
+            'skill_engineering' => 'Engineering'
         ];
 
         $skill_sql = "INSERT INTO person_skills (person_id, skill_type_id) 

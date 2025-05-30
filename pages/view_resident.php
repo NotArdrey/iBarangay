@@ -1,10 +1,13 @@
 <?php
+// Start output buffering at the very beginning of the file
+ob_start();
+
 require "../config/dbconn.php";
 require "../functions/manage_census.php";
-require_once "../pages/header.php";
 
 // Check admin permissions
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
+    ob_end_clean(); // Clear the buffer before redirecting
     header("Location: ../pages/login.php");
     exit;
 }
@@ -12,10 +15,13 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
 $person_id = isset($_GET['id']) ? (int)$_GET['id'] : 0;
 
 if (!$person_id) {
+    ob_end_clean(); // Clear the buffer before redirecting
     $_SESSION['error'] = "Invalid resident ID";
     header("Location: census_records.php");
     exit;
 }
+
+require_once "../components/header.php";
 
 // Fetch comprehensive resident data
 try {

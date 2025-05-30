@@ -417,6 +417,7 @@ function isCheckboxChecked($form_data, $key)
             const ageInput = document.getElementById('age');
             const residentTypeSelect = document.getElementById('residentTypeSelect');
             const validationMsg = document.getElementById('residency_age_validation');
+            const yearsOfResidencyInput = document.getElementById('years_of_residency');
 
             if (!birthDateInput || !ageInput) return;
 
@@ -458,6 +459,16 @@ function isCheckboxChecked($form_data, $key)
                 } else {
                     validationMsg.textContent = '';
                 }
+
+                // Validate years of residency
+                if (yearsOfResidencyInput) {
+                    const yearsOfResidency = parseInt(yearsOfResidencyInput.value);
+                    if (!isNaN(yearsOfResidency) && yearsOfResidency > age) {
+                        yearsOfResidencyInput.value = age;
+                        validationMsg.textContent = `Years of residency cannot exceed age (${age} years)`;
+                        validationMsg.style.color = 'red';
+                    }
+                }
             } else {
                 ageInput.value = '';
                 validationMsg.textContent = '';
@@ -468,6 +479,7 @@ function isCheckboxChecked($form_data, $key)
         document.addEventListener('DOMContentLoaded', function() {
             const birthDateInput = document.getElementById('birth_date');
             const residentTypeSelect = document.getElementById('residentTypeSelect');
+            const yearsOfResidencyInput = document.getElementById('years_of_residency');
             
             if (birthDateInput) {
                 // Add event listener for input change
@@ -483,6 +495,12 @@ function isCheckboxChecked($form_data, $key)
             // Add event listener for resident type changes
             if (residentTypeSelect) {
                 residentTypeSelect.addEventListener('change', calculateAge);
+            }
+
+            // Add event listener for years of residency changes
+            if (yearsOfResidencyInput) {
+                yearsOfResidencyInput.addEventListener('input', calculateAge);
+                yearsOfResidencyInput.addEventListener('change', calculateAge);
             }
         });
     </script>

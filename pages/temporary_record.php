@@ -232,7 +232,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST
     }
 }
 
-require_once 'header.php';
+require_once '../components/header.php';
 
 // Fetch existing records
 $stmt = $pdo->query("

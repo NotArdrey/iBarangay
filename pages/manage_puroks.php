@@ -1,6 +1,6 @@
 <?php
 require "../config/dbconn.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Add purok logic
 $add_error = '';
@@ -134,7 +134,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
 }
 
 // Get puroks for current barangay
-$stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
+$stmt = $pdo->prepare("
+    SELECT p.id, p.name, p.created_at, 
+           COUNT(h.id) as household_count 
+    FROM purok p 
+    LEFT JOIN households h ON p.id = h.purok_id 
+    WHERE p.barangay_id = ? 
+    GROUP BY p.id, p.name, p.created_at 
+    ORDER BY p.name
+");
 $stmt->execute([$_SESSION['barangay_id']]);
 $puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
@@ -244,31 +252,34 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                 </table>
             </div>
         </section>
+
+        <div id="editModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
+            <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
+                <div class="mt-3">
+                    <h3 class="text-lg font-medium text-gray-900 mb-4">Edit Purok</h3>
+                    <form method="POST" class="space-y-4">
+                        <input type="hidden" name="action" value="edit">
+                        <input type="hidden" name="purok_id" id="edit_purok_id">
+                        <div>
+                            <label class="block text-sm font-medium text-gray-700 mb-2">Purok Name</label>
+                            <input type="text" name="purok_name" id="edit_purok_name" required
+                                class="w-full border rounded px-3 py-2">
+                        </div>
+                        <div class="flex justify-end gap-3">
+                            <button type="button" onclick="closeEditModal()"
+                                class="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Cancel</button>
+                            <button type="submit"
+                                class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Changes</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- Edit Purok Modal -->
-    <div id="editModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden overflow-y-auto h-full w-full">
-        <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
-            <div class="mt-3">
-                <h3 class="text-lg font-medium text-gray-900 mb-4">Edit Purok</h3>
-                <form method="POST" class="space-y-4">
-                    <input type="hidden" name="action" value="edit">
-                    <input type="hidden" name="purok_id" id="edit_purok_id">
-                    <div>
-                        <label class="block text-sm font-medium text-gray-700 mb-2">Purok Name</label>
-                        <input type="text" name="purok_name" id="edit_purok_name" required
-                            class="w-full border rounded px-3 py-2">
-                    </div>
-                    <div class="flex justify-end gap-3">
-                        <button type="button" onclick="closeEditModal()"
-                            class="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Cancel</button>
-                        <button type="submit"
-                            class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Changes</button>
-                    </div>
-                </form>
-            </div>
-        </div>
-    </div>
+
 
     <!-- Add SweetAlert2 JS -->
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>

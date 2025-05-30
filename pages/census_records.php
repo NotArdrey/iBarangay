@@ -163,7 +163,9 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                   <?php else: ?>
                     <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">Edit</a>
                   <?php endif; ?>
-                  <a href="view_resident.php?id=<?= $resident['id'] ?>" class="text-green-600 hover:text-green-900 mr-3">View</a>
+                  <a href="view_resident.php?id=<?= $resident['id'] ?>" 
+                     onclick="event.preventDefault(); viewResident(<?= $resident['id'] ?>);"
+                     class="text-green-600 hover:text-green-900 mr-3">View</a>
                   <button onclick="deleteResident(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</button>
                 </td>
               </tr>
@@ -332,6 +334,11 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
           });
         }
       });
+    }
+
+    function viewResident(id) {
+        console.log('Viewing resident ID:', id);
+        window.location.href = 'view_resident.php?id=' + id;
     }
   </script>
 </body>

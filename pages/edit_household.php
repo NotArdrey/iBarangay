@@ -1,7 +1,7 @@
 <?php
 ob_start(); // Start output buffering
 require "../config/dbconn.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // Validate household ID
 if (!isset($_GET['id']) || !is_numeric($_GET['id'])) {
@@ -32,9 +32,13 @@ if (!$household) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $purok_id = $_POST['purok_id'] ?? null;
     $household_number = trim($_POST['household_number'] ?? '');
-    $household_head_person_id = $_POST['household_head_person_id'] ?? null;
+    $household_head_person_id = !empty($_POST['household_head_person_id']) ? (int)$_POST['household_head_person_id'] : null;
     $remove_members = $_POST['remove_member'] ?? [];
     $errors = [];
+
+    // Debug information
+    error_log("POST data received: " . print_r($_POST, true));
+    error_log("Current household data: " . print_r($household, true));
 
     // Validate
     if (!$purok_id) $errors[] = "Purok is required.";
@@ -68,13 +72,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     household_head_person_id = ? 
                 WHERE id = ? AND barangay_id = ?
             ");
-            $stmt->execute([
+            
+            $params = [
                 $purok_id, 
                 $household_number, 
                 $household_head_person_id, 
                 $household_id, 
                 $barangay_id
-            ]);
+            ];
+            
+            error_log("Executing update with params: " . print_r($params, true));
+            $result = $stmt->execute($params);
+            error_log("Update result: " . ($result ? "success" : "failed"));
+            error_log("Rows affected: " . $stmt->rowCount());
 
             // Remove selected members
             if (!empty($remove_members)) {
@@ -99,6 +109,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Commit transaction
             $pdo->commit();
+            error_log("Transaction committed successfully");
 
             $_SESSION['success'] = "Household updated successfully.";
             header("Location: manage_households.php");
@@ -106,11 +117,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         } catch (Exception $e) {
             // Rollback transaction on error
             $pdo->rollBack();
+            error_log("Error updating household: " . $e->getMessage());
             $errors[] = "Error updating household: " . $e->getMessage();
         }
     }
 
     if (!empty($errors)) {
+        error_log("Validation errors: " . print_r($errors, true));
         $_SESSION['error'] = implode("<br>", $errors);
         header("Location: edit_household.php?id=$household_id");
         exit;
@@ -154,9 +167,23 @@ $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
 </head>
 <body class="bg-gray-100">
 <div class="container mx-auto p-4">
+    <?php if (isset($_SESSION['error'])): ?>
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <span class="block sm:inline"><?= $_SESSION['error'] ?></span>
+        </div>
+        <?php unset($_SESSION['error']); ?>
+    <?php endif; ?>
+
+    <?php if (isset($_SESSION['success'])): ?>
+        <div class="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <span class="block sm:inline"><?= $_SESSION['success'] ?></span>
+        </div>
+        <?php unset($_SESSION['success']); ?>
+    <?php endif; ?>
+
     <div class="bg-white rounded-lg shadow p-6 mb-8">
         <h2 class="text-2xl font-bold text-blue-800 mb-4">Edit Household</h2>
-        <form method="POST" class="space-y-4">
+        <form method="POST" class="space-y-4" id="editHouseholdForm">
             <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div>
                     <label class="block text-sm font-medium">Purok</label>
@@ -207,7 +234,7 @@ $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
                                         </td>
                                         <td class="px-4 py-2 text-center">
                                             <?php if (!$member['is_household_head']): ?>
-                                                <button type="submit" name="remove_member[]" value="<?= $member['id'] ?>" class="text-red-600 hover:text-red-800" title="Remove">
+                                                <button type="button" onclick="removeMember(<?= $member['id'] ?>)" class="text-red-600 hover:text-red-800" title="Remove">
                                                     <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 inline" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
                                                     </svg>
@@ -232,5 +259,28 @@ $members = $stmt->fetchAll(PDO::FETCH_ASSOC);
         </form>
     </div>
 </div>
+
+<script>
+document.getElementById('editHouseholdForm').addEventListener('submit', function(e) {
+    // Log form data for debugging
+    const formData = new FormData(this);
+    console.log('Form data being submitted:');
+    for (let pair of formData.entries()) {
+        console.log(pair[0] + ': ' + pair[1]);
+    }
+});
+
+function removeMember(memberId) {
+    if (confirm('Are you sure you want to remove this member from the household?')) {
+        const form = document.getElementById('editHouseholdForm');
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'remove_member[]';
+        input.value = memberId;
+        form.appendChild(input);
+        form.submit();
+    }
+}
+</script>
 </body>
 </html> 
