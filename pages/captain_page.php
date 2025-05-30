@@ -11,7 +11,6 @@ header('Cross-Origin-Opener-Policy: same-origin-allow-popups');
 
 require '../config/dbconn.php';
 require __DIR__ . '/../vendor/autoload.php';
-require_once '../config/email_config.php'; // Include email service
 
 const ROLE_PROGRAMMER   = 1;
 const ROLE_SUPER_ADMIN  = 2;
@@ -236,11 +235,14 @@ $stmt = $pdo->prepare("
 $stmt->execute([$bid]);
 $recentConfirmedSchedules = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
+// Import PHPMailer classes (must be at top-level scope)
+use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
+use PHPMailer\PHPMailer\Exception;
+
 // Function to send final confirmation emails using PHPMailer
 function sendFinalConfirmationEmails($caseId) {
     global $pdo;
-    // PHPMailer classes
-    require_once '../vendor/autoload.php';
     
     // Get all participants who confirmed
     $stmt = $pdo->prepare("
@@ -272,28 +274,42 @@ function sendFinalConfirmationEmails($caseId) {
 
     foreach ($participants as $participant) {
         if (empty($participant['email_address'])) continue;
+        
         try {
-            $mail = new \PHPMailer\PHPMailer\PHPMailer(true);
+            $mail = new PHPMailer(true);
+            
+            // Server settings
             $mail->isSMTP();
             $mail->Host       = 'smtp.gmail.com';
             $mail->SMTPAuth   = true;
-            $mail->Username   = 'barangayhub2@gmail.com';
-            $mail->Password   = 'eisy hpjz rdnt bwrp';
-            $mail->SMTPSecure = \PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+            $mail->Username   = 'barangayhub2@gmail.com';  // Your Gmail address
+            $mail->Password   = 'eisy hpjz rdnt bwrp';      // Your App Password
+            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port       = 587;
+
+            // Recipients
             $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
             $mail->addAddress($participant['email_address'], $participant['full_name']);
+
+            // Content
+            $mail->isHTML(false); // Set to plain text
             $mail->Subject = 'Hearing Schedule Confirmed - Case ' . $caseData['case_number'];
             $mail->Body    = "Dear {$participant['full_name']},\n\n"
-                . "The hearing for case {$caseData['case_number']} has been officially scheduled.\n"
-                . "Date: {$caseData['proposed_date']} {$caseData['proposed_time']}\n"
+                . "The hearing for case {$caseData['case_number']} has been officially scheduled.\n\n"
+                . "Details:\n"
+                . "Date: " . date('F j, Y', strtotime($caseData['proposed_date'])) . "\n"
+                . "Time: " . date('g:i A', strtotime($caseData['proposed_time'])) . "\n"
                 . "Location: {$caseData['hearing_location']}\n"
                 . "Barangay: {$caseData['barangay_name']}\n\n"
                 . "Please be present at the scheduled date and time.\n\n"
-                . "Thank you,\nBarangay Hub";
+                . "Best regards,\n"
+                . "Barangay Hub System";
+
             $mail->send();
-        } catch (\Exception $e) {
-            // Optionally log error: error_log('Mailer Error: ' . $mail->ErrorInfo);
+            
+        } catch (Exception $e) {
+            // Log error (optional)
+            error_log("PHPMailer Error for {$participant['email_address']}: " . $mail->ErrorInfo);
         }
     }
 }

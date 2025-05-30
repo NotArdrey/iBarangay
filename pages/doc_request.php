@@ -2,6 +2,7 @@
 session_start();
 require "../vendor/autoload.php";
 require "../config/dbconn.php";
+
 use Dompdf\Dompdf;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception; 
@@ -409,7 +410,7 @@ if (isset($_GET['action'])) {
 }
 
 // Only include header + HTML if no specific action
-require_once "../pages/header.php";
+require_once "../components/header.php";
 
 // 1) Fetch all "Pending" doc requests (FIFO => earliest date first)
 $stmt = $pdo->prepare("

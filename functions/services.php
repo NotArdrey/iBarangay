@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($documentTypeId)) {
             throw new Exception("Please select a document type");
         }
-
         // Get user info
         if (!isset($_SESSION['user_id'])) {
             throw new Exception("Please log in to submit a request");
@@ -34,15 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Insert into document_requests table
             $stmt = $pdo->prepare("
                 INSERT INTO document_requests 
-                (document_type_id, person_id, user_id, barangay_id, requested_by_user_id, status, request_date) 
-                VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+                (document_type_id, person_id, user_id, barangay_id, status, request_date) 
+                VALUES (?, ?, ?, ?, 'pending', NOW())
             ");
             $stmt->execute([
                 $documentTypeId,
                 $person['id'],
                 $user_id,
-                $_SESSION['barangay_id'],
-                $user_id
+                $_SESSION['barangay_id']
             ]);
             $requestId = $pdo->lastInsertId();
 
