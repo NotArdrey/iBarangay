@@ -64,8 +64,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['schedule_action'])) {
                     captain_confirmed_at = NOW(), 
                     captain_remarks = ?,
                     status = CASE 
-                        WHEN user_confirmed = TRUE THEN 'both_confirmed' 
-                        ELSE 'captain_confirmed' 
+                        WHEN user_confirmed = TRUE THEN 'both_confirmed'
+                        ELSE 'captain_confirmed'
                     END
                 WHERE id = ? AND blotter_case_id IN (
                     SELECT id FROM blotter_cases WHERE barangay_id = ?
@@ -73,47 +73,50 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['schedule_action'])) {
             ");
             $stmt->execute([$remarks, $proposalId, $bid]);
             
-            // Check if both parties confirmed to schedule hearing
-            $stmt = $pdo->prepare("
-                SELECT sp.*, bc.id as case_id, bc.case_number
-                FROM schedule_proposals sp
-                JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
-                WHERE sp.id = ? AND sp.user_confirmed = TRUE AND sp.captain_confirmed = TRUE
-            ");
-            $stmt->execute([$proposalId]);
-            $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($proposal) {
-                // Schedule the first hearing
+            if ($stmt->rowCount() > 0) {
+                // Get case details for notification
                 $stmt = $pdo->prepare("
-                    INSERT INTO case_hearings 
-                    (blotter_case_id, hearing_date, hearing_type, hearing_number, 
-                     presiding_officer_name, presiding_officer_position, hearing_notes, hearing_outcome)
-                    VALUES (?, ?, 'first', 1, ?, ?, 'First hearing - confirmed by all parties', 'scheduled')
+                    SELECT bc.*, sp.proposed_date, sp.proposed_time, sp.hearing_location
+                    FROM blotter_cases bc
+                    JOIN schedule_proposals sp ON bc.id = sp.blotter_case_id
+                    WHERE sp.id = ?
                 ");
+                $stmt->execute([$proposalId]);
+                $case = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                if ($case) {
+                    // Update blotter case status
+                    $stmt = $pdo->prepare("
+                        UPDATE blotter_cases 
+                        SET status = 'pending_user_confirmation'
+                        WHERE id = ?
+                    ");
+                    $stmt->execute([$case['id']]);
+
+                    // Send notification to participants
+                    $stmt = $pdo->prepare("
+                        INSERT INTO participant_notifications 
+                        (blotter_case_id, participant_id, notification_type, message, created_at)
+                        SELECT 
+                            bc.id,
+                            bp.id,
+                            'schedule_confirmation',
+                            CONCAT('A hearing has been scheduled for case ', bc.case_number, 
+                                  ' on ', DATE_FORMAT(sp.proposed_date, '%M %d, %Y'), 
+                                  ' at ', TIME_FORMAT(sp.proposed_time, '%h:%i %p'),
+                                  '. Please confirm your availability.'),
+                            NOW()
+                        FROM blotter_cases bc
+                        JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+                        JOIN schedule_proposals sp ON bc.id = sp.blotter_case_id
+                        WHERE sp.id = ?
+                    ");
+                    $stmt->execute([$proposalId]);
+                }
                 
-                $hearingDateTime = $proposal['proposed_date'] . ' ' . $proposal['proposed_time'];
-                $stmt->execute([
-                    $proposal['blotter_case_id'],
-                    $hearingDateTime,
-                    $proposal['presiding_officer'],
-                    $proposal['presiding_officer_position']
-                ]);
-                
-                // Update blotter case
-                $stmt = $pdo->prepare("
-                    UPDATE blotter_cases 
-                    SET hearing_count = 1, status = 'open', scheduled_hearing = ?
-                    WHERE id = ?
-                ");
-                $stmt->execute([$hearingDateTime, $proposal['blotter_case_id']]);
-                
-                // Send final confirmation emails using PHPMailer
-                sendFinalConfirmationEmails($proposal['blotter_case_id']);
-                
-                $message = 'Schedule confirmed! First hearing has been officially scheduled and participants have been notified.';
+                $message = 'Schedule confirmed. Participants will be notified to confirm their availability.';
             } else {
-                $message = 'Schedule confirmed. Waiting for all participant confirmations.';
+                throw new Exception('Failed to confirm schedule');
             }
             
         } else { // reject
@@ -128,7 +131,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['schedule_action'])) {
             ");
             $stmt->execute([$remarks, $remarks, $proposalId, $bid]);
             
-            $message = 'Schedule rejected. Participants will be notified to propose alternative dates.';
+            if ($stmt->rowCount() > 0) {
+                // Notify participants about the rejection
+                $stmt = $pdo->prepare("
+                    INSERT INTO participant_notifications 
+                    (blotter_case_id, participant_id, notification_type, message, created_at)
+                    SELECT 
+                        bc.id,
+                        bp.id,
+                        'schedule_rejection',
+                        CONCAT('The proposed hearing schedule for case ', bc.case_number, 
+                              ' has been rejected. Reason: ', ?),
+                        NOW()
+                    FROM blotter_cases bc
+                    JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+                    JOIN schedule_proposals sp ON bc.id = sp.blotter_case_id
+                    WHERE sp.id = ?
+                ");
+                $stmt->execute([$remarks, $proposalId]);
+                
+                $message = 'Schedule rejected. Participants will be notified to propose alternative dates.';
+            } else {
+                throw new Exception('Failed to reject schedule');
+            }
         }
         
         $pdo->commit();
@@ -207,11 +232,9 @@ $stmt = $pdo->prepare("
         GROUP BY blotter_case_id
     ) pn_stats ON bc.id = pn_stats.blotter_case_id
     WHERE bc.barangay_id = ? 
-      AND sp.status IN ('proposed', 'user_confirmed')
+      AND sp.status = 'proposed'
       AND sp.captain_confirmed = FALSE
-    ORDER BY 
-        CASE WHEN sp.status = 'user_confirmed' THEN 0 ELSE 1 END,
-        sp.created_at ASC
+    ORDER BY sp.created_at ASC
 ");
 $stmt->execute([$bid]);
 $pendingProposals = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -504,9 +527,7 @@ require_once __DIR__ . "/../components/header.php";
                     <!-- Action Buttons -->
                     <div class="flex space-x-2">
                         <button onclick="confirmSchedule(<?= $proposal['id'] ?>, '<?= htmlspecialchars($proposal['case_number']) ?>')" 
-                                class="action-button flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-3 rounded text-sm font-medium transition-all
-                                       <?= $proposal['status'] !== 'user_confirmed' ? 'opacity-50 cursor-not-allowed' : '' ?>"
-                                <?= $proposal['status'] !== 'user_confirmed' ? 'disabled' : '' ?>>
+                                class="action-button flex-1 bg-green-600 hover:bg-green-700 text-white py-2 px-3 rounded text-sm font-medium transition-all">
                             <i class="fas fa-check mr-1"></i>Confirm
                         </button>
                         <button onclick="rejectSchedule(<?= $proposal['id'] ?>, '<?= htmlspecialchars($proposal['case_number']) ?>')" 

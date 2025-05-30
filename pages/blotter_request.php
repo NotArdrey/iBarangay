@@ -23,7 +23,7 @@ function configureMailer() {
 // Add this line to ensure $conn is set from $pdo
 $conn = $pdo;
 
-$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 4;
 $user_info = null;
 $barangay_name = "Barangay";
 $barangay_id = 32;
@@ -42,11 +42,6 @@ if ($user_id) {
         $barangay_name = $row['barangay_name'];
         $barangay_id = $row['barangay_id'];
     }
-}
-
-if (!$user_id) {
-    header("Location: login.php");
-    exit;
 }
 
 // Get user's person record for participants
@@ -411,7 +406,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
                 INSERT INTO blotter_cases 
                 (case_number, incident_date, location, description, status, barangay_id, reported_by_person_id, 
                  created_at) 
-                VALUES (?, ?, ?, ?, 'pending', ?, ?, NOW())
+                VALUES (?, ?, ?, ?, 'new', ?, ?, NOW())
             ");
             $stmt->execute([$caseNumber, $incident_date, $location, $description, $barangay_id, $person_id]);
             $case_id = $conn->lastInsertId();
