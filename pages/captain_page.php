@@ -786,8 +786,7 @@ require_once __DIR__ . "/../components/header.php";
         <?php endif; ?>
     </script>
 </body>
-</html>
-<?php
+</html><?php
 
 // Include the rest of the existing user management functionality
 // (The original user management code from add_staff_official_barangaycaptian.php would continue here)
