@@ -133,8 +133,8 @@ function updateCaseStatus($pdo, $caseId) {
         if ($lastHearing['is_mediation_successful']) {
             $pdo->prepare("UPDATE blotter_cases SET status = 'solved' WHERE id = ?")->execute([$caseId]);
         } elseif ($lastHearing['hearing_number'] >= 3 && 
-                in_array($lastHearing['hearing_outcome'], ['failed', 'no_show_respondent'])) {
-            $pdo->prepare("UPDATE blotter_cases SET status = 'cfa_eligible', is_cfa_eligible = TRUE WHERE id = ?")
+                in_array($lastHearing['hearing_outcome'], ['failed', 'no_show'])) {
+            $pdo->prepare("UPDATE blotter_cases SET status = 'cfa', is_cfa_eligible = TRUE WHERE id = ?")
                 ->execute([$caseId]);
         }
     }
@@ -1085,8 +1085,8 @@ if (!empty($_GET['action'])) {
                 // Insert schedule proposal
                 $stmt = $pdo->prepare("
                     INSERT INTO schedule_proposals
-                    (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position)
-                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                    (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'proposed')
                 ");
                 $stmt->execute([
                     $id,

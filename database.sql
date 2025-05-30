@@ -169,3 +169,44 @@ ADD COLUMN purpose TEXT AFTER business_type,
 ADD COLUMN ctc_number VARCHAR(100) AFTER purpose,
 ADD COLUMN or_number VARCHAR(100) AFTER ctc_number,
 ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- Sessions table (for web sessions)
+CREATE TABLE sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id INT NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent TEXT NULL,
+    payload LONGTEXT NOT NULL,
+    last_activity INT NOT NULL,
+    INDEX idx_sessions_user_id (user_id),
+    INDEX idx_sessions_last_activity (last_activity)
+);
+
+-- Participant Notifications
+CREATE TABLE participant_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    participant_id INT NOT NULL,
+    notification_type ENUM('summons', 'schedule_confirmation', 'schedule_rejection', 'hearing_reminder', 'case_update') NOT NULL,
+    message TEXT NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    confirmed BOOLEAN DEFAULT FALSE,
+    confirmed_at DATETIME NULL,
+    email_address VARCHAR(255) NULL,
+    email_sent BOOLEAN DEFAULT FALSE,
+    email_sent_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_blotter_case (blotter_case_id),
+    INDEX idx_participant (participant_id),
+    INDEX idx_notification_type (notification_type),
+    INDEX idx_is_read (is_read),
+    INDEX idx_confirmed (confirmed),
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (participant_id) REFERENCES blotter_participants(id) ON DELETE CASCADE
+);
+
+/*-------------------------------------------------------------
+  SECTION 7: SAMPLE DATA INSERTION
+  -------------------------------------------------------------*/
