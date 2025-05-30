@@ -157,6 +157,44 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
       scrollbar-width: thin;
       scrollbar-color: #cbd5e1 #f1f5f9;
     }
+
+    .swal2-confirm-button,
+    .swal2-cancel-button {
+      opacity: 1 !important;
+      visibility: visible !important;
+      display: inline-block !important;
+      padding: 12px 30px !important;
+      font-size: 1.1em !important;
+      font-weight: 500 !important;
+      border-radius: 5px !important;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+      transition: all 0.3s ease !important;
+    }
+
+    .swal2-confirm-button {
+      background-color: #d33 !important;
+      color: white !important;
+      border: none !important;
+    }
+
+    .swal2-confirm-button:hover {
+      background-color: #c22 !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
+    }
+
+    .swal2-cancel-button {
+      background-color: #3085d6 !important;
+      color: white !important;
+      border: none !important;
+      margin-left: 10px !important;
+    }
+
+    .swal2-cancel-button:hover {
+      background-color: #2b7ac9 !important;
+      transform: translateY(-1px) !important;
+      box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2) !important;
+    }
   </style>
 </head>
 <body class="bg-gray-50">
@@ -366,7 +404,11 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
       confirmButtonColor: '#d33',
       cancelButtonColor: '#3085d6',
       confirmButtonText: 'Logout',
-      cancelButtonText: 'Cancel'
+      cancelButtonText: 'Cancel',
+      customClass: {
+        confirmButton: 'swal2-confirm-button',
+        cancelButton: 'swal2-cancel-button'
+      }
     }).then((result) => {
       if (result.isConfirmed) {
         document.getElementById('logoutForm').submit();

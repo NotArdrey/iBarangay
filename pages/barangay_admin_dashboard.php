@@ -22,9 +22,9 @@ $totalHouseholds = (int) $stmt->fetchColumn();
 $sql = "SELECT COUNT(*) FROM document_requests dr 
         JOIN persons p ON dr.person_id = p.id 
         LEFT JOIN users u ON p.user_id = u.id 
-        WHERE dr.status = 'pending' AND (u.barangay_id = :bid OR dr.barangay_id = :bid)";
+        WHERE dr.status = 'pending' AND (u.barangay_id = :bid1 OR dr.barangay_id = :bid2)";
 $stmt = $pdo->prepare($sql);
-$stmt->execute([':bid' => $barangay_id]);
+$stmt->execute([':bid1' => $barangay_id, ':bid2' => $barangay_id]);
 $pendingRequests = (int) $stmt->fetchColumn();
 
 $sql = "SELECT COUNT(*) FROM audit_trails a JOIN users u ON a.admin_user_id = u.id WHERE u.barangay_id = :bid AND a.action_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
@@ -171,10 +171,10 @@ $sql = "SELECT dt.name, COUNT(*) AS count FROM document_requests dr
         JOIN document_types dt ON dr.document_type_id = dt.id 
         JOIN persons p ON dr.person_id = p.id 
         LEFT JOIN users u ON p.user_id = u.id 
-        WHERE (u.barangay_id = :bid OR dr.barangay_id = :bid) 
+        WHERE (u.barangay_id = :bid1 OR dr.barangay_id = :bid2) 
         GROUP BY dt.name ORDER BY count DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
-$stmt->execute([':bid' => $barangay_id]);
+$stmt->execute([':bid1' => $barangay_id, ':bid2' => $barangay_id]);
 $docTypeData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $docLabels = [];
