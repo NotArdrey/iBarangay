@@ -39,12 +39,12 @@ $emergency_contacts = [
 ];
 
 // Use the correct column names from your database schema
-$sqlLocal = "SELECT local_barangay_contact FROM barangay_settings WHERE barangay_id = ?";
+$sqlLocal = "SELECT contact_number FROM barangay_settings WHERE barangay_id = ?";
 $stmtLocal = $conn->prepare($sqlLocal);
 $stmtLocal->execute([$barangay_id]);
 $rowLocal = $stmtLocal->fetch(PDO::FETCH_ASSOC);
-$emergency_contacts['local_barangay_contact'] = $rowLocal && !empty($rowLocal['local_barangay_contact'])
-    ? $rowLocal['local_barangay_contact']
+$emergency_contacts['local_barangay_contact'] = $rowLocal && !empty($rowLocal['contact_number'])
+    ? $rowLocal['contact_number']
     : 'No Available Number';
 
 $sqlGlobal = "SELECT pnp_contact, bfp_contact FROM barangay_settings WHERE barangay_id = 0";

@@ -130,3 +130,42 @@ INSERT INTO custom_services (barangay_id, category_id, name, description, icon, 
 (32, 1, 'Medical Mission Registration', 'Register for upcoming medical missions', 'fa-hospital', '/pages/medical_mission.php'),
 (32, 2, 'Tutorial Program', 'Free tutoring for elementary students', 'fa-book', '/pages/tutorial_program.php'),
 (32, 3, 'Food Bank', 'Emergency food assistance for families', 'fa-utensils', '/pages/food_bank.php'); 
+
+
+
+-- Add missing columns to custom_services table
+ALTER TABLE custom_services 
+ADD COLUMN service_type VARCHAR(50) DEFAULT 'general' AFTER barangay_id,
+ADD COLUMN priority_level ENUM('normal', 'high', 'urgent') DEFAULT 'normal' AFTER display_order,
+ADD COLUMN availability_type ENUM('always', 'scheduled', 'limited') DEFAULT 'always' AFTER priority_level,
+ADD COLUMN additional_notes TEXT AFTER availability_type;
+
+
+
+-- Add missing columns to document_requests table
+ALTER TABLE document_requests 
+ADD COLUMN user_id INT AFTER person_id,
+ADD COLUMN first_name VARCHAR(50) AFTER user_id,
+ADD COLUMN middle_name VARCHAR(50) AFTER first_name,
+ADD COLUMN last_name VARCHAR(50) AFTER middle_name,
+ADD COLUMN suffix VARCHAR(10) AFTER last_name,
+ADD COLUMN gender ENUM('Male', 'Female', 'Others') AFTER suffix,
+ADD COLUMN civil_status VARCHAR(50) AFTER gender,
+ADD COLUMN citizenship VARCHAR(50) DEFAULT 'Filipino' AFTER civil_status,
+ADD COLUMN birth_date DATE AFTER citizenship,
+ADD COLUMN birth_place VARCHAR(100) AFTER birth_date,
+ADD COLUMN religion VARCHAR(50) AFTER birth_place,
+ADD COLUMN education_level VARCHAR(100) AFTER religion,
+ADD COLUMN occupation VARCHAR(100) AFTER education_level,
+ADD COLUMN monthly_income DECIMAL(10,2) AFTER occupation,
+ADD COLUMN contact_number VARCHAR(20) AFTER monthly_income,
+ADD COLUMN address_no VARCHAR(50) AFTER contact_number,
+ADD COLUMN street VARCHAR(100) AFTER address_no,
+ADD COLUMN business_name VARCHAR(100) AFTER street,
+ADD COLUMN business_location VARCHAR(200) AFTER business_name,
+ADD COLUMN business_nature VARCHAR(200) AFTER business_location,
+ADD COLUMN business_type VARCHAR(100) AFTER business_nature,
+ADD COLUMN purpose TEXT AFTER business_type,
+ADD COLUMN ctc_number VARCHAR(100) AFTER purpose,
+ADD COLUMN or_number VARCHAR(100) AFTER ctc_number,
+ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;

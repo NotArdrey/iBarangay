@@ -7,6 +7,8 @@ $hasPendingRequest = false;
 $pendingRequests = [];
 $hasPendingBlotter = false;
 $pendingBlotterCases = [];
+$hasInsufficientResidency = false;
+$residencyDetails = [];
 
 if (isset($_SESSION['user_id'])) {
     // First check for pending document requests
@@ -17,14 +19,13 @@ if (isset($_SESSION['user_id'])) {
             dr.created_at,
             dr.request_date,
             dr.price,
-            dr.first_name,
-            dr.last_name,
-            dr.purpose,
-            dr.business_name,
+            p.first_name,
+            p.last_name,
             dt.name as document_name, 
             dt.code as document_code
         FROM document_requests dr
         JOIN document_types dt ON dr.document_type_id = dt.id
+        JOIN persons p ON dr.person_id = p.id
         WHERE dr.user_id = ? 
         AND dr.status IN ('pending', 'processing', 'for_payment')
         ORDER BY dr.created_at DESC
@@ -47,6 +48,45 @@ if (isset($_SESSION['user_id'])) {
     $stmt->execute([$_SESSION['user_id']]);
     $pendingBlotterCases = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $hasPendingBlotter = count($pendingBlotterCases) > 0;
+
+    // NEW: Check residency requirement (6 months minimum)
+    $stmt = $pdo->prepare("
+        SELECT 
+            p.id,
+            p.first_name,
+            p.last_name,
+            p.years_of_residency,
+            a.years_in_san_rafael,
+            a.residency_type,
+            a.created_at as address_record_created,
+            CASE 
+                WHEN p.years_of_residency >= 1 THEN 'sufficient_years'
+                WHEN a.years_in_san_rafael >= 1 THEN 'sufficient_address_years'
+                WHEN TIMESTAMPDIFF(MONTH, a.created_at, NOW()) >= 6 THEN 'sufficient_record_age'
+                ELSE 'insufficient'
+            END as residency_status,
+            CASE 
+                WHEN p.years_of_residency >= 1 THEN p.years_of_residency
+                WHEN a.years_in_san_rafael >= 1 THEN a.years_in_san_rafael
+                ELSE TIMESTAMPDIFF(MONTH, a.created_at, NOW())
+            END as computed_months
+        FROM persons p
+        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+        WHERE p.user_id = ? AND a.barangay_id = ?
+    ");
+    $stmt->execute([$_SESSION['user_id'], $_SESSION['barangay_id']]);
+    $residencyDetails = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($residencyDetails) {
+        $hasInsufficientResidency = ($residencyDetails['residency_status'] === 'insufficient');
+    } else {
+        // No person/address record found - this is also insufficient
+        $hasInsufficientResidency = true;
+        $residencyDetails = [
+            'residency_status' => 'no_record',
+            'computed_months' => 0
+        ];
+    }
 }
 
 // Handle form submission for document requests - UPDATED VERSION
@@ -68,6 +108,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $caseDetails[] = "Case #" . $case['case_number'] . " in " . $case['barangay_name'];
             }
             throw new Exception("You have pending blotter case(s): " . implode(", ", $caseDetails) . ". Document requests are not allowed until your case(s) are resolved.");
+        }
+
+        // NEW: Check residency requirement
+        if ($hasInsufficientResidency) {
+            if ($residencyDetails['residency_status'] === 'no_record') {
+                throw new Exception("No residency record found. Please ensure your profile and address information are complete in the census system before requesting documents.");
+            } else {
+                $monthsLived = $residencyDetails['computed_months'];
+                $monthsNeeded = 6 - $monthsLived;
+                throw new Exception("Insufficient residency period. You need to be a resident for at least 6 months to request documents. You currently have {$monthsLived} month(s) of recorded residency. Please wait {$monthsNeeded} more month(s) or update your census information if this is incorrect.");
+            }
         }
 
         // Check if user has pending requests
@@ -98,7 +149,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $person = $stmt->fetch();
         
         if (!$person) {
-            throw new Exception("User profile not found");
+            throw new Exception("User profile not found in census system. Please complete your resident profile first.");
         }
 
         // Get user's address information
@@ -110,6 +161,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ");
         $stmt->execute([$user_id]);
         $address = $stmt->fetch();
+
+        if (!$address) {
+            throw new Exception("Address information not found in census system. Please complete your address information first.");
+        }
 
         // Get document type info for determining price
         $stmt = $pdo->prepare("
@@ -355,6 +410,8 @@ $currentTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
 $startTime = new DateTime('08:00:00', new DateTimeZone('Asia/Manila'));
 $endTime = new DateTime('17:00:00', new DateTimeZone('Asia/Manila'));
 $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
+
+require_once '../components/navbar.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -367,48 +424,7 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
     <link rel="stylesheet" href="../styles/services.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-    /* User Info Styles */
-    .user-info {
-        display: flex;
-        align-items: center;
-        gap: 0.8rem;
-        padding: 0.5rem 1rem;
-        background: #ffffff;
-        border: 1px solid #e0e0e0;
-        border-radius: 8px;
-        color: #333333;
-        margin-left: 1rem;
-        transition: all 0.2s ease;
-    }
-
-    .user-info:hover {
-        background: #f8f8f8;
-        border-color: #d0d0d0;
-    }
-
-    .user-avatar {
-        font-size: 1.5rem;
-        color: #666666;
-        display: flex;
-        align-items: center;
-    }
-
-    .user-details {
-        display: flex;
-        flex-direction: column;
-        line-height: 1.2;
-    }
-
-    .user-name {
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #0a2240;
-    }
-
-    .user-barangay {
-        font-size: 0.75rem;
-        color: #0a2240;
-    }
+    
 
     /* Footer fix */
     body {
@@ -635,6 +651,47 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
         margin-bottom: 1rem;
         text-align: center;
     }
+
+    /* NEW: Residency warning styles */
+    .residency-warning {
+        background: #dc3545;
+        color: white;
+        padding: 1rem;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+    }
+
+    .residency-warning h4 {
+        margin: 0 0 0.5rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .residency-warning p {
+        margin: 0.5rem 0;
+    }
+
+    .residency-warning ul {
+        margin: 0.5rem 0;
+        padding-left: 2rem;
+    }
+
+    .residency-info {
+        background: #e3f2fd;
+        border: 1px solid #bbdefb;
+        color: #1976d2;
+        padding: 1rem;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+    }
+
+    .residency-info h4 {
+        margin: 0 0 0.5rem 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
     </style>
 </head>
 <body>
@@ -658,35 +715,7 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
     </script>
     <?php unset($_SESSION['error']); endif; ?>
 
-    <!-- Navigation Bar -->
-    <header> 
-      <nav class="navbar">
-        <a href="#" class="logo">
-          <img src="../photo/logo.png" alt="iBarangay Logo" />
-          <h2>iBarangay</h2>
-        </a>
-        <button class="mobile-menu-btn" aria-label="Toggle navigation menu">
-          <i class="fas fa-bars"></i>
-        </button>
-        <div class="nav-links">
-          <a href="../pages/user_dashboard.php#home">Home</a>
-          <a href="../pages/user_dashboard.php#about">About</a>
-          <a href="../pages/user_dashboard.php#services">Services</a>
-          <a href="../pages/user_dashboard.php#contact">Contact</a>
-          <?php if (!empty($userName)): ?>
-          <div class="user-info" onclick="window.location.href='../pages/edit_account.php'" style="cursor: pointer;">
-            <div class="user-avatar">
-              <i class="fas fa-user-circle"></i>
-            </div>
-            <div class="user-details">
-              <div class="user-name"><?php echo htmlspecialchars($userName); ?></div>
-              <div class="user-barangay"><?php echo htmlspecialchars($barangayName); ?></div>
-            </div>
-          </div>
-          <?php endif; ?>
-        </div>
-      </nav>
-    </header>
+  
 
     <main>
         <?php if ($showPending && count($pendingRequests) > 0): ?>
@@ -755,11 +784,39 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     <p style="margin: 0.5rem 0;">Document requests are not allowed until your case(s) are resolved.</p>
                 </div>
                 <?php endif; ?>
+
+                <?php if ($hasInsufficientResidency): ?>
+                <div class="residency-warning">
+                    <h4><i class="fas fa-home"></i> Insufficient Residency Period</h4>
+                    <?php if ($residencyDetails['residency_status'] === 'no_record'): ?>
+                        <p><strong>No residency record found.</strong></p>
+                        <p>We could not find your residency information in our census system. To request documents, you need:</p>
+                        <ul>
+                            <li>Complete personal profile in the census system</li>
+                            <li>Complete address information</li>
+                            <li>At least 6 months of recorded residency in this barangay</li>
+                        </ul>
+                        <p>Please visit the barangay office to complete your census registration or update your profile.</p>
+                    <?php else: ?>
+                        <p><strong>You need to be a resident for at least 6 months to request documents.</strong></p>
+                        <p>Current residency period: <strong><?= $residencyDetails['computed_months'] ?> month(s)</strong></p>
+                        <p>You need <strong><?= (6 - $residencyDetails['computed_months']) ?> more month(s)</strong> before you can request documents.</p>
+                        <p>If you believe this information is incorrect, please visit the barangay office to update your census records.</p>
+                    <?php endif; ?>
+                    <p><em>This requirement ensures that documents are only issued to established residents of the barangay.</em></p>
+                </div>
+                <?php elseif ($residencyDetails && $residencyDetails['residency_status'] !== 'no_record'): ?>
+                <div class="residency-info">
+                    <h4><i class="fas fa-check-circle"></i> Residency Verified</h4>
+                    <p>Residency period: <strong><?= $residencyDetails['computed_months'] >= 12 ? floor($residencyDetails['computed_months'] / 12) . ' year(s) ' . ($residencyDetails['computed_months'] % 12) . ' month(s)' : $residencyDetails['computed_months'] . ' month(s)' ?></strong></p>
+                    <p>You meet the minimum 6-month residency requirement for document requests.</p>
+                </div>
+                <?php endif; ?>
                 
                 <form method="POST" action="" enctype="multipart/form-data" id="docRequestForm">
                     <div class="form-row">
                         <label for="documentType">Document Type</label>
-                        <select id="documentType" name="document_type_id" required>
+                        <select id="documentType" name="document_type_id" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <option value="">Select Document</option>
                             <?php
                             // Always show all 6 supported documents in the correct order
@@ -803,35 +860,35 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     <div id="clearanceFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="purposeClearance">Purpose of Clearance</label>
-                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)">
+                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
                     <div id="residencyFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="residencyDuration">Duration of Residency</label>
-                            <input type="text" id="residencyDuration" name="residencyDuration" placeholder="e.g., 5 years">
+                            <input type="text" id="residencyDuration" name="residencyDuration" placeholder="e.g., 5 years" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="residencyPurpose">Purpose</label>
-                            <input type="text" id="residencyPurpose" name="residencyPurpose" placeholder="Enter purpose (e.g., School enrollment, Scholarship, etc.)">
+                            <input type="text" id="residencyPurpose" name="residencyPurpose" placeholder="Enter purpose (e.g., School enrollment, Scholarship, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
                     <div id="indigencyFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="indigencyReason">Reason for Requesting</label>
-                            <input type="text" id="indigencyReason" name="indigencyReason" placeholder="Enter reason (e.g., Medical assistance, Educational assistance, etc.)">
+                            <input type="text" id="indigencyReason" name="indigencyReason" placeholder="Enter reason (e.g., Medical assistance, Educational assistance, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label>Your Photo <span style="color: red;">*</span></label>
                             <div class="photo-upload-container" id="photoUploadContainer">
-                                <input type="file" id="userPhoto" name="userPhoto" accept="image/*" style="display: none;" required>
+                                <input type="file" id="userPhoto" name="userPhoto" accept="image/*" style="display: none;" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                 <div class="upload-options">
-                                    <button type="button" class="upload-btn" onclick="document.getElementById('userPhoto').click();">
+                                    <button type="button" class="upload-btn" onclick="document.getElementById('userPhoto').click();" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                         <i class="fas fa-upload"></i> Choose Photo
                                     </button>
-                                    <button type="button" class="upload-btn" onclick="openCamera();">
+                                    <button type="button" class="upload-btn" onclick="openCamera();" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                         <i class="fas fa-camera"></i> Take Photo
                                     </button>
                                 </div>
@@ -849,34 +906,34 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     <div id="cedulaFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="cedulaOccupation">Occupation</label>
-                            <input type="text" id="cedulaOccupation" name="cedulaOccupation" placeholder="Enter your occupation">
+                            <input type="text" id="cedulaOccupation" name="cedulaOccupation" placeholder="Enter your occupation" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="cedulaIncome">Annual Income</label>
-                            <input type="number" id="cedulaIncome" name="cedulaIncome" placeholder="Enter annual income in PHP" min="0" step="0.01">
+                            <input type="number" id="cedulaIncome" name="cedulaIncome" placeholder="Enter annual income in PHP" min="0" step="0.01" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="cedulaBirthplace">Place of Birth (Optional)</label>
-                            <input type="text" id="cedulaBirthplace" name="cedulaBirthplace" placeholder="Enter place of birth">
+                            <input type="text" id="cedulaBirthplace" name="cedulaBirthplace" placeholder="Enter place of birth" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
                     <div id="businessPermitFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="businessName">Business Name <span style="color: red;">*</span></label>
-                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name" required>
+                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessType">Type of Business <span style="color: red;">*</span></label>
-                            <input type="text" id="businessType" name="businessType" placeholder="Enter type of business (e.g., Retail, Restaurant, etc.)" required>
+                            <input type="text" id="businessType" name="businessType" placeholder="Enter type of business (e.g., Retail, Restaurant, etc.)" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessAddress">Business Location/Address <span style="color: red;">*</span></label>
-                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" required>
+                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessPurpose">Nature of Business <span style="color: red;">*</span></label>
-                            <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Describe the nature of business operations" required>
+                            <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Describe the nature of business operations" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <small class="input-help">Describe what your business does (e.g., Food Service, General Merchandise, etc.)</small>
                         </div>
                     </div>
@@ -884,21 +941,21 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     <div id="communityTaxFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="ctcOccupation">Occupation</label>
-                            <input type="text" id="ctcOccupation" name="ctcOccupation" placeholder="Enter your occupation">
+                            <input type="text" id="ctcOccupation" name="ctcOccupation" placeholder="Enter your occupation" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="ctcIncome">Annual Income</label>
-                            <input type="number" id="ctcIncome" name="ctcIncome" placeholder="Enter annual income in PHP" min="0" step="0.01">
+                            <input type="number" id="ctcIncome" name="ctcIncome" placeholder="Enter annual income in PHP" min="0" step="0.01" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <small class="input-help">This field is required for tax computation</small>
                         </div>
                         <div class="form-row">
                             <label for="ctcPropertyValue">Real Property Value (Optional)</label>
-                            <input type="number" id="ctcPropertyValue" name="ctcPropertyValue" placeholder="Enter total value of real property owned" min="0" step="0.01">
+                            <input type="number" id="ctcPropertyValue" name="ctcPropertyValue" placeholder="Enter total value of real property owned" min="0" step="0.01" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <small class="input-help">Enter if you own real property (land, house, etc.)</small>
                         </div>
                         <div class="form-row">
                             <label for="ctcBirthplace">Place of Birth (Optional)</label>
-                            <input type="text" id="ctcBirthplace" name="ctcBirthplace" placeholder="Enter place of birth">
+                            <input type="text" id="ctcBirthplace" name="ctcBirthplace" placeholder="Enter place of birth" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
@@ -906,8 +963,16 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     <input type="hidden" name="override_pending" value="1">
                     <?php endif; ?>
 
-                    <button type="submit" class="btn cta-button" id="submitBtn" <?= !$isWithinTimeGate ? 'disabled' : '' ?>>
-                        <?= !$isWithinTimeGate ? 'Unavailable (8AM-5PM)' : 'Submit Request' ?>
+                    <button type="submit" class="btn cta-button" id="submitBtn" <?= (!$isWithinTimeGate || $hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
+                        <?php if (!$isWithinTimeGate): ?>
+                            Unavailable (8AM-5PM)
+                        <?php elseif ($hasInsufficientResidency): ?>
+                            Insufficient Residency Period
+                        <?php elseif ($hasPendingBlotter): ?>
+                            Restricted - Pending Blotter Case
+                        <?php else: ?>
+                            Submit Request
+                        <?php endif; ?>
                     </button>
                 </form>
             </div>
@@ -923,9 +988,15 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
     var barangayPrices = <?= json_encode($barangayPrices) ?>;
     var isWithinTimeGateJS = <?= json_encode($isWithinTimeGate) ?>;
     var hasPendingBlotterJS = <?= json_encode($hasPendingBlotter) ?>;
+    var hasInsufficientResidencyJS = <?= json_encode($hasInsufficientResidency) ?>;
 
     // Photo upload functions
     function openCamera() {
+        if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
+            Swal.fire('Error', 'Camera function is disabled due to validation restrictions.', 'error');
+            return;
+        }
+        
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
             navigator.mediaDevices.getUserMedia({ video: true })
                 .then(function(stream) {
@@ -1010,6 +1081,12 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
         // Handle file selection
         if (userPhotoInput) {
             userPhotoInput.addEventListener('change', function(e) {
+                if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
+                    this.value = '';
+                    Swal.fire('Error', 'File upload is disabled due to validation restrictions.', 'error');
+                    return;
+                }
+                
                 const file = e.target.files[0];
                 if (file) {
                     // Validate file size
@@ -1056,6 +1133,11 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
 
         function setFieldsRequired(container, documentCode) {
             if (!container) return;
+            
+            // Only set required if not disabled
+            if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
+                return;
+            }
 
             // Set required fields based on document type
             switch(documentCode) {
@@ -1188,6 +1270,15 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
                     return;
                 }
 
+                if (hasInsufficientResidencyJS) {
+                    Swal.fire({
+                        title: 'Insufficient Residency',
+                        text: 'You need to be a resident for at least 6 months to request documents. Please check your residency information or contact the barangay office.',
+                        icon: 'error'
+                    });
+                    return;
+                }
+
                 <?php if ($hasPendingRequest): ?>
                 Swal.fire({
                     title: 'Pending Request Warning',
@@ -1247,11 +1338,17 @@ $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
             }
         }
 
-        // Initial check for submit button state based on time gate and blotter cases
-        if (!isWithinTimeGateJS || hasPendingBlotterJS) {
+        // Initial check for submit button state based on all validation conditions
+        if (!isWithinTimeGateJS || hasPendingBlotterJS || hasInsufficientResidencyJS) {
             if (submitBtn) {
                 submitBtn.disabled = true;
-                submitBtn.textContent = !isWithinTimeGateJS ? 'Unavailable (8AM-5PM)' : 'Restricted - Pending Blotter Case';
+                if (!isWithinTimeGateJS) {
+                    submitBtn.textContent = 'Unavailable (8AM-5PM)';
+                } else if (hasInsufficientResidencyJS) {
+                    submitBtn.textContent = 'Insufficient Residency Period';
+                } else if (hasPendingBlotterJS) {
+                    submitBtn.textContent = 'Restricted - Pending Blotter Case';
+                }
             }
         }
     });

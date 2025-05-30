@@ -18,10 +18,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $detailed_guide = trim($_POST['detailed_guide'] ?? '');
     $processing_time = trim($_POST['processing_time'] ?? '');
     $fees = trim($_POST['fees'] ?? '');
-    $service_type = trim($_POST['service_type'] ?? 'general');
-    $priority = trim($_POST['priority'] ?? 'normal');
-    $availability = trim($_POST['availability'] ?? 'always');
-    $additional_notes = trim($_POST['additional_notes'] ?? '');
     $barangay_id = $_SESSION['barangay_id'];
 
     // Validate required fields
@@ -46,6 +42,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // Start transaction
         $pdo->beginTransaction();
 
+        // Get or create a default category for this barangay
+        $stmt = $pdo->prepare("
+            SELECT id FROM service_categories 
+            WHERE barangay_id = ? AND name = 'General Services'
+            LIMIT 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $category = $stmt->fetch();
+        
+        if (!$category) {
+            // Create default category
+            $stmt = $pdo->prepare("
+                INSERT INTO service_categories (barangay_id, name, description, icon, display_order, is_active) 
+                VALUES (?, 'General Services', 'General barangay services', 'fa-cog', 1, 1)
+            ");
+            $stmt->execute([$barangay_id]);
+            $category_id = $pdo->lastInsertId();
+        } else {
+            $category_id = $category['id'];
+        }
+
         // Get the current max display_order
         $stmt = $pdo->prepare("
             SELECT MAX(display_order) as max_order 
@@ -56,17 +73,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = $stmt->fetch();
         $display_order = ($result['max_order'] ?? 0) + 1;
 
-        // Insert new service
+        // Insert new service (using only existing columns)
         $stmt = $pdo->prepare("
             INSERT INTO custom_services (
-                barangay_id, name, description, icon,
+                category_id, barangay_id, name, description, icon,
                 requirements, detailed_guide, processing_time, fees, 
-                display_order, is_active, service_type, priority_level,
-                availability_type, additional_notes
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?)
+                display_order, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ");
         
         $stmt->execute([
+            $category_id,
             $barangay_id,
             $name,
             $description,
@@ -75,11 +92,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $detailed_guide,
             $processing_time,
             $fees,
-            $display_order,
-            $service_type,
-            $priority,
-            $availability,
-            $additional_notes
+            $display_order
         ]);
 
         // Log the action
@@ -122,4 +135,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 } else {
     http_response_code(405);
     echo json_encode(['success' => false, 'message' => 'Method not allowed']);
-} 
+}

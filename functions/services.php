@@ -11,7 +11,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (empty($documentTypeId)) {
             throw new Exception("Please select a document type");
         }
-
         // Get user info
         if (!isset($_SESSION['user_id'])) {
             throw new Exception("Please log in to submit a request");
@@ -34,15 +33,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Insert into document_requests table
             $stmt = $pdo->prepare("
                 INSERT INTO document_requests 
-                (document_type_id, person_id, user_id, barangay_id, requested_by_user_id, status, request_date) 
-                VALUES (?, ?, ?, ?, ?, 'pending', NOW())
+                (document_type_id, person_id, user_id, barangay_id, status, request_date) 
+                VALUES (?, ?, ?, ?, 'pending', NOW())
             ");
             $stmt->execute([
                 $documentTypeId,
                 $person['id'],
                 $user_id,
-                $_SESSION['barangay_id'],
-                $user_id
+                $_SESSION['barangay_id']
             ]);
             $requestId = $pdo->lastInsertId();
 
@@ -219,22 +217,38 @@ if (isset($_SESSION['user_id'])) {
     }
 }
 
-// Get all document types (only the 6 supported)
+// Get all document types from database
 $stmt = $pdo->query("
-SELECT dt.id, dt.name, dt.code, dt.description
+SELECT dt.id, dt.name, dt.code, dt.description, dt.default_fee
 FROM document_types dt
 WHERE dt.is_active = 1
-  AND dt.code IN (
-    'barangay_indigency',
-    'barangay_clearance',
-    'cedula',
-    'proof_of_residency',
-    'business_permit_clearance',
-    'community_tax_certificate'
-  )
 ORDER BY dt.name
 ");
-$documentTypes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$dbDocumentTypes = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Create a map for quick lookup
+$docMap = [];
+foreach ($dbDocumentTypes as $doc) {
+    $docMap[$doc['code']] = $doc;
+}
+
+// Define the correct order with Barangay Clearance first
+$requiredDocs = [
+    'barangay_clearance',           // Most common - should be first
+    'barangay_indigency', 
+    'proof_of_residency',
+    'cedula',
+    'business_permit_clearance',
+    'community_tax_certificate'
+];
+
+// Build ordered document types array
+$documentTypes = [];
+foreach ($requiredDocs as $code) {
+    if (isset($docMap[$code])) {
+        $documentTypes[] = $docMap[$code];
+    }
+}
 
 $selectedDocumentType = $_GET['documentType'] ?? '';
 ?>
@@ -257,7 +271,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
             html: `<b><?= $_SESSION['success']['message'] ?></b><br><br><?= $_SESSION['success']['processing'] ?>`,
             icon: 'success'
         }).then(() => {
-            window.location.href = '../pages/user_dashboard.php';
+            window.location.href = 'user_dashboard.php';
         });
     </script>
     <?php unset($_SESSION['success']); endif; ?>
@@ -272,7 +286,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
     </script>
     <?php unset($_SESSION['error']); endif; ?>
 
-    <!-- Navigation Bar (copied from user_dashboard.php) -->
+    <!-- Navigation Bar -->
     <header> 
       <nav class="navbar">
         <a href="#" class="logo">
@@ -301,178 +315,224 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
         </div>
       </nav>
     </header>
-    <!-- Add CSS for User Info in Navbar -->
+
     <style>
-    /* User Info Styles - Minimalist Version */
-.user-info {
-    display: flex;
-    align-items: center;
-    gap: 0.8rem;
-    padding: 0.5rem 1rem;
-    background: #ffffff;
-    border: 1px solid #e0e0e0;
-    border-radius: 8px;
-    color: #333333;
-    margin-left: 1rem;
-    transition: all 0.2s ease;
-}
+    /* User Info Styles */
+    .user-info {
+        display: flex;
+        align-items: center;
+        gap: 0.8rem;
+        padding: 0.5rem 1rem;
+        background: #ffffff;
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        color: #333333;
+        margin-left: 1rem;
+        transition: all 0.2s ease;
+    }
 
-.user-info:hover {
-    background: #f8f8f8;
-    border-color: #d0d0d0;
-}
+    .user-info:hover {
+        background: #f8f8f8;
+        border-color: #d0d0d0;
+    }
 
-.user-avatar {
-    font-size: 1.5rem;
-    color: #666666;
-    display: flex;
-    align-items: center;
-}
+    .user-avatar {
+        font-size: 1.5rem;
+        color: #666666;
+        display: flex;
+        align-items: center;
+    }
 
-.user-details {
-    display: flex;
-    flex-direction: column;
-    line-height: 1.2;
-}
+    .user-details {
+        display: flex;
+        flex-direction: column;
+        line-height: 1.2;
+    }
 
-.user-name {
-    font-size: 0.9rem;
-    font-weight: 500;
-    color: #0a2240; /* navy blue */
-}
+    .user-name {
+        font-size: 0.9rem;
+        font-weight: 500;
+        color: #0a2240;
+    }
 
-.user-barangay {
-    font-size: 0.75rem;
-    color: #0a2240; /* navy blue */
-}
+    .user-barangay {
+        font-size: 0.75rem;
+        color: #0a2240;
+    }
+
+    /* Document Info Styles */
+    .document-info {
+        background: #f8f9fa;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        padding: 1rem;
+        margin-bottom: 1rem;
+        font-size: 0.9rem;
+    }
+
+    .document-info h4 {
+        margin: 0 0 0.5rem 0;
+        color: #0a2240;
+        font-size: 1rem;
+    }
+
+    .document-info p {
+        margin: 0;
+        color: #6c757d;
+        line-height: 1.4;
+    }
+
+    .fee-highlight {
+        background: #e8f5e8;
+        border: 1px solid #d4edda;
+        border-radius: 4px;
+        padding: 0.5rem;
+        margin-top: 0.5rem;
+        color: #155724;
+        font-weight: 500;
+    }
+
+    .fee-highlight.paid {
+        background: #fff3cd;
+        border-color: #ffeaa7;
+        color: #856404;
+    }
     </style>
 
     <main>
         <section class="wizard-section">
             <div class="wizard-container">
                 <h2 class="form-header">Document Request</h2>
-                <form method="POST" action="<?php echo $_SERVER['PHP_SELF']; ?>" enctype="multipart/form-data" id="docRequestForm">
+                
+                <!-- Document Information Display -->
+                <div id="documentInfo" class="document-info" style="display: none;">
+                    <h4 id="docInfoTitle">Document Information</h4>
+                    <p id="docInfoDescription">Select a document to see details</p>
+                    <div id="docInfoFee" class="fee-highlight">Fee: ₱0.00</div>
+                </div>
+
+                <form method="POST" action="../functions/services.php" enctype="multipart/form-data" id="docRequestForm">
                     <div class="form-row">
-                        <label for="documentType">Document Type</label>
+                        <label for="documentType">Document Type *</label>
                         <select id="documentType" name="document_type_id" required>
-                            <option value="">Select Document</option>
-                            <?php
-                            // Always show all 6 supported documents in the correct order
-                            $requiredDocs = [
-                                'barangay_clearance',
-                                'barangay_indigency',
-                                'business_permit_clearance',
-                                'cedula',
-                                'proof_of_residency',
-                                'community_tax_certificate'
-                            ];
-                            // Build a map for quick lookup
-                            $docMap = [];
-                            foreach ($documentTypes as $doc) {
-                                $docMap[$doc['code']] = $doc;
-                            }
-                            foreach ($requiredDocs as $code) {
-                                if (isset($docMap[$code])) {
-                                    $doc = $docMap[$code];
-                                    ?>
-                                    <option value="<?= $doc['id'] ?>" data-code="<?= $doc['code'] ?>">
-                                        <?= htmlspecialchars($doc['name']) ?>
-                                    </option>
-                                    <?php
-                                }
-                            }
-                            ?>
+                            <option value="">Select Document Type</option>
+                            <?php foreach ($documentTypes as $doc): ?>
+                                <option value="<?= $doc['id'] ?>" 
+                                        data-code="<?= $doc['code'] ?>"
+                                        data-fee="<?= $doc['default_fee'] ?>"
+                                        data-description="<?= htmlspecialchars($doc['description'] ?? '') ?>">
+                                    <?= htmlspecialchars($doc['name']) ?>
+                                </option>
+                            <?php endforeach; ?>
                         </select>
                     </div>
 
-                    <!-- Document price/fee label -->
                     <div class="form-row">
-                        <label>Document Fee:</label>
-                        <span id="feeAmount" style="font-weight:bold;">₱0.00</span>
+                        <label for="deliveryMethod">Delivery Method *</label>
+                        <select id="deliveryMethod" name="deliveryMethod" required>
+                            <option value="">Select Delivery Method</option>
+                            <option value="Softcopy">Softcopy (Digital)</option>
+                            <option value="Hardcopy">Hardcopy (Physical)</option>
+                        </select>
                     </div>
 
-                    <!-- Document-specific fields for the 6 document types -->
+                    <!-- Document-specific fields -->
                     <div id="clearanceFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="purposeClearance">Purpose of Clearance</label>
-                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)">
+                            <label for="purposeClearance">Purpose of Clearance *</label>
+                            <input type="text" id="purposeClearance" name="purposeClearance" 
+                                   placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" required>
                         </div>
                     </div>
 
                     <div id="residencyFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="residencyDuration">Duration of Residency</label>
-                            <input type="text" id="residencyDuration" name="residencyDuration" placeholder="e.g., 5 years">
+                            <label for="residencyDuration">Duration of Residency *</label>
+                            <input type="text" id="residencyDuration" name="residencyDuration" 
+                                   placeholder="e.g., 5 years" required>
                         </div>
                         <div class="form-row">
-                            <label for="residencyPurpose">Purpose</label>
-                            <input type="text" id="residencyPurpose" name="residencyPurpose" placeholder="Enter purpose (e.g., School enrollment, Scholarship, etc.)">
+                            <label for="residencyPurpose">Purpose *</label>
+                            <input type="text" id="residencyPurpose" name="residencyPurpose" 
+                                   placeholder="Enter purpose (e.g., School enrollment, Scholarship, etc.)" required>
                         </div>
                     </div>
 
                     <div id="indigencyFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="indigencyReason">Reason for Requesting</label>
-                            <input type="text" id="indigencyReason" name="indigencyReason" placeholder="Enter reason (e.g., Medical assistance, Educational assistance, etc.)">
+                            <label for="indigencyReason">Reason for Requesting *</label>
+                            <input type="text" id="indigencyReason" name="indigencyReason" 
+                                   placeholder="Enter reason (e.g., Medical assistance, Educational assistance, etc.)" required>
                         </div>
                     </div>
 
                     <div id="cedulaFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="cedulaOccupation">Occupation</label>
-                            <input type="text" id="cedulaOccupation" name="cedulaOccupation" placeholder="Enter your occupation">
+                            <label for="cedulaOccupation">Occupation *</label>
+                            <input type="text" id="cedulaOccupation" name="cedulaOccupation" 
+                                   placeholder="Enter your occupation" required>
                         </div>
                         <div class="form-row">
-                            <label for="cedulaIncome">Annual Income</label>
-                            <input type="number" id="cedulaIncome" name="cedulaIncome" placeholder="Enter annual income in PHP" min="0" step="0.01">
+                            <label for="cedulaIncome">Annual Income *</label>
+                            <input type="number" id="cedulaIncome" name="cedulaIncome" 
+                                   placeholder="Enter annual income in PHP" min="0" step="0.01" required>
                         </div>
                         <div class="form-row">
-                            <label for="cedulaBirthplace">Place of Birth (Optional)</label>
-                            <input type="text" id="cedulaBirthplace" name="cedulaBirthplace" placeholder="Enter place of birth">
+                            <label for="cedulaBirthplace">Place of Birth</label>
+                            <input type="text" id="cedulaBirthplace" name="cedulaBirthplace" 
+                                   placeholder="Enter place of birth">
                         </div>
                     </div>
 
                     <div id="businessPermitFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="businessName">Business Name</label>
-                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name">
+                            <label for="businessName">Business Name *</label>
+                            <input type="text" id="businessName" name="businessName" 
+                                   placeholder="Enter business name" required>
                         </div>
                         <div class="form-row">
-                            <label for="businessType">Business Type</label>
-                            <input type="text" id="businessType" name="businessType" placeholder="Enter type/nature of business (e.g., Retail, Restaurant, etc.)">
+                            <label for="businessType">Business Type *</label>
+                            <input type="text" id="businessType" name="businessType" 
+                                   placeholder="Enter type/nature of business (e.g., Retail, Restaurant, etc.)" required>
                         </div>
                         <div class="form-row">
-                            <label for="businessAddress">Business Address</label>
-                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address">
+                            <label for="businessAddress">Business Address *</label>
+                            <input type="text" id="businessAddress" name="businessAddress" 
+                                   placeholder="Enter complete business address" required>
                         </div>
                         <div class="form-row">
-                            <label for="businessPurpose">Purpose</label>
-                            <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Purpose for business clearance (e.g., New business permit, Renewal, etc.)">
+                            <label for="businessPurpose">Purpose *</label>
+                            <input type="text" id="businessPurpose" name="businessPurpose" 
+                                   placeholder="Purpose for business clearance (e.g., New business permit, Renewal, etc.)" required>
                         </div>
                     </div>
 
                     <div id="communityTaxFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="ctcOccupation">Occupation</label>
-                            <input type="text" id="ctcOccupation" name="ctcOccupation" placeholder="Enter your occupation">
+                            <label for="ctcOccupation">Occupation *</label>
+                            <input type="text" id="ctcOccupation" name="ctcOccupation" 
+                                   placeholder="Enter your occupation" required>
                         </div>
                         <div class="form-row">
-                            <label for="ctcIncome">Annual Income</label>
-                            <input type="number" id="ctcIncome" name="ctcIncome" placeholder="Enter annual income in PHP" min="0" step="0.01" required>
-                            <small class="input-help">This field is required for tax computation</small>
+                            <label for="ctcIncome">Annual Income *</label>
+                            <input type="number" id="ctcIncome" name="ctcIncome" 
+                                   placeholder="Enter annual income in PHP" min="0" step="0.01" required>
                         </div>
                         <div class="form-row">
-                            <label for="ctcPropertyValue">Real Property Value (Optional)</label>
-                            <input type="number" id="ctcPropertyValue" name="ctcPropertyValue" placeholder="Enter total value of real property owned" min="0" step="0.01">
-                            <small class="input-help">Enter if you own real property (land, house, etc.)</small>
+                            <label for="ctcPropertyValue">Real Property Value</label>
+                            <input type="number" id="ctcPropertyValue" name="ctcPropertyValue" 
+                                   placeholder="Enter total value of real property owned" min="0" step="0.01">
                         </div>
                         <div class="form-row">
-                            <label for="ctcBirthplace">Place of Birth (Optional)</label>
-                            <input type="text" id="ctcBirthplace" name="ctcBirthplace" placeholder="Enter place of birth">
+                            <label for="ctcBirthplace">Place of Birth</label>
+                            <input type="text" id="ctcBirthplace" name="ctcBirthplace" 
+                                   placeholder="Enter place of birth">
                         </div>
                     </div>
 
-                    <button type="submit" class="btn cta-button" id="submitBtn">Submit Request</button>
+                    <button type="submit" class="btn cta-button" id="submitBtn">
+                        <i class="fas fa-paper-plane"></i> Submit Request
+                    </button>
                 </form>
             </div>
         </section>
@@ -483,309 +543,149 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
     </footer>
 
     <script>
-    // Document fees for each code
-    const documentFees = {
-        'barangay_clearance': 30.00,
-        'proof_of_residency': 0.00,
-        'barangay_indigency': 0.00,
-        'cedula': 55.00,
-        'business_permit_clearance': 500.00,
-        'community_tax_certificate': 6000.00
+    // Document information
+    const documentInfo = {
+        'barangay_clearance': {
+            title: 'Barangay Clearance',
+            description: 'Required for employment, business permits, and various transactions. This document certifies that you are a resident of good standing in the barangay.',
+            fee: 30.00
+        },
+        'barangay_indigency': {
+            title: 'Certificate of Indigency',
+            description: 'For accessing social welfare programs and financial assistance. This document certifies your financial status for assistance programs.',
+            fee: 0.00
+        },
+        'proof_of_residency': {
+            title: 'Certificate of Residency',
+            description: 'Official proof of residence in the barangay. Required for school enrollment, scholarship applications, and other official purposes.',
+            fee: 0.00
+        },
+        'cedula': {
+            title: 'Community Tax Certificate (Sedula)',
+            description: 'Annual tax certificate required for government transactions. Valid for one calendar year from date of issuance.',
+            fee: 55.00
+        },
+        'business_permit_clearance': {
+            title: 'Business Permit Clearance',
+            description: 'Barangay clearance required for business license applications. Certifies compliance with local regulations.',
+            fee: 500.00
+        },
+        'community_tax_certificate': {
+            title: 'Community Tax Certificate',
+            description: 'Annual tax certificate for residents and corporations. Required for various legal and business transactions.',
+            fee: 6000.00
+        }
     };
 
     document.addEventListener('DOMContentLoaded', function() {
         const documentTypeSelect = document.getElementById('documentType');
-        const feeAmountElement = document.getElementById('feeAmount');
-        const clearanceFields = document.getElementById('clearanceFields');
-        const residencyFields = document.getElementById('residencyFields');
-        const indigencyFields = document.getElementById('indigencyFields');
-        const cedulaFields = document.getElementById('cedulaFields');
-        const businessPermitFields = document.getElementById('businessPermitFields');
-        const communityTaxFields = document.getElementById('communityTaxFields');
+        const documentInfoDiv = document.getElementById('documentInfo');
+        const docInfoTitle = document.getElementById('docInfoTitle');
+        const docInfoDescription = document.getElementById('docInfoDescription');
+        const docInfoFee = document.getElementById('docInfoFee');
         const form = document.getElementById('docRequestForm');
         const submitBtn = document.getElementById('submitBtn');
-
-        // Custom validation messages
-        const validationMessages = {
-            'required': 'This field is required.',
-            'min': 'Value must be greater than 0.',
-            'step': 'Please enter a valid amount with up to 2 decimal places.',
-            'type': 'Please enter a valid number.'
-        };
-
-        // Add custom validation styling
-        const style = document.createElement('style');
-        style.textContent = `
-            .form-row input:invalid {
-                border-color: #ff4444;
-            }
-            .form-row input:invalid:focus {
-                border-color: #ff4444;
-                box-shadow: 0 0 0 2px rgba(255, 68, 68, 0.2);
-            }
-            .validation-message {
-                color: #ff4444;
-                font-size: 0.8em;
-                margin-top: 4px;
-                display: none;
-            }
-            .form-row input:invalid + .validation-message {
-                display: block;
-            }
-            .document-fields:not([style*="display: none"]) input[required]:invalid {
-                border-color: #ff4444;
-            }
-        `;
-        document.head.appendChild(style);
-
-        // Add validation messages to number inputs
-        document.querySelectorAll('input[type="number"]').forEach(input => {
-            // Add validation message element
-            const validationMessage = document.createElement('div');
-            validationMessage.className = 'validation-message';
-            input.parentNode.insertBefore(validationMessage, input.nextSibling);
-
-            // Add input event listener for live validation
-            input.addEventListener('input', function(e) {
-                const value = parseFloat(this.value);
-                let message = '';
-
-                if (this.value === '') {
-                    if (this.required) message = validationMessages.required;
-                } else if (isNaN(value)) {
-                    message = validationMessages.type;
-                } else if (value <= 0) {
-                    message = validationMessages.min;
-                } else if (value % 0.01 !== 0) {
-                    message = validationMessages.step;
-                }
-
-                validationMessage.textContent = message;
-                this.setCustomValidity(message);
-            });
-        });
-
-        function hideAllDocumentFields() {
-            const allFields = document.querySelectorAll('.document-fields');
-            allFields.forEach(field => {
-                field.style.display = 'none';
-                // Remove required attribute and disable inputs when hiding
-                const inputs = field.querySelectorAll('input[type="text"], input[type="number"]');
-                inputs.forEach(input => {
-                    input.required = false;
-                    input.disabled = true;
-                });
-            });
-        }
-
-        function setFieldsRequired(container, documentCode) {
-            if (!container) return;
-
-            // Enable all inputs in the visible container
-            const inputs = container.querySelectorAll('input[type="text"], input[type="number"]');
-            inputs.forEach(input => {
-                input.disabled = false;
-            });
-
-            // Then set required fields based on document type
-            switch(documentCode) {
-                case 'barangay_clearance':
-                    const purposeClearance = document.getElementById('purposeClearance');
-                    if (purposeClearance) {
-                        purposeClearance.required = true;
-                        purposeClearance.disabled = false;
-                    }
-                    break;
-
-                case 'proof_of_residency':
-                    const residencyDuration = document.getElementById('residencyDuration');
-                    const residencyPurpose = document.getElementById('residencyPurpose');
-                    if (residencyDuration) {
-                        residencyDuration.required = true;
-                        residencyDuration.disabled = false;
-                    }
-                    if (residencyPurpose) {
-                        residencyPurpose.required = true;
-                        residencyPurpose.disabled = false;
-                    }
-                    break;
-
-                case 'barangay_indigency':
-                    const indigencyReason = document.getElementById('indigencyReason');
-                    if (indigencyReason) {
-                        indigencyReason.required = true;
-                        indigencyReason.disabled = false;
-                    }
-                    break;
-
-                case 'cedula':
-                    const cedulaOccupation = document.getElementById('cedulaOccupation');
-                    const cedulaIncome = document.getElementById('cedulaIncome');
-                    if (cedulaOccupation) {
-                        cedulaOccupation.required = true;
-                        cedulaOccupation.disabled = false;
-                    }
-                    if (cedulaIncome) {
-                        cedulaIncome.required = true;
-                        cedulaIncome.disabled = false;
-                    }
-                    break;
-
-                case 'business_permit_clearance':
-                    const businessName = document.getElementById('businessName');
-                    const businessType = document.getElementById('businessType');
-                    const businessAddress = document.getElementById('businessAddress');
-                    const businessPurpose = document.getElementById('businessPurpose');
-                    if (businessName) {
-                        businessName.required = true;
-                        businessName.disabled = false;
-                    }
-                    if (businessType) {
-                        businessType.required = true;
-                        businessType.disabled = false;
-                    }
-                    if (businessAddress) {
-                        businessAddress.required = true;
-                        businessAddress.disabled = false;
-                    }
-                    if (businessPurpose) {
-                        businessPurpose.required = true;
-                        businessPurpose.disabled = false;
-                    }
-                    break;
-
-                case 'community_tax_certificate':
-                    const ctcOccupation = document.getElementById('ctcOccupation');
-                    const ctcIncome = document.getElementById('ctcIncome');
-                    if (ctcOccupation) {
-                        ctcOccupation.required = true;
-                        ctcOccupation.disabled = false;
-                    }
-                    if (ctcIncome) {
-                        ctcIncome.required = true;
-                        ctcIncome.disabled = false;
-                    }
-                    break;
-            }
-        }
 
         if (documentTypeSelect) {
             documentTypeSelect.addEventListener('change', function() {
                 const selectedOption = this.options[this.selectedIndex];
                 const documentCode = selectedOption.dataset.code || '';
                 
-                // Update fee label
-                if (feeAmountElement) {
-                    const fee = documentFees[documentCode] !== undefined ? documentFees[documentCode] : 0;
-                    feeAmountElement.textContent = fee > 0 ? `₱${parseFloat(fee).toFixed(2)}` : 'Free';
+                // Update document information display
+                if (documentCode && documentInfo[documentCode]) {
+                    const info = documentInfo[documentCode];
+                    docInfoTitle.textContent = info.title;
+                    docInfoDescription.textContent = info.description;
+                    
+                    if (info.fee > 0) {
+                        docInfoFee.textContent = `Fee: ₱${parseFloat(info.fee).toFixed(2)}`;
+                        docInfoFee.className = 'fee-highlight paid';
+                    } else {
+                        docInfoFee.textContent = 'Fee: Free';
+                        docInfoFee.className = 'fee-highlight';
+                    }
+                    
+                    documentInfoDiv.style.display = 'block';
+                } else {
+                    documentInfoDiv.style.display = 'none';
                 }
-                
+
+                // Show/hide document-specific fields
                 hideAllDocumentFields();
+                updateRequiredFields(documentCode, false); // Remove required first
                 
-                // Show appropriate fields and set required fields based on document type
                 switch(documentCode) {
                     case 'barangay_clearance':
-                        clearanceFields.style.display = 'block';
-                        setFieldsRequired(clearanceFields, documentCode);
+                        document.getElementById('clearanceFields').style.display = 'block';
+                        updateRequiredFields('clearance', true);
                         break;
                     case 'proof_of_residency':
-                        residencyFields.style.display = 'block';
-                        setFieldsRequired(residencyFields, documentCode);
+                        document.getElementById('residencyFields').style.display = 'block';
+                        updateRequiredFields('residency', true);
                         break;
                     case 'barangay_indigency':
-                        indigencyFields.style.display = 'block';
-                        setFieldsRequired(indigencyFields, documentCode);
+                        document.getElementById('indigencyFields').style.display = 'block';
+                        updateRequiredFields('indigency', true);
                         break;
                     case 'cedula':
-                        cedulaFields.style.display = 'block';
-                        setFieldsRequired(cedulaFields, documentCode);
+                        document.getElementById('cedulaFields').style.display = 'block';
+                        updateRequiredFields('cedula', true);
                         break;
                     case 'business_permit_clearance':
-                        businessPermitFields.style.display = 'block';
-                        setFieldsRequired(businessPermitFields, documentCode);
+                        document.getElementById('businessPermitFields').style.display = 'block';
+                        updateRequiredFields('business', true);
                         break;
                     case 'community_tax_certificate':
-                        communityTaxFields.style.display = 'block';
-                        setFieldsRequired(communityTaxFields, documentCode);
+                        document.getElementById('communityTaxFields').style.display = 'block';
+                        updateRequiredFields('ctc', true);
                         break;
                 }
             });
-        }        // Update form submission handler
-        if (form && submitBtn) {
-            form.addEventListener('submit', function(e) {
-                e.preventDefault(); // Prevent default submission first
+        }
 
-                // Get selected document type
-                const documentTypeSelect = document.getElementById('documentType');
-                const selectedOption = documentTypeSelect.options[documentTypeSelect.selectedIndex];
-                const documentCode = selectedOption.dataset.code;
-                
-                if (!documentCode) {
-                    Swal.fire({
-                        title: 'Error',
-                        text: 'Please select a document type',
-                        icon: 'error'
-                    });
-                    return;
-                }
+        function hideAllDocumentFields() {
+            const allFields = document.querySelectorAll('.document-fields');
+            allFields.forEach(field => {
+                field.style.display = 'none';
+            });
+        }
 
-                // Get the relevant fields container based on document type
-                let fieldsContainer;
-                switch(documentCode) {
-                    case 'barangay_clearance':
-                        fieldsContainer = document.getElementById('clearanceFields');
-                        break;
-                    case 'proof_of_residency':
-                        fieldsContainer = document.getElementById('residencyFields');
-                        break;
-                    case 'barangay_indigency':
-                        fieldsContainer = document.getElementById('indigencyFields');
-                        break;
-                    case 'cedula':
-                        fieldsContainer = document.getElementById('cedulaFields');
-                        break;
-                    case 'business_permit_clearance':
-                        fieldsContainer = document.getElementById('businessPermitFields');
-                        break;
-                    case 'community_tax_certificate':
-                        fieldsContainer = document.getElementById('communityTaxFields');
-                        break;
-                }
+        function updateRequiredFields(type, required) {
+            const fieldMap = {
+                'clearance': ['purposeClearance'],
+                'residency': ['residencyDuration', 'residencyPurpose'],
+                'indigency': ['indigencyReason'],
+                'cedula': ['cedulaOccupation', 'cedulaIncome'],
+                'business': ['businessName', 'businessType', 'businessAddress', 'businessPurpose'],
+                'ctc': ['ctcOccupation', 'ctcIncome']
+            };
 
-                // Validate only the fields for the selected document type
-                const requiredFields = fieldsContainer.querySelectorAll('input[required]');
-                let isValid = true;
-                let firstInvalidField = null;
-
-                requiredFields.forEach(field => {
-                    // Clear previous validation state
-                    field.setCustomValidity('');
-                    
-                    if (!field.value.trim()) {
-                        isValid = false;
-                        field.setCustomValidity('This field is required');
-                        if (!firstInvalidField) firstInvalidField = field;
-                    } else if (field.type === 'number') {
-                        const value = parseFloat(field.value);
-                        if (isNaN(value) || value < 0) {
-                            isValid = false;
-                            field.setCustomValidity('Please enter a valid positive number');
-                            if (!firstInvalidField) firstInvalidField = field;
-                        }
+            if (type === false) {
+                // Remove required from all fields
+                Object.values(fieldMap).flat().forEach(fieldId => {
+                    const field = document.getElementById(fieldId);
+                    if (field) {
+                        field.required = false;
                     }
                 });
-
-                if (!isValid) {
-                    // Focus the first invalid field
-                    if (firstInvalidField) {
-                        firstInvalidField.focus();
+            } else if (fieldMap[type]) {
+                fieldMap[type].forEach(fieldId => {
+                    const field = document.getElementById(fieldId);
+                    if (field) {
+                        field.required = required;
                     }
-                    return;
-                }
+                });
+            }
+        }
+
+        // Form submission handling
+        if (form && submitBtn) {
+            form.addEventListener('submit', function(e) {
+                if (!form.checkValidity()) {
                     return;
                 }
 
-                e.preventDefault(); // Prevent immediate submission
+                e.preventDefault();
 
                 Swal.fire({
                     title: 'Confirm Submission',
@@ -796,25 +696,22 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
                     cancelButtonText: 'Cancel'
                 }).then((result) => {
                     if (result.isConfirmed) {
-                        // Update button state
                         submitBtn.disabled = true;
-                        submitBtn.textContent = 'Submitting...';
-
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Submitting...';
                         form.submit();
 
-                        // Optional: Add timeout to re-enable button if something goes wrong
                         setTimeout(function() {
                             if (submitBtn.disabled) {
                                 submitBtn.disabled = false;
-                                submitBtn.textContent = 'Submit Request';
+                                submitBtn.innerHTML = '<i class="fas fa-paper-plane"></i> Submit Request';
                             }
-                        }, 15000); // Re-enable after 15 seconds
+                        }, 15000);
                     }
                 });
             });
         }
 
-        // Auto-select document type if provided in URL (?documentType=code)
+        // Auto-select document type from URL parameter
         const urlParams = new URLSearchParams(window.location.search);
         const docTypeParam = urlParams.get('documentType');
         if (docTypeParam && documentTypeSelect) {

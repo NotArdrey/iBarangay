@@ -1,7 +1,7 @@
 <?php
 session_start();
 require "../config/dbconn.php";
-require_once "../pages/header.php";
+require_once "../components/header.php";
 // Only allow logged-in users with official roles (customize as needed)
 if (!isset($_SESSION['user_id']) || !in_array($_SESSION['role_id'], [3,4,5,6,7])) {
     header("Location: login.php");

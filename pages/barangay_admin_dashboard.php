@@ -19,7 +19,10 @@ $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalHouseholds = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(*) FROM document_requests dr JOIN users u ON dr.requested_by_user_id = u.id WHERE dr.status = 'pending' AND u.barangay_id = :bid";
+$sql = "SELECT COUNT(*) FROM document_requests dr 
+        JOIN persons p ON dr.person_id = p.id 
+        LEFT JOIN users u ON p.user_id = u.id 
+        WHERE dr.status = 'pending' AND (u.barangay_id = :bid OR dr.barangay_id = :bid)";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $pendingRequests = (int) $stmt->fetchColumn();
@@ -166,8 +169,9 @@ if (empty($genderLabels)) {
 // Document requests (existing)
 $sql = "SELECT dt.name, COUNT(*) AS count FROM document_requests dr 
         JOIN document_types dt ON dr.document_type_id = dt.id 
-        JOIN users u ON dr.requested_by_user_id = u.id 
-        WHERE u.barangay_id = :bid 
+        JOIN persons p ON dr.person_id = p.id 
+        LEFT JOIN users u ON p.user_id = u.id 
+        WHERE (u.barangay_id = :bid OR dr.barangay_id = :bid) 
         GROUP BY dt.name ORDER BY count DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
@@ -184,12 +188,13 @@ if (empty($docLabels)) {
     $docCounts = [0];
 }
 
-// Recent requests (existing)
-$sql = "SELECT dr.id, dt.name, CONCAT(u.first_name, ' ', u.last_name) AS requester, dr.status, dr.request_date 
+// Recent requests (existing) - FIXED to use new table structure
+$sql = "SELECT dr.id, dt.name, CONCAT(p.first_name, ' ', p.last_name) AS requester, dr.status, dr.request_date 
         FROM document_requests dr 
         JOIN document_types dt ON dr.document_type_id = dt.id 
-        JOIN users u ON dr.requested_by_user_id = u.id 
-        WHERE u.barangay_id = :bid 
+        JOIN persons p ON dr.person_id = p.id
+        LEFT JOIN users u ON p.user_id = u.id
+        WHERE dr.barangay_id = :bid 
         ORDER BY dr.request_date DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);

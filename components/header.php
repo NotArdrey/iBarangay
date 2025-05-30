@@ -16,16 +16,28 @@ if (empty($_SESSION['user_id'])) {
 // ── Load User Info from DB ────────────────────────────────────────
 $userId = (int) $_SESSION['user_id'];
 
-// Updated query to match your database schema
+// Updated query to get role info directly from users table (primary source)
 $stmt = $pdo->prepare('
-    SELECT ur.role_id, ur.barangay_id, u.email, u.is_active
+    SELECT u.role_id, u.barangay_id, u.email, u.is_active
     FROM users u
-    LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = 1
-    WHERE u.id = ?
+    WHERE u.id = ? AND u.is_active = 1
     LIMIT 1
 ');
 $stmt->execute([$userId]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
+
+// If no role found in users table, check user_roles table as fallback
+if (!$user || !$user['role_id']) {
+    $stmt = $pdo->prepare('
+        SELECT ur.role_id, ur.barangay_id, u.email, u.is_active
+        FROM users u
+        LEFT JOIN user_roles ur ON u.id = ur.user_id AND ur.is_active = 1
+        WHERE u.id = ? AND u.is_active = 1
+        LIMIT 1
+    ');
+    $stmt->execute([$userId]);
+    $user = $stmt->fetch(PDO::FETCH_ASSOC);
+}
 
 if (!$user || !$user['is_active']) {
     // Invalid session: user no longer exists or is inactive
@@ -40,7 +52,7 @@ $_SESSION['barangay_id'] = (int) ($user['barangay_id'] ?? 1); // Default baranga
 
 // ── Lookup Barangay Name for Official Roles ───────────────────────
 $officialRoles = [3,4,5,6,7]; // e.g. Captain, Secretary, Treasurer, etc.
-if (in_array($_SESSION['role_id'], $officialRoles, true)) {
+if (in_array($_SESSION['role_id'], $officialRoles, true) && $_SESSION['barangay_id']) {
     $stmt2 = $pdo->prepare('
         SELECT name
         FROM barangay
@@ -51,8 +63,11 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
     $bName = $stmt2->fetchColumn();
     $_SESSION['barangay_name'] = $bName ?: 'iBarangay';
 } else {
-    unset($_SESSION['barangay_name']);
+    $_SESSION['barangay_name'] = 'iBarangay';
 }
+
+// Debug information (remove this in production)
+error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Barangay ID: " . $_SESSION['barangay_id']);
 ?>
 
 <!DOCTYPE html>
@@ -120,19 +135,41 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
       width: 90%;
       max-width: 800px;
     }
+    
+    /* Custom scrollbar styling for sidebar navigation */
+    nav::-webkit-scrollbar {
+      width: 6px;
+    }
+    nav::-webkit-scrollbar-track {
+      background: #f1f5f9;
+      border-radius: 3px;
+    }
+    nav::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 3px;
+    }
+    nav::-webkit-scrollbar-thumb:hover {
+      background: #94a3b8;
+    }
+    
+    /* Firefox scrollbar styling */
+    nav {
+      scrollbar-width: thin;
+      scrollbar-color: #cbd5e1 #f1f5f9;
+    }
   </style>
 </head>
 <body class="bg-gray-50">
 
   <!-- Sidebar Navigation -->
-  <aside class="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 p-4 shadow-md">
-    <div class="mb-8 px-2">
-    <h2 class="text-2xl font-bold text-blue-800">
-  <?= htmlspecialchars($_SESSION['barangay_name'] ?? 'iBarangay') ?>
-</h2>
+  <aside class="fixed left-0 top-0 h-screen w-64 bg-white border-r border-gray-200 shadow-md flex flex-col">
+    <div class="p-4 border-b border-gray-200 flex-shrink-0">
+      <h2 class="text-2xl font-bold text-blue-800">
+        <?= htmlspecialchars($_SESSION['barangay_name'] ?? 'iBarangay') ?>
+      </h2>
       <p class="text-sm text-gray-600">Administration System</p>
     </div>
-    <nav aria-label="Main Navigation">
+    <nav aria-label="Main Navigation" class="flex-1 overflow-y-auto p-4">
       <ul class="space-y-1">
 
         <!-- Dashboard -->
@@ -174,10 +211,10 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
-<?php if ($_SESSION['role_id'] == 3): ?>
+<?php if ((int)$_SESSION['role_id'] === 3): ?>
 <!-- Staff Officials - Only visible to Barangay Captain (role_id = 3) -->
 <li>
-  <a href="../pages/add_staff_official_barangaycaptian.php" class="nav-link">
+  <a href="../pages/captain_page.php" class="nav-link">
     <span class="icon-container">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" 
@@ -202,7 +239,7 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
-<?php if (in_array($_SESSION['role_id'], [3,4,5,6,7])): ?>
+<?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7])): ?>
 <!-- Manage Services (Officials Only) -->
 <li>
   <a href="../pages/manage_services.php" class="nav-link">
@@ -218,7 +255,7 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
 </li>
 <?php endif; ?>
 
-<?php if (in_array($_SESSION['role_id'], [3,4,5,6,7])): ?>
+<?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7])): ?>
 <!-- Edit Document Prices (Officials Only) -->
 <li>
   <a href="../functions/edit_document_prices.php" class="nav-link">
@@ -285,7 +322,6 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
-
 <li>
   <a href="../pages/barangay_backup.php" class="nav-link">
     <span class="icon-container">
@@ -298,11 +334,10 @@ if (in_array($_SESSION['role_id'], $officialRoles, true)) {
   </a>
 </li>
 
-
 <!-- Log out -->
 <li>
   <form id="logoutForm" action="../functions/logout.php" method="post">
-    <button type="submit" id="logoutBtn" class="nav-link">
+    <button type="submit" id="logoutBtn" class="nav-link w-full text-left">
       <span class="icon-container logout">
         <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
           <path stroke-linecap="round" stroke-linejoin="round" 

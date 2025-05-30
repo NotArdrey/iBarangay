@@ -1,7 +1,7 @@
 <?php
 session_start();
 require_once '../config/dbconn.php';
-include 'header.php';
+require_once "../components/header.php";
 
 // Check if user has appropriate role
 if (!in_array($_SESSION['role_id'], [3,4,5,6,7])) {
