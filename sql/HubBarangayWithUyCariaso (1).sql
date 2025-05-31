@@ -346,7 +346,6 @@ CREATE TABLE persons (
     resident_type ENUM('REGULAR', 'SENIOR', 'PWD') DEFAULT 'REGULAR',
     contact_number VARCHAR(20),
     user_id INT,
-    census_id VARCHAR(50) UNIQUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
@@ -380,10 +379,6 @@ CREATE TABLE person_identification (
     philhealth_id VARCHAR(50),
     other_id_type VARCHAR(50),
     other_id_number VARCHAR(50),
-    id_image_path VARCHAR(255),
-    selfie_image_path VARCHAR(255),
-    signature_image_path VARCHAR(255),
-    signature_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
@@ -394,7 +389,8 @@ CREATE TABLE addresses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     person_id INT NOT NULL,
     user_id INT,
-    barangay_id INT NOT NULL,
+    barangay_id INT,
+    barangay_name VARCHAR(60),
     house_no VARCHAR(50),
     street VARCHAR(100),
     phase VARCHAR(50),
@@ -559,7 +555,6 @@ CREATE TABLE person_economic_problems (
     person_id INT NOT NULL,
     loss_income BOOLEAN DEFAULT FALSE,
     unemployment BOOLEAN DEFAULT FALSE,
-    high_cost_living BOOLEAN DEFAULT FALSE,
     skills_training BOOLEAN DEFAULT FALSE,
     skills_training_details TEXT,
     livelihood BOOLEAN DEFAULT FALSE,
@@ -1533,7 +1528,6 @@ CREATE INDEX idx_doc_requests_doctype ON document_requests(document_type_id);
 CREATE INDEX idx_blotter_cases_status ON blotter_cases(status, barangay_id);
 CREATE INDEX idx_blotter_cases_scheduling ON blotter_cases(scheduling_status);
 CREATE INDEX idx_persons_user_id ON persons(user_id);
-CREATE INDEX idx_persons_census_id ON persons(census_id);
 CREATE INDEX idx_addresses_person_id ON addresses(person_id);
 CREATE INDEX idx_addresses_barangay_id ON addresses(barangay_id);
 CREATE INDEX idx_household_members_household ON household_members(household_id);
@@ -1669,12 +1663,6 @@ WHERE bp.blotter_case_id IN (
 )
 ON DUPLICATE KEY UPDATE confirmed = VALUES(confirmed);
 
--- Update confirmed_at timestamp for confirmed notifications
-UPDATE participant_notifications 
-SET confirmed_at = DATE_SUB(NOW(), INTERVAL FLOOR(RAND() * 7) DAY)
-WHERE confirmed = TRUE AND confirmed_at IS NULL;
-
-
 -- Add missing columns to custom_services table
 ALTER TABLE custom_services 
 ADD COLUMN service_type VARCHAR(50) DEFAULT 'general' AFTER barangay_id,
@@ -1711,3 +1699,6 @@ ADD COLUMN purpose TEXT AFTER business_type,
 ADD COLUMN ctc_number VARCHAR(100) AFTER purpose,
 ADD COLUMN or_number VARCHAR(100) AFTER ctc_number,
 ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+ALTER TABLE custom_services 
+ADD COLUMN service_photo VARCHAR(255) AFTER additional_notes;

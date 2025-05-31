@@ -527,7 +527,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $errors[] = "Invalid birth date format. Please use YYYY-MM-DD format.";
     }
 
-    // Verify person in census or temporary records
+    // Enhanced verification: allow registration in selected barangay, block only if both census and temporary in the SAME barangay
     $verificationData = [
         'first_name' => $_POST['first_name'],
         'middle_name' => $_POST['middle_name'],
@@ -536,33 +536,60 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         'gender' => $_POST['gender'],
         'id_number' => $_POST['id_number']
     ];
-    
-    writeDebugLog("Verification data: " . print_r($verificationData, true));
-    
-    $verificationResult = verifyPersonInCensus($pdo, $verificationData);
-    
-    writeDebugLog("Verification result: " . print_r($verificationResult, true));
-
-    if (!$verificationResult['success']) {
-        $errors[] = $verificationResult['message'];
-        if (isset($verificationResult['debug_info'])) {
-            writeDebugLog("Debug info: " . print_r($verificationResult['debug_info'], true));
+    $selected_barangay_id = isset($_POST['barangay_id']) ? (int)$_POST['barangay_id'] : null;
+    $record_source = $_POST['record_source'] ?? null;
+    // Fetch all census and temporary records for this person
+    $censusSql = "
+        SELECT 'census' as source, p.id, a.barangay_id
+        FROM persons p
+        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
+        WHERE LOWER(TRIM(p.last_name)) = LOWER(TRIM(:last_name))
+        AND LOWER(TRIM(p.first_name)) = LOWER(TRIM(:first_name))
+        AND p.birth_date = :birth_date
+    ";
+    $tempSql = "
+        SELECT 'temporary' as source, id, barangay_id
+        FROM temporary_records
+        WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
+        AND LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name))
+        AND date_of_birth = :birth_date
+    ";
+    $params = [
+        ':first_name' => trim($_POST['first_name']),
+        ':last_name' => trim($_POST['last_name']),
+        ':birth_date' => $birth_date
+    ];
+    $censusStmt = $pdo->prepare($censusSql);
+    $censusStmt->execute($params);
+    $censusRecords = $censusStmt->fetchAll(PDO::FETCH_ASSOC);
+    $tempStmt = $pdo->prepare($tempSql);
+    $tempStmt->execute($params);
+    $tempRecords = $tempStmt->fetchAll(PDO::FETCH_ASSOC);
+    // Check for both census and temporary in the SAME barangay
+    $censusBarangayIds = array_column($censusRecords, 'barangay_id');
+    $tempBarangayIds = array_column($tempRecords, 'barangay_id');
+    $overlap = array_intersect($censusBarangayIds, $tempBarangayIds);
+    if ($selected_barangay_id && in_array($selected_barangay_id, $overlap)) {
+        $errors[] = "Person found in both census and temporary records in the selected barangay. Please contact the barangay office for assistance.";
+    }
+    // If selected barangay has a census record, always prefer that
+    $selectedCensus = null;
+    foreach ($censusRecords as $rec) {
+        if ($rec['barangay_id'] == $selected_barangay_id) {
+            $selectedCensus = $rec;
+            break;
         }
+    }
+    if ($selectedCensus) {
+        $person_id = $selectedCensus['id'];
+        $record_source = 'census';
     } else {
-        $person_id = $verificationResult['person_id'];
-        $barangay_id = $verificationResult['barangay_id'];
-        
-        // If verified from temporary records, we'll use the temporary record directly
-        if ($verificationResult['source'] === 'temporary') {
-            // Get the temporary record details
-            $stmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
-            $stmt->execute([$person_id]);
-            $tempRecord = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($tempRecord) {
-                // Use the temporary record ID directly as the person_id
-                // No need to create a new person record
-                writeDebugLog("Using temporary record directly with ID: " . $person_id);
+        // Otherwise, use the temporary record for the selected barangay
+        foreach ($tempRecords as $rec) {
+            if ($rec['barangay_id'] == $selected_barangay_id) {
+                $person_id = $rec['id'];
+                $record_source = 'temporary';
+                break;
             }
         }
     }
@@ -572,7 +599,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $errors[] = "Identity verification failed. Only verified residents can register.";
     } else {
         // Only check the persons table for user_id if the match was from census
-        if ($verificationResult['source'] === 'census') {
+        if (isset($record_source) && $record_source === 'census') {
             $stmt = $pdo->prepare("SELECT id, user_id FROM persons WHERE id = ?");
             $stmt->execute([$person_id]);
             $person = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -713,7 +740,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $phone,
                     $passwordHash, 
                     $role_id,
-                    $barangay_id,
+                    $selected_barangay_id,
                     $personData['first_name'],
                     $personData['last_name'],
                     $personData['gender'],

@@ -56,7 +56,12 @@ try {
 
     // Fetch addresses with barangay information
     $stmt = $pdo->prepare("
-        SELECT a.*, b.name as barangay_name
+        SELECT 
+            a.*,
+            CASE 
+                WHEN a.barangay_id IS NOT NULL THEN b.name
+                ELSE a.barangay_name
+            END as barangay_name
         FROM addresses a
         LEFT JOIN barangay b ON a.barangay_id = b.id
         WHERE a.person_id = ? 
@@ -662,12 +667,10 @@ function displayCurrency($amount) {
                                 </div>
                                 <?php endif; ?>
                                 
-                                <?php if (!empty($address['barangay_name'])): ?>
                                 <div>
                                     <span class="text-gray-600 font-medium">Barangay:</span> 
-                                    <?= htmlspecialchars($address['barangay_name']) ?>
+                                    <?= htmlspecialchars($address['barangay_name'] ?? 'Not specified') ?>
                                 </div>
-                                <?php endif; ?>
                                 
                                 <div>
                                     <span class="text-gray-600 font-medium">Municipality:</span> 
@@ -1037,10 +1040,12 @@ function displayCurrency($amount) {
                         </h3>
                         <?php 
                         $has_economic_data = false;
-                        foreach($economic_problems as $key => $value) {
-                            if (!empty($value)) {
-                                $has_economic_data = true;
-                                break;
+                        if (is_array($economic_problems)) {
+                            foreach($economic_problems as $key => $value) {
+                                if (!empty($value)) {
+                                    $has_economic_data = true;
+                                    break;
+                                }
                             }
                         }
                         
@@ -1069,24 +1074,9 @@ function displayCurrency($amount) {
                                             <path fill-rule="evenodd" d="M6 6V5a3 3 0 013-3h2a3 3 0 013 3v1h2a2 2 0 012 2v3.57A22.952 22.952 0 0110 13a22.95 22.95 0 01-8-1.43V8a2 2 0 012-2h2zm2-1a1 1 0 011-1h2a1 1 0 011 1v1H8V5zm1 5a1 1 0 011-1h.01a1 1 0 110 2H10a1 1 0 01-1-1z" clip-rule="evenodd"></path>
                                             <path d="M2 13.692V16a2 2 0 002 2h12a2 2 0 002-2v-2.308A24.974 24.974 0 0110 15c-2.796 0-5.487-.46-8-1.308z"></path>
                                         </svg>
-                        </div>
-                                    <div class="flex-1">
-                                        <h4 class="font-medium text-gray-800 mb-2">Unemployment</h4>
-                        </div>
-                            </div>
-                            </div>
-                            <?php endif; ?>
-                            
-                            <?php if (!empty($economic_problems['high_cost_living'])): ?>
-                            <div class="data-card hover:bg-white">
-                                <div class="flex items-start">
-                                    <div class="mr-3 mt-1 text-red-500">
-                                        <svg class="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                                            <path fill-rule="evenodd" d="M4 4a2 2 0 00-2 2v4a2 2 0 002 2V6h10a2 2 0 00-2-2H4zm2 6a2 2 0 012-2h8a2 2 0 012 2v4a2 2 0 01-2 2H8a2 2 0 01-2-2v-4zm6 4a2 2 0 100-4 2 2 0 000 4z" clip-rule="evenodd"></path>
-                                        </svg>
                                     </div>
                                     <div class="flex-1">
-                                        <h4 class="font-medium text-gray-800 mb-2">High Cost of Living</h4>
+                                        <h4 class="font-medium text-gray-800 mb-2">Unemployment</h4>
                                     </div>
                                 </div>
                             </div>

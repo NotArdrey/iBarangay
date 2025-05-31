@@ -139,8 +139,8 @@ $puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $stmt = $pdo->prepare("
     SELECT p.id, p.first_name, p.last_name
     FROM persons p
-    LEFT JOIN addresses a ON p.id = a.person_id
-    WHERE a.barangay_id = ? OR a.barangay_id IS NULL
+    JOIN addresses a ON p.id = a.person_id
+    WHERE a.barangay_id = ?
     ORDER BY p.last_name, p.first_name
 ");
 $stmt->execute([$barangay_id]);

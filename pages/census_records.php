@@ -22,7 +22,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN barangay b ON h.barangay_id = b.id
     LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
     LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
-    WHERE (h.barangay_id = ? OR h.barangay_id IS NULL)
+    WHERE h.barangay_id = ?
     ORDER BY p.last_name, p.first_name
 ");
 $stmt->execute([$_SESSION['barangay_id']]);

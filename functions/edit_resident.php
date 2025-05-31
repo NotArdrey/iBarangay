@@ -420,7 +420,7 @@ function saveResident($pdo, $data, $barangay_id) {
                 ':person_id' => $person_id,
                 ':loss_income' => isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1 ? 1 : 0,
                 ':unemployment' => isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1 ? 1 : 0,
-                ':high_cost_living' => 0, // This field isn't in the form
+                ':high_cost_living' => isset($data['problem_high_cost_living']) && $data['problem_high_cost_living'] == 1 ? 1 : 0,
                 ':skills_training' => isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1 ? 1 : 0,
                 ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
                 ':livelihood' => isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1 ? 1 : 0,
@@ -1228,7 +1228,7 @@ function updateResident($pdo, $person_id, $data, $barangay_id) {
                 ':person_id' => $person_id,
                 ':loss_income' => isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1 ? 1 : 0,
                 ':unemployment' => isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1 ? 1 : 0,
-                ':high_cost_living' => 0, // This field isn't in the form
+                ':high_cost_living' => isset($data['problem_high_cost_living']) && $data['problem_high_cost_living'] == 1 ? 1 : 0,
                 ':skills_training' => isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1 ? 1 : 0,
                 ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
                 ':livelihood' => isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1 ? 1 : 0,
