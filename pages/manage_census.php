@@ -210,7 +210,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Problems - Economic
             'problem_loss_income' => isset($_POST['problem_loss_income']) ? 1 : 0,
-            'problem_unemployment' => isset($_POST['problem_unemployment']) ? 1 : 0,
+            'problem_lack_income' => isset($_POST['problem_lack_income']) ? 1 : 0,
             'problem_high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
             'problem_skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
             'problem_skills_training_specify' => trim($_POST['problem_skills_training_specify'] ?? ''),

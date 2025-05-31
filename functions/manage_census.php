@@ -406,11 +406,11 @@ function saveResident($pdo, $data, $barangay_id) {
         if ($has_economic_problems) {
             $stmt_economic = $pdo->prepare("
                 INSERT INTO person_economic_problems (
-                    person_id, loss_income, unemployment, high_cost_living, 
+                    person_id, loss_income, unemployment, 
                     skills_training, skills_training_details, livelihood, livelihood_details,
                     other_economic, other_economic_details
                 ) VALUES (
-                    :person_id, :loss_income, :unemployment, :high_cost_living,
+                    :person_id, :loss_income, :unemployment,
                     :skills_training, :skills_training_details, :livelihood, :livelihood_details,
                     :other_economic, :other_economic_details
                 )
@@ -420,7 +420,6 @@ function saveResident($pdo, $data, $barangay_id) {
                 ':person_id' => $person_id,
                 ':loss_income' => isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1 ? 1 : 0,
                 ':unemployment' => isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1 ? 1 : 0,
-                ':high_cost_living' => 0, // This field isn't in the form
                 ':skills_training' => isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1 ? 1 : 0,
                 ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
                 ':livelihood' => isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1 ? 1 : 0,

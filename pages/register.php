@@ -271,6 +271,84 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
             // Store the person_id in the hidden field
             document.getElementById('person_id').value = data.person_id;
             
+            // Check if person has multiple barangay records
+            if (data.barangay_records && data.barangay_records.length > 1) {
+              // Create HTML for barangay selection
+              let barangayOptions = data.barangay_records.map(record => 
+                `<option value="${record.id}">${record.barangay_name}</option>`
+              ).join('');
+              
+              // Show barangay selection dialog with enhanced UI
+              Swal.fire({
+                title: 'Select Your Primary Barangay',
+                html: `
+                  <div class="barangay-selection">
+                    <p class="mb-4">You are registered in multiple barangays. Please select your primary barangay:</p>
+                    <div class="form-group">
+                      <label for="barangay_select" class="block text-sm font-medium text-gray-700 mb-2">Select Barangay:</label>
+                      <select id="barangay_select" class="swal2-input w-full p-2 border rounded">
+                        <option value="">-- Select a Barangay --</option>
+                        ${barangayOptions}
+                      </select>
+                    </div>
+                    <div class="mt-4 p-4 bg-blue-50 rounded-lg">
+                      <p class="text-sm text-blue-800">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        <strong>Important:</strong> You will only be able to access services for your selected barangay.
+                        This selection cannot be changed later without contacting the barangay office.
+                      </p>
+                    </div>
+                  </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Continue',
+                cancelButtonText: 'Cancel',
+                customClass: {
+                  container: 'barangay-selection-modal',
+                  popup: 'barangay-selection-popup',
+                  title: 'text-xl font-bold mb-4',
+                  htmlContainer: 'text-left',
+                  confirmButton: 'bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded',
+                  cancelButton: 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded'
+                },
+                preConfirm: () => {
+                  const selectedBarangay = document.getElementById('barangay_select').value;
+                  if (!selectedBarangay) {
+                    Swal.showValidationMessage('Please select a barangay');
+                    return false;
+                  }
+                  return selectedBarangay;
+                }
+              }).then((result) => {
+                if (result.isConfirmed) {
+                  // Add selected barangay_id to form
+                  const barangayInput = document.createElement('input');
+                  barangayInput.type = 'hidden';
+                  barangayInput.name = 'barangay_id';
+                  barangayInput.value = result.value;
+                  document.querySelector('form').appendChild(barangayInput);
+                  
+                  // Show success message and submit form
+                  Swal.fire({
+                    icon: 'success',
+                    title: 'Verification Successful',
+                    text: 'Your identity has been verified and barangay selected. You can now complete your registration.',
+                    showConfirmButton: false,
+                    timer: 1500,
+                    willClose: () => {
+                      document.querySelector('form').submit();
+                    }
+                  });
+                }
+              });
+            } else if (data.barangay_records && data.barangay_records.length === 1) {
+              // If only one barangay, automatically add it to form
+              const barangayInput = document.createElement('input');
+              barangayInput.type = 'hidden';
+              barangayInput.name = 'barangay_id';
+              barangayInput.value = data.barangay_records[0].id;
+              document.querySelector('form').appendChild(barangayInput);
+              
             // Show success message and submit form
             Swal.fire({
               icon: 'success',
@@ -279,9 +357,18 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
               showConfirmButton: false,
               timer: 1500,
               willClose: () => {
-                this.submit();
+                  document.querySelector('form').submit();
               }
             });
+            } else {
+              // No barangay records found
+              Swal.fire({
+                icon: 'error',
+                title: 'Verification Failed',
+                text: 'No barangay records found for your identity. Please contact the barangay office for assistance.',
+                confirmButtonText: 'OK'
+              });
+            }
           } else {
             // Person not found, show error message
             Swal.fire({

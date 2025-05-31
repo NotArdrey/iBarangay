@@ -99,12 +99,36 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 exit;
             }
             
+            // Get all barangay records for this person
+            $stmt = $pdo->prepare("
+                SELECT DISTINCT b.id, b.name as barangay_name
+                FROM persons p
+                LEFT JOIN household_members hm ON p.id = hm.person_id
+                LEFT JOIN households h ON hm.household_id = h.id
+                LEFT JOIN barangay b ON h.barangay_id = b.id
+                WHERE p.id = ?
+                UNION
+                SELECT DISTINCT b.id, b.name as barangay_name
+                FROM persons p
+                LEFT JOIN addresses a ON p.id = a.person_id
+                LEFT JOIN barangay b ON a.barangay_id = b.id
+                WHERE p.id = ? AND a.is_primary = 1
+                UNION
+                SELECT DISTINCT b.id, b.name as barangay_name
+                FROM temporary_records t
+                LEFT JOIN barangay b ON t.barangay_id = b.id
+                WHERE t.id = ?
+            ");
+            $stmt->execute([$record['id'], $record['id'], $record['id']]);
+            $barangay_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
             echo json_encode([
                 'status' => 'success',
                 'exists' => true,
                 'message' => 'Person verification successful.',
                 'person_id' => $record['id'],
-                'source' => $record['source']
+                'source' => $record['source'],
+                'barangay_records' => $barangay_records
             ]);
             exit;
         }
