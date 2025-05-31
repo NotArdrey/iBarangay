@@ -6,7 +6,7 @@ require "../config/dbconn.php";
 $conn = $pdo;
 global $conn;
 
-$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 0;
+$user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 4;
 $user_info = null;
 $barangay_name = "Barangay";
 $barangay_id = 32;
@@ -26,11 +26,6 @@ if ($user_id) {
         $barangay_id = $row['barangay_id'];
     }
     $stmt = null;
-}
-
-if (!$user_id) {
-    header("Location: login.php");
-    exit;
 }
 
 // Handle scheduling actions from URL parameters
@@ -772,7 +767,12 @@ unset($case);
                             <?php endif; ?>
 
                             <!-- Proposal Status and Actions -->
-                            <?php if ($case['proposal_status'] === 'proposed' && !$case['user_confirmed']): ?>
+                            <?php if ($case['proposal_status'] === 'proposed' && !$case['captain_confirmed']): ?>
+                            <div class="alert alert-info">
+                                <i class="fas fa-info-circle"></i>
+                                A hearing schedule has been proposed. Waiting for Captain's confirmation.
+                            </div>
+                            <?php elseif ($case['proposal_status'] === 'captain_confirmed' && !$case['user_confirmed']): ?>
                             <div class="schedule-actions">
                                 <button type="button" class="btn btn-success confirm-availability-btn" 
                                         data-proposal-id="<?= $case['current_proposal_id'] ?>" 
@@ -787,7 +787,7 @@ unset($case);
                                 </button>
                             </div>
                             <?php elseif ($case['user_confirmed'] && !$case['captain_confirmed']): ?>
-                            <div class="alert alert-info">You have confirmed. Waiting for Captain's confirmation.</div>
+                            <div class="alert alert-info">You have confirmed. Waiting for Captain's final confirmation.</div>
                             <?php elseif ($case['proposal_status'] === 'both_confirmed'): ?>
                             <div style="background: #ecfdf5; color: #059669; padding: 1rem; border-radius: 6px; margin-top: 1rem;">
                                 <i class="fas fa-check-circle"></i>

@@ -1,4 +1,3 @@
-
 <?php
 session_start();
 require "../config/dbconn.php";
@@ -25,13 +24,13 @@ if ($user_id) {
         $barangay_name = $row['barangay_name'];
         $barangay_id = $row['barangay_id'];
     }
+
     $stmt = null;
 }
 
 // NOW INCLUDE NAVBAR AFTER VARIABLES ARE SET
 require "../components/navbar.php";
-//user_dashboard.php PAGE
-// REST OF YOUR CODE CONTINUES...
+
 $emergency_contacts = [
     'local_barangay_contact' => null,
     'pnp_contact' => null,
@@ -60,7 +59,6 @@ $emergency_contacts['bfp_contact'] = $rowGlobal && !empty($rowGlobal['bfp_contac
 
 $stmt = null;
 
-
 $announcements = [];
 $sql = "SELECT title, description, start_datetime, location, organizer 
         FROM events 
@@ -75,7 +73,6 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 }
 $stmt = null;
 
-
 $sql = "SELECT u.first_name, u.last_name, r.name as role
         FROM users u 
         JOIN roles r ON u.role_id = r.id 
@@ -86,7 +83,6 @@ $stmt = $conn->prepare($sql);
 $stmt->execute([$barangay_id]);
 $council = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $stmt = null;
-
 
 ?>
 <!DOCTYPE html>
@@ -159,7 +155,6 @@ $stmt = null;
       width: 100%;
       min-width: 0; /* Prevents overflow on flex children */
     }
-
 
     .hero {
       background: url("../photo/bg2.jpg") no-repeat;
@@ -1069,6 +1064,466 @@ $stmt = null;
     section, .about-section, .services-section, .contact-section {
       scroll-margin-top: 80px; /* Adjust to navbar height + spacing */
     }
+
+    /* Custom SweetAlert2 Styles */
+    .swal-two-column-popup {
+      border-radius: 12px !important;
+      padding: 0 !important;
+    }
+
+    .swal-compact-title {
+      font-size: 1.25rem !important;
+      font-weight: 600 !important;
+      color: #2c3e50 !important;
+      padding: 1rem 1.5rem 0.5rem !important;
+      margin-bottom: 0 !important;
+    }
+
+    .service-title {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .service-title i {
+      color: #3498db;
+      font-size: 1.1em;
+    }
+
+    .swal-two-column-content {
+      padding: 0 1.5rem 1rem !important;
+      max-height: 75vh !important;
+      overflow-y: auto !important;
+    }
+
+    /* Service Modal Container */
+    .service-modal-container {
+      display: flex;
+      gap: 1.5rem;
+      text-align: left;
+    }
+
+    .left-column {
+      flex: 1;
+      min-width: 0;
+    }
+
+    .right-column {
+      flex: 1;
+      min-width: 0;
+    }
+
+    /* Photo Section */
+    .service-photo-container {
+      margin-bottom: 1rem;
+      position: relative;
+    }
+
+    .service-photo {
+      width: 100%;
+      height: 160px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 2px solid #e5e7eb;
+      transition: all 0.3s ease;
+    }
+
+    .clickable-photo {
+      cursor: pointer;
+    }
+
+    .clickable-photo:hover {
+      border-color: #3498db;
+      box-shadow: 0 4px 12px rgba(52, 152, 219, 0.3);
+      transform: scale(1.02);
+    }
+
+    .photo-expand-hint {
+      position: absolute;
+      top: 0.5rem;
+      right: 0.5rem;
+      background: rgba(0, 0, 0, 0.7);
+      color: white;
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+
+    .service-photo-container:hover .photo-expand-hint {
+      opacity: 1;
+    }
+
+    .service-photo-placeholder {
+      width: 100%;
+      height: 160px;
+      background: #f3f4f6;
+      border: 2px dashed #d1d5db;
+      border-radius: 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #9ca3af;
+    }
+
+    .service-photo-placeholder i {
+      font-size: 2rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .service-photo-placeholder p {
+      margin: 0;
+      font-size: 0.875rem;
+    }
+
+    /* Photo Expansion Modal Styles */
+    .photo-expansion-popup {
+      border-radius: 12px !important;
+      background: #ffffff !important;
+    }
+
+    .photo-expansion-title {
+      font-size: 1.25rem !important;
+      font-weight: 600 !important;
+      color: #2c3e50 !important;
+      padding: 1.5rem 1.5rem 0.5rem !important;
+      margin-bottom: 0 !important;
+    }
+
+    .photo-expansion-content {
+      padding: 0 1.5rem 1.5rem !important;
+    }
+
+    .expanded-photo-container {
+      text-align: center;
+    }
+
+    .expanded-photo {
+      width: 100%;
+      max-height: 70vh;
+      object-fit: contain;
+      border-radius: 8px;
+      box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+      background: #f8f9fa;
+    }
+
+    .photo-caption {
+      margin-top: 1rem;
+      color: #6b7280;
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .photo-caption i {
+      color: #10b981;
+    }
+
+    /* Responsive adjustments for photo expansion */
+    @media (max-width: 768px) {
+      .photo-expansion-popup {
+        width: 95% !important;
+        margin: 0 !important;
+      }
+
+      .expanded-photo {
+        max-height: 60vh;
+      }
+
+      .photo-expansion-title {
+        font-size: 1.1rem !important;
+        padding: 1rem 1rem 0.5rem !important;
+      }
+
+      .photo-expansion-content {
+        padding: 0 1rem 1rem !important;
+      }
+    }
+
+    .verification-badge {
+      margin-top: 0.5rem;
+      padding: 0.5rem;
+      border-radius: 6px;
+      text-align: center;
+      font-size: 0.875rem;
+      font-weight: 500;
+    }
+
+    .verification-badge.verified {
+      background: #dcfce7;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+    }
+
+    .verification-badge.pending {
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fde68a;
+    }
+
+    .verification-badge i {
+      margin-right: 0.25rem;
+    }
+
+    /* Badges */
+    .badges-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+
+    .badge {
+      padding: 0.25rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 500;
+    }
+
+    .badge-type {
+      background: #dbeafe;
+      color: #1e40af;
+    }
+
+    .badge-urgent {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    .badge-high {
+      background: #fed7aa;
+      color: #ea580c;
+    }
+
+    .badge-normal {
+      background: #f3f4f6;
+      color: #374151;
+    }
+
+    .badge-availability {
+      background: #dcfce7;
+      color: #166534;
+    }
+
+    /* Info Sections */
+    .quick-info {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .info-box {
+      background: #f9fafb;
+      padding: 0.75rem;
+      border-radius: 6px;
+      border: 1px solid #e5e7eb;
+    }
+
+    .info-box h4 {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #374151;
+      margin: 0 0 0.25rem 0;
+    }
+
+    .info-box h4 i {
+      font-size: 0.75rem;
+    }
+
+    .info-box p {
+      margin: 0;
+      color: #6b7280;
+      font-size: 0.875rem;
+    }
+
+    .quick-info-horizontal {
+      display: flex;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .quick-info-horizontal .info-box {
+      flex: 1;
+    }
+
+    .info-section {
+      margin-bottom: 1rem;
+    }
+
+    .info-section h4 {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #374151;
+      margin: 0 0 0.5rem 0;
+    }
+
+    .info-section h4 i {
+      font-size: 0.875rem;
+      color: #3498db;
+    }
+
+    .info-section p {
+      background: #f9fafb;
+      padding: 0.75rem;
+      border-radius: 6px;
+      margin: 0;
+      color: #6b7280;
+      font-size: 0.875rem;
+      line-height: 1.4;
+    }
+
+    /* Accordion */
+    .accordion-section {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .accordion-item {
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      overflow: hidden;
+      margin-bottom: 0.5rem;
+    }
+
+    .accordion-header {
+      width: 100%;
+      padding: 0.75rem;
+      background: #f9fafb;
+      border: none;
+      text-align: left;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #374151;
+      transition: background-color 0.2s;
+    }
+
+    .accordion-header:hover {
+      background: #f3f4f6;
+    }
+
+    .accordion-header span {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .accordion-header i:last-child {
+      transition: transform 0.2s;
+    }
+
+    .accordion-content {
+      padding: 0.75rem;
+      background: white;
+      border-top: 1px solid #e5e7eb;
+      display: none;
+    }
+
+    .accordion-content.show {
+      display: block;
+    }
+
+    /* Modal Footer with Centered Contact Button */
+    .modal-footer-center {
+      margin-top: 2rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #e5e7eb;
+      text-align: center;
+    }
+
+    .contact-button-centered {
+      background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 0.75rem 2rem;
+      font-weight: 600;
+      font-size: 0.95rem;
+      box-shadow: 0 2px 8px rgba(40, 167, 69, 0.3);
+      transition: all 0.3s ease;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      text-transform: none;
+      min-width: 180px;
+      justify-content: center;
+    }
+
+    .contact-button-centered:hover {
+      background: linear-gradient(135deg, #218838 0%, #1e9ecb 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(40, 167, 69, 0.4);
+    }
+
+    .contact-button-centered:active {
+      transform: translateY(0);
+      box-shadow: 0 2px 6px rgba(40, 167, 69, 0.3);
+    }
+
+    .contact-button-centered i {
+      font-size: 0.9rem;
+    }
+
+    /* Hide default SweetAlert2 actions when using custom footer */
+    .swal-two-column-popup .swal2-actions {
+      display: none !important;
+    }
+
+    /* Responsive Design */
+    @media (max-width: 768px) {
+      .service-modal-container {
+        flex-direction: column;
+        gap: 1rem;
+      }
+
+      .swal-two-column-popup {
+        width: 95% !important;
+      }
+
+      .swal-two-column-content {
+        padding: 0 1rem 0.75rem !important;
+        max-height: 80vh !important;
+      }
+
+      .swal-compact-title {
+        font-size: 1.1rem !important;
+        padding: 0.75rem 1rem 0.25rem !important;
+      }
+
+      .modal-footer-center {
+        margin-top: 1.5rem;
+        padding-top: 1rem;
+      }
+      
+      .contact-button-centered {
+        width: 100%;
+        max-width: 300px;
+        padding: 1rem 1.5rem;
+        font-size: 1rem;
+      }
+
+      .quick-info-horizontal {
+        flex-direction: column;
+        gap: 0.75rem;
+      }
+    }
   </style>
 </head>
 <body>
@@ -1284,13 +1739,13 @@ $stmt = null;
                     if (count($custom_services) > 0):
                         foreach ($custom_services as $service): 
                     ?>
-                        <div class="service-item" onclick="viewCustomService(<?php echo htmlspecialchars(json_encode($service)); ?>)">
+                        <div class="service-item" onclick="viewCustomServiceDetails(<?php echo htmlspecialchars(json_encode($service)); ?>)">
                             <div class="service-icon"><i class="fas <?php echo htmlspecialchars($service['icon']); ?>"></i></div>
                             <div class="service-content">
                                 <h4><?php echo htmlspecialchars($service['name']); ?></h4>
                                 <p><?php echo htmlspecialchars($service['description']); ?></p>
                                 <a href="#" class="service-cta">
-                                    Request Service <i class="fas fa-arrow-right"></i>
+                                    View Details <i class="fas fa-arrow-right"></i>
                                 </a>
                             </div>
                         </div>
@@ -1475,10 +1930,41 @@ $stmt = null;
     <footer class="footer">
       <p>&copy; 2025 iBarangay. All rights reserved.</p>
     </footer>
+  </div>
+
   <!-- Scripts -->
   <script src="https://unpkg.com/aos@next/dist/aos.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
   <script>
+    // Photo expansion function (moved from PHP to JS)
+    function expandPhoto(photoUrl, serviceName) {
+      Swal.fire({
+        title: `${serviceName} - Verification Photo`,
+        html: `
+          <div class="expanded-photo-container">
+            <img src="${photoUrl}" alt="Service Verification Photo" class="expanded-photo">
+            <p class="photo-caption">
+              <i class="fas fa-shield-alt"></i> 
+              Official verification photo for ${serviceName}
+            </p>
+          </div>
+        `,
+        width: '90%',
+        maxWidth: '800px',
+        showCloseButton: true,
+        showConfirmButton: false,
+        customClass: {
+          popup: 'photo-expansion-popup',
+          title: 'photo-expansion-title',
+          htmlContainer: 'photo-expansion-content'
+        },
+        backdrop: `
+          rgba(0,0,0,0.8)
+          url("data:image/svg+xml,%3csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3e%3cg fill='none' fill-rule='evenodd'%3e%3cg fill='%23ffffff' fill-opacity='0.1'%3e%3ccircle cx='30' cy='30' r='4'/%3e%3c/g%3e%3c/g%3e%3c/svg%3e")
+        `
+      });
+    }
+
     // Initialize AOS animations
     AOS.init({
       duration: 800,
@@ -1509,7 +1995,7 @@ $stmt = null;
         return 3;                        // Desktop: 3 cards
       }
       
-      // FIXED: Create responsive dots
+      // FIXED: Create dots based on total groups
       function createDots() {
         dotsContainer.innerHTML = '';
         const totalDots = Math.ceil(totalSlides / slidesPerView);
@@ -1762,6 +2248,193 @@ $stmt = null;
 
     // Apply debounce to resize handlers
     window.addEventListener('resize', debounce(handleAnnouncementsPosition, 250));
+
+    // Custom Service Modal Functions - Updated with centered contact button
+    function viewCustomServiceDetails(service) {
+      // Prepare the HTML content for SweetAlert
+      const photoSection = service.service_photo 
+        ? `<div class="service-photo-container">
+             <img src="../uploads/service_photos/${service.service_photo}" 
+                  alt="Service Verification Photo" 
+                  class="service-photo clickable-photo"
+                  onclick="expandPhoto('../uploads/service_photos/${service.service_photo}', '${service.name}')">
+             <div class="photo-expand-hint">
+               <i class="fas fa-expand-alt"></i> Click to expand
+             </div>
+             <div class="verification-badge verified">
+               <i class="fas fa-shield-alt"></i> Verified Service
+             </div>
+           </div>`
+        : `<div class="service-photo-container">
+             <div class="service-photo-placeholder">
+               <i class="fas fa-image"></i>
+               <p>No photo available</p>
+             </div>
+             <div class="verification-badge pending">
+               <i class="fas fa-clock"></i> Pending Verification
+             </div>
+           </div>`;
+
+      const requirementsList = formatServiceListForSwal(service.requirements);
+      const guideList = formatServiceListForSwal(service.detailed_guide);
+      
+      // Priority badge styling
+      let priorityBadge = '';
+      switch(service.priority_level) {
+        case 'urgent':
+          priorityBadge = '<span class="badge badge-urgent">Urgent</span>';
+          break;
+        case 'high':
+          priorityBadge = '<span class="badge badge-high">High</span>';
+          break;
+        default:
+          priorityBadge = '<span class="badge badge-normal">Normal</span>';
+      }
+
+      const additionalNotesSection = service.additional_notes && service.additional_notes.trim()
+        ? `<div class="info-section">
+             <h4><i class="fas fa-sticky-note"></i> Additional Notes</h4>
+             <p>${service.additional_notes}</p>
+           </div>`
+        : '';
+
+      Swal.fire({
+        title: `<div class="service-title">
+                  <i class="fas ${service.icon}"></i>
+                  ${service.name}
+                </div>`,
+        html: `
+          <div class="service-modal-container">
+            
+            <!-- Left Column - Service Information -->
+            <div class="left-column">
+              <div class="info-section">
+                <h4><i class="fas fa-info-circle"></i> Description</h4>
+                <p>${service.description}</p>
+              </div>
+
+              <div class="accordion-section">
+                <div class="accordion-item">
+                  <button class="accordion-header" onclick="toggleSection('requirements-${service.id}')">
+                    <span><i class="fas fa-clipboard-list"></i> Requirements</span>
+                    <i class="fas fa-chevron-down" id="requirements-${service.id}-icon"></i>
+                  </button>
+                  <div id="requirements-${service.id}" class="accordion-content">
+                    ${requirementsList}
+                  </div>
+                </div>
+                
+                <div class="accordion-item">
+                  <button class="accordion-header" onclick="toggleSection('guide-${service.id}')">
+                    <span><i class="fas fa-list-ol"></i> Step-by-Step Guide</span>
+                    <i class="fas fa-chevron-down" id="guide-${service.id}-icon"></i>
+                  </button>
+                  <div id="guide-${service.id}" class="accordion-content">
+                    ${guideList}
+                  </div>
+                </div>
+              </div>
+
+              <div class="quick-info-horizontal">
+                <div class="info-box">
+                  <h4><i class="fas fa-clock"></i> Processing Time</h4>
+                  <p>${service.processing_time || 'Not specified'}</p>
+                </div>
+                <div class="info-box">
+                  <h4><i class="fas fa-money-bill-wave"></i> Fees</h4>
+                  <p>${service.fees || 'Not specified'}</p>
+                </div>
+              </div>
+
+              ${additionalNotesSection}
+            </div>
+
+            <!-- Right Column - Service Photo -->
+            <div class="right-column">
+              <div class="photo-section">
+                <h4 class="photo-section-title">Service Photo</h4>
+                ${photoSection}
+                
+                <div class="badges-container">
+                  <span class="badge badge-type">${service.service_type || 'General'}</span>
+                  ${priorityBadge}
+                  <span class="badge badge-availability">${service.availability_type || 'Always Available'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          
+         
+       
+        `,
+        width: '90%',
+        maxWidth: '900px',
+        showCloseButton: true,
+        showCancelButton: false,
+        showConfirmButton: false, // Disable default confirm button
+        customClass: {
+          popup: 'swal-two-column-popup',
+          title: 'swal-compact-title',
+          htmlContainer: 'swal-two-column-content'
+        }
+      });
+    }
+
+    // Toggle section function for accordion
+    function toggleSection(sectionId) {
+      const section = document.getElementById(sectionId);
+      const icon = document.getElementById(sectionId + '-icon');
+      
+      if (section && icon) {
+        if (section.style.display === 'none' || section.style.display === '') {
+          section.style.display = 'block';
+          section.classList.add('show');
+          icon.style.transform = 'rotate(180deg)';
+        } else {
+          section.style.display = 'none';
+          section.classList.remove('show');
+          icon.style.transform = 'rotate(0deg)';
+        }
+      }
+    }
+
+    function formatServiceListForSwal(text) {
+      if (!text) return '<p style="color: #9ca3af; font-size: 0.875rem;">Not specified</p>';
+      
+      return text.split('\n')
+        .map(line => line.trim())
+        .filter(line => line)
+        .map((line, index) => {
+          // Remove existing numbering or bullet points
+          const cleanLine = line.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, '');
+          return `<div style="display: flex; align-items: flex-start; margin-bottom: 0.5rem;">
+                    <span style="flex-shrink: 0; width: 1.25rem; height: 1.25rem; background: #dbeafe; color: #1e40af; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; margin-right: 0.5rem; margin-top: 0.125rem;">
+                      ${index + 1}
+                    </span>
+                    <span style="color: #6b7280; font-size: 0.875rem; line-height: 1.4;">${cleanLine}</span>
+                  </div>`;
+        })
+        .join('');
+    }
+
+    function contactBarangay() {
+      Swal.fire({
+        title: 'Contact Barangay',
+        html: `
+          <div class="text-left">
+            <p class="mb-4">You can contact the barangay office through:</p>
+            <div class="space-y-2">
+              <p><i class="fas fa-phone mr-2 text-blue-500"></i> <strong>Phone:</strong> <?php echo htmlspecialchars($emergency_contacts['local_barangay_contact']); ?></p>
+              <p><i class="fas fa-map-marker-alt mr-2 text-green-500"></i> <strong>Address:</strong> Barangay Hall, <?php echo htmlspecialchars($barangay_name); ?></p>
+              <p><i class="fas fa-clock mr-2 text-orange-500"></i> <strong>Office Hours:</strong> 8:00 AM - 5:00 PM (Mon-Fri)</p>
+            </div>
+          </div>
+        `,
+        icon: 'info',
+        confirmButtonText: 'Close',
+        confirmButtonColor: '#3085d6'
+      });
+    }
   </script>
 </body>
 </html>

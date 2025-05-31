@@ -4,6 +4,12 @@
 // ======================================
 require __DIR__ . '/../config/dbconn.php';
 
+// Get current admin's barangay info from session
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$currentAdminBarangayId = $_SESSION['barangay_id'] ?? null;
+
 // Validate document request ID
 if (!isset($docRequestId)) {
     if (!isset($_GET['id'])) {
@@ -14,15 +20,35 @@ if (!isset($docRequestId)) {
 }
 
 // ======================================
+// SECURITY CHECK - ENSURE ADMIN CAN ONLY ACCESS THEIR BARANGAY DOCUMENTS
+// ======================================
+// First, get the document's barangay to verify admin access
+$securityCheckSql = "SELECT dr.barangay_id, b.name as barangay_name FROM document_requests dr 
+                     JOIN barangay b ON dr.barangay_id = b.id 
+                     WHERE dr.id = :docRequestId";
+$securityStmt = $pdo->prepare($securityCheckSql);
+$securityStmt->execute([':docRequestId' => $docRequestId]);
+$docBarangayCheck = $securityStmt->fetch(PDO::FETCH_ASSOC);
+
+// Ensure admin can only access documents from their barangay
+if (!$docBarangayCheck || ($currentAdminBarangayId && $docBarangayCheck['barangay_id'] != $currentAdminBarangayId)) {
+    echo "<h1>Access Denied</h1>";
+    echo "<p>You can only access documents from your assigned barangay (" . ($_SESSION['barangay_name'] ?? 'Unknown') . ").</p>";
+    echo "<p>This document belongs to: " . ($docBarangayCheck['barangay_name'] ?? 'Unknown Barangay') . "</p>";
+    exit();
+}
+
+// ======================================
 // DATABASE QUERIES
 // ======================================
-// Main query to fetch document request and related information
+// Enhanced query to fetch document request and related information
 $sql = "
     SELECT 
         dr.*,
         dt.name AS document_name,
         dt.code AS document_code,
         b.name AS barangay_name,
+        b.id AS barangay_id,
         -- Person information from persons table
         p.id AS person_id,
         p.first_name AS person_first_name,
@@ -65,9 +91,9 @@ if ($docRequest['document_code'] === 'cedula' || $docRequest['document_code'] ==
 }
 
 // ======================================
-// FETCH BARANGAY OFFICIALS
+// FETCH BARANGAY OFFICIALS (DYNAMIC)
 // ======================================
-// Query to get barangay officials
+// Query to get barangay officials for the specific barangay
 $officialsSql = "
     SELECT
         CONCAT(p.first_name, ' ', COALESCE(p.middle_name, ''), ' ', p.last_name) AS full_name,
@@ -83,18 +109,28 @@ $officialsSql = "
     ORDER BY r.id ASC
 ";
 
-// Execute officials query
+// Execute officials query using the document's barangay_id
 $stmtOfficials = $pdo->prepare($officialsSql);
 $stmtOfficials->execute([':barangay_id' => $docRequest['barangay_id']]);
 $barangayOfficials = $stmtOfficials->fetchAll(PDO::FETCH_ASSOC);
 
 // ======================================
-// INITIALIZE OFFICIALS DATA
+// INITIALIZE OFFICIALS DATA WITH BARANGAY-SPECIFIC DEFAULTS
 // ======================================
-// Set default values for officials
-$captain = ['full_name' => 'BARANGAY CAPTAIN', 'role_name' => 'barangay_captain'];
-$secretary = ['full_name' => 'BARANGAY SECRETARY', 'role_name' => 'barangay_secretary'];
-$treasurer = ['full_name' => 'BARANGAY TREASURER', 'role_name' => 'barangay_treasurer'];
+// Set barangay-specific default values for officials
+$barangayNameForDefaults = strtoupper($docRequest['barangay_name']);
+$captain = [
+    'full_name' => $barangayNameForDefaults . ' BARANGAY CAPTAIN', 
+    'role_name' => 'barangay_captain'
+];
+$secretary = [
+    'full_name' => $barangayNameForDefaults . ' BARANGAY SECRETARY', 
+    'role_name' => 'barangay_secretary'
+];
+$treasurer = [
+    'full_name' => $barangayNameForDefaults . ' BARANGAY TREASURER', 
+    'role_name' => 'barangay_treasurer'
+];
 
 // Map fetched officials to their roles
 foreach ($barangayOfficials as $official) {
@@ -122,7 +158,7 @@ $contactNumber = $docRequest['cp_number'] ?? $docRequest['person_contact'] ?? ''
 $purpose = $docRequest['purpose'] ?? 'FOR GENERAL PURPOSES';
 $yearsOfResidence = $docRequest['years_of_residence'] ?? '0';
 
-// Format address
+// Format address with dynamic barangay name
 $address = '';
 if (!empty($docRequest['address_no'])) {
     $address .= $docRequest['address_no'] . ' ';
@@ -153,22 +189,51 @@ if ($birthDate) {
 }
 
 // ======================================
-// DOCUMENT METADATA
+// DOCUMENT METADATA (BARANGAY-SPECIFIC)
 // ======================================
 // Format dates
 $issuedDate = date('jS \d\a\y \o\f F Y');
 $validUntil = date('jS \d\a\y \o\f F Y', strtotime('+6 months'));
 
-// Document details
+// Document details with dynamic barangay information
 $docType = $docRequest['document_name'];
 $barangayName = strtoupper($docRequest['barangay_name']);
 $documentCode = $docRequest['document_code'];
-$certificateNumber = strtoupper(substr($documentCode, 0, 2)) . '-' . date('Y') . '-' . str_pad($docRequestId, 6, '0', STR_PAD_LEFT);
+
+// Generate certificate number with barangay-specific prefix
+$barangayPrefix = strtoupper(substr($docRequest['barangay_name'], 0, 3));
+$certificateNumber = $barangayPrefix . '-' . strtoupper(substr($documentCode, 0, 2)) . '-' . date('Y') . '-' . str_pad($docRequestId, 6, '0', STR_PAD_LEFT);
 
 // Payment information
 $ctcNumber = $docRequest['ctc_number'] ?: 'N/A';
 $orNumber = $docRequest['or_number'] ?: 'N/A';
 $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['created_at'])) : date('d/m/Y');
+
+// ======================================
+// BARANGAY-SPECIFIC CUSTOMIZATIONS
+// ======================================
+// Define barangay-specific colors and styles
+$barangayStyles = [
+    'default' => ['primary' => '#1e40af', 'secondary' => '#dc2626'],
+    // Add specific barangay customizations based on your database
+    'BMA-BALAGTAS' => ['primary' => '#059669', 'secondary' => '#dc2626'],
+    'BANCA‐BANCA' => ['primary' => '#7c3aed', 'secondary' => '#dc2626'],
+    'CAINGIN' => ['primary' => '#0891b2', 'secondary' => '#dc2626'],
+    'CAPIHAN' => ['primary' => '#c2410c', 'secondary' => '#dc2626'],
+    'TAMBUBONG' => ['primary' => '#16a34a', 'secondary' => '#dc2626'],
+    'PANTUBIG' => ['primary' => '#0284c7', 'secondary' => '#dc2626'],
+    // Add more barangays as needed
+];
+
+$currentBarangayStyle = $barangayStyles[$barangayName] ?? $barangayStyles['default'];
+$primaryColor = $currentBarangayStyle['primary'];
+$secondaryColor = $currentBarangayStyle['secondary'];
+
+// Get barangay-specific settings if available
+$barangaySettingsSql = "SELECT * FROM barangay_settings WHERE barangay_id = :barangay_id";
+$barangaySettingsStmt = $pdo->prepare($barangaySettingsSql);
+$barangaySettingsStmt->execute([':barangay_id' => $docRequest['barangay_id']]);
+$barangaySettings = $barangaySettingsStmt->fetch(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -214,7 +279,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             display: flex;
             flex-direction: column;
             padding: 5mm;
-            border: 2px solid #1e40af;
+            border: 2px solid <?= $primaryColor ?>;
             overflow: hidden;
         }
         
@@ -222,7 +287,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             position: absolute;
             width: 15px;
             height: 15px;
-            border: 1px solid #1e40af;
+            border: 1px solid <?= $primaryColor ?>;
         }
         
         .corner-tl { top: 8px; left: 8px; border-right: none; border-bottom: none; }
@@ -235,12 +300,12 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             margin-bottom: 6px;
             position: relative;
             padding: 5px 50px;
-            border-bottom: 1px solid #1e40af;
+            border-bottom: 1px solid <?= $primaryColor ?>;
         }
         
         .header h1, .header h2, .header h3, .header p {
             margin: 0;
-            color: #1e40af;
+            color: <?= $primaryColor ?>;
             line-height: 1.1;
         }
         
@@ -266,7 +331,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             position: absolute;
             width: 35px;
             height: 35px;
-            border: 1px solid #1e40af;
+            border: 1px solid <?= $primaryColor ?>;
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -292,7 +357,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             font-weight: bold;
             text-align: center;
             margin: 6px 0;
-            color: #dc2626;
+            color: <?= $secondaryColor ?>;
             text-decoration: underline;
             letter-spacing: 0.8px;
         }
@@ -308,7 +373,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
         .content h4 {
             text-align: center;
             margin: 6px 0;
-            color: #1e40af;
+            color: <?= $primaryColor ?>;
             font-size: 10pt;
             font-weight: bold;
         }
@@ -331,7 +396,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             width: 80px;
             font-weight: bold;
             flex-shrink: 0;
-            color: #1e40af;
+            color: <?= $primaryColor ?>;
         }
         
         .info-separator {
@@ -350,7 +415,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
         .verification-section {
             margin: 5px 0;
             font-size: 8pt;
-            border-top: 1px solid #1e40af;
+            border-top: 1px solid <?= $primaryColor ?>;
             padding-top: 4px;
             padding: 4px;
         }
@@ -369,7 +434,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
         .verification-label {
             font-weight: bold;
             margin-bottom: 1px;
-            color: #1e40af;
+            color: <?= $primaryColor ?>;
             font-size: 7pt;
         }
         
@@ -383,7 +448,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             grid-template-columns: 1fr 1fr;
             gap: 10px;
             margin-top: 5px;
-            border-top: 1px solid #1e40af;
+            border-top: 1px solid <?= $primaryColor ?>;
             padding-top: 5px;
         }
         
@@ -403,7 +468,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             font-size: 9pt;
             margin-bottom: 1px;
             text-transform: uppercase;
-            color: #1e40af;
+            color: <?= $primaryColor ?>;
         }
         
         .official-title {
@@ -469,7 +534,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
         .business-value {
             font-size: 9pt;
             font-weight: bold;
-            color: #dc2626;
+            color: <?= $secondaryColor ?>;
             border-bottom: 1px solid #e5e7eb;
             padding: 2px;
             min-height: 18px;
@@ -526,6 +591,13 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             color: #92400e;
         }
         
+        /* Barangay-specific header styling */
+        .barangay-header {
+            background: linear-gradient(135deg, <?= $primaryColor ?>22, transparent);
+            border-radius: 4px;
+            padding: 2px;
+        }
+        
         @media print {
             .certificate-container {
                 height: auto;
@@ -558,8 +630,8 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
         <div class="document-number"><?= $certificateNumber ?></div>
         <div class="watermark"><?= strtoupper($barangayName) ?></div>
 
-        <!-- Header Section -->
-        <div class="header">
+        <!-- Header Section with Dynamic Barangay -->
+        <div class="header barangay-header">
             <!-- Official Seals -->
             <div class="seal-placeholder seal-left">PROVINCIAL<br>SEAL</div>
             <div class="seal-placeholder seal-right">MUNICIPAL<br>SEAL</div>
@@ -825,7 +897,7 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
             </div>
             
             <div style="text-align: left; margin-top: 2px;">
-                <div><strong>PREPARED BY:</strong> Administrator</div>
+                <div><strong>PREPARED BY:</strong> <?= htmlspecialchars($barangayName) ?> Administrator</div>
             </div>
         </div>
 
@@ -853,7 +925,49 @@ $issuedOn = $docRequest['created_at'] ? date('d/m/Y', strtotime($docRequest['cre
 
         <!-- Footer Elements -->
         <div class="qr-placeholder">QR</div>
-        <div class="record-info">Record <?= str_pad($docRequestId, 2, '0', STR_PAD_LEFT) ?>/443</div>
+        <div class="record-info">Record <?= str_pad($docRequestId, 2, '0', STR_PAD_LEFT) ?>/443 - <?= $barangayName ?></div>
     </div>
+
+    <!-- ====================================== -->
+    <!-- JAVASCRIPT FOR ADDITIONAL FEATURES     -->
+    <!-- ====================================== -->
+    <script>
+        // Print functionality
+        function printDocument() {
+            window.print();
+        }
+        
+        // Add print button if needed
+        document.addEventListener('DOMContentLoaded', function() {
+            // Auto-print if URL parameter is set
+            const urlParams = new URLSearchParams(window.location.search);
+            if (urlParams.get('print') === 'true') {
+                setTimeout(() => {
+                    window.print();
+                }, 1000);
+            }
+        });
+        
+        // Dynamic content adjustments based on barangay
+        function adjustContentForBarangay() {
+            const barangayName = '<?= $barangayName ?>';
+            
+            // Add barangay-specific adjustments here if needed
+            switch(barangayName) {
+                case 'BAGBAGUIN':
+                    // Specific adjustments for Bagbaguin
+                    break;
+                case 'BALIUAG':
+                    // Specific adjustments for Baliuag
+                    break;
+                default:
+                    // Default behavior
+                    break;
+            }
+        }
+        
+        // Call the adjustment function
+        adjustContentForBarangay();
+    </script>
 </body>
 </html>

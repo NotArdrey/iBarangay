@@ -21,17 +21,35 @@ if (!$proposal_id) {
 try {
     $pdo->beginTransaction();
 
+    // First check if this proposal exists and get its current status
+    $stmt = $pdo->prepare("
+        SELECT sp.*, bc.id as case_id 
+        FROM schedule_proposals sp
+        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+        JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+        JOIN persons p ON bp.person_id = p.id
+        WHERE sp.id = ? AND p.user_id = ?
+    ");
+    $stmt->execute([$proposal_id, $user_id]);
+    $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$proposal) {
+        throw new Exception("Schedule proposal not found or unauthorized");
+    }
+
     switch ($action) {
         case 'confirm':
+            // Only allow confirmation if captain has already confirmed
+            if ($proposal['status'] !== 'captain_confirmed') {
+                throw new Exception("Cannot confirm schedule - waiting for Captain's confirmation");
+            }
+
             // Update proposal as user confirmed
             $stmt = $pdo->prepare("
                 UPDATE schedule_proposals 
                 SET user_confirmed = TRUE, 
                     user_confirmed_at = NOW(),
-                    status = CASE 
-                        WHEN captain_confirmed = TRUE THEN 'both_confirmed' 
-                        ELSE 'user_confirmed' 
-                    END
+                    status = 'both_confirmed'
                 WHERE id = ? AND blotter_case_id IN (
                     SELECT bc.id 
                     FROM blotter_cases bc
@@ -43,9 +61,19 @@ try {
             $stmt->execute([$proposal_id, $user_id]);
             
             if ($stmt->rowCount() > 0) {
-                $_SESSION['success'] = "Schedule confirmed successfully";
+                // Update blotter case status
+                $stmt = $pdo->prepare("
+                    UPDATE blotter_cases 
+                    SET status = 'open',
+                        scheduled_hearing = ?
+                    WHERE id = ?
+                ");
+                $hearingDateTime = $proposal['proposed_date'] . ' ' . $proposal['proposed_time'];
+                $stmt->execute([$hearingDateTime, $proposal['case_id']]);
+
+                $_SESSION['success'] = "confirmed";
             } else {
-                $_SESSION['error'] = "Failed to confirm schedule";
+                throw new Exception("Failed to confirm schedule");
             }
             break;
 
@@ -53,9 +81,7 @@ try {
             $remarks = trim($_POST['remarks'] ?? '');
             
             if (empty($remarks)) {
-                $_SESSION['error'] = "Please provide a reason for rejection";
-                header("Location: blotter_status.php");
-                exit;
+                throw new Exception("Please provide a reason for rejection");
             }
             
             // Update proposal as rejected
@@ -75,20 +101,20 @@ try {
             $stmt->execute([$remarks, $remarks, $proposal_id, $user_id]);
             
             if ($stmt->rowCount() > 0) {
-                $_SESSION['success'] = "Schedule rejected successfully";
+                $_SESSION['success'] = "rejected";
             } else {
-                $_SESSION['error'] = "Failed to reject schedule";
+                throw new Exception("Failed to reject schedule");
             }
             break;
 
         default:
-            $_SESSION['error'] = "Invalid action";
+            throw new Exception("Invalid action");
     }
 
     $pdo->commit();
 } catch (Exception $e) {
     $pdo->rollBack();
-    $_SESSION['error'] = "Error: " . $e->getMessage();
+    $_SESSION['error'] = $e->getMessage();
 }
 
 header("Location: blotter_status.php");
