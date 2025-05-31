@@ -502,7 +502,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'person_economic_problems' => [
                 'loss_income' => isset($_POST['problem_loss_income']) ? 1 : 0,
                 'unemployment' => isset($_POST['problem_lack_income']) ? 1 : 0,
-                'high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
                 'skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
                 'skills_training_details' => $_POST['problem_skills_training_specify'] ?? null,
                 'livelihood' => isset($_POST['problem_livelihood']) ? 1 : 0,

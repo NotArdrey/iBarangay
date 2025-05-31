@@ -14,14 +14,24 @@ $barangay_id = $_SESSION['barangay_id'];
 
 // Fetch households for selection
 $stmt = $pdo->prepare("
-    SELECT h.id AS household_id, h.purok_id, p.name as purok_name
+    SELECT h.id AS household_id, h.household_number, h.purok_id, p.name as purok_name
     FROM households h
     LEFT JOIN purok p ON h.purok_id = p.id
     WHERE h.barangay_id = ? 
-    ORDER BY h.id
+    ORDER BY h.purok_id, h.household_number
 ");
 $stmt->execute([$barangay_id]);
 $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Group households by purok for JavaScript
+$households_by_purok = [];
+foreach ($households as $household) {
+    $purok_id = $household['purok_id'];
+    if (!isset($households_by_purok[$purok_id])) {
+        $households_by_purok[$purok_id] = [];
+    }
+    $households_by_purok[$purok_id][] = $household;
+}
 
 // Fetch puroks for selection
 $stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
@@ -880,8 +890,7 @@ function isCheckboxChecked($form_data, $key)
                                     <option value="<?= htmlspecialchars($household['household_id']) ?>"
                                         data-purok="<?= htmlspecialchars($household['purok_id']) ?>"
                                         <?= isSelected($household['household_id'], $form_data, 'household_id') ?>>
-                                        <?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>
-                                        <?= $household['purok_name'] ? ' - ' . htmlspecialchars($household['purok_name']) : '' ?>
+                                        <?= htmlspecialchars($household['household_number']) ?> (<?= htmlspecialchars($household['purok_name']) ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -2054,7 +2063,7 @@ function isCheckboxChecked($form_data, $key)
                     if (!householdsByPurok['<?= $household['purok_id'] ?>']) householdsByPurok['<?= $household['purok_id'] ?>'] = [];
                     householdsByPurok['<?= $household['purok_id'] ?>'].push({
                         id: '<?= htmlspecialchars($household['household_id']) ?>',
-                        number: '<?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>',
+                        number: '<?= htmlspecialchars($household['household_number']) ?>',
                         purok_name: '<?= htmlspecialchars($household['purok_name']) ?>'
                     });
                 <?php endforeach; ?>

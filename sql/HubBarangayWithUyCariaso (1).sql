@@ -379,10 +379,6 @@ CREATE TABLE person_identification (
     philhealth_id VARCHAR(50),
     other_id_type VARCHAR(50),
     other_id_number VARCHAR(50),
-    id_image_path VARCHAR(255),
-    selfie_image_path VARCHAR(255),
-    signature_image_path VARCHAR(255),
-    signature_date DATE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE

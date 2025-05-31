@@ -332,13 +332,13 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                     <!-- Municipality -->
                     <div>
                         <label for="municipality" class="block text-sm font-medium text-gray-700">Municipality *</label>
-                        <input type="text" name="municipality" id="municipality" value="III" readonly
+                        <input type="text" name="municipality" id="municipality" value="SAN RAFAEL" readonly
                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Province -->
                     <div>
                         <label for="province" class="block text-sm font-medium text-gray-700">Province *</label>
-                        <input type="text" name="province" id="province" value="SAN RAFAEL" readonly
+                        <input type="text" name="province" id="province" value="BULACAN" readonly
                         class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Region -->
