@@ -141,14 +141,25 @@ function generateSummonsForm($pdo, $caseId) {
     if (!$case) throw new Exception("Case not found");
 
     // Get appropriate signature based on availability
-    // Prioritize captain's signature if available, otherwise use chief officer's
     $esignaturePath = null;
-    if (in_array($case['status'], ['open','closed','completed','solved','endorsed_to_court','cfa_eligible'])) {
-        $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
-        if ($captainEsignaturePath) {
-            $esignaturePath = $captainEsignaturePath;
-        } else {
-            $esignaturePath = getChiefOfficerEsignature($pdo, $case['barangay_id']);
+    $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
+    if ($captainEsignaturePath) {
+        $esignaturePath = $captainEsignaturePath;
+    } else {
+        $chiefEsignaturePath = getChiefOfficerEsignature($pdo, $case['barangay_id']);
+        if ($chiefEsignaturePath) {
+            $esignaturePath = $chiefEsignaturePath;
+        }
+    }
+
+    // embed signature as data URI
+    $sigData = '';
+    if ($esignaturePath) {
+        $full = $_SERVER['DOCUMENT_ROOT'] . '/iBarangay/' . $esignaturePath;
+        if (file_exists($full)) {
+            $type = mime_content_type($full);
+            $bin  = base64_encode(file_get_contents($full));
+            $sigData = "data:{$type};base64,{$bin}";
         }
     }
 
@@ -167,6 +178,30 @@ function generateSummonsForm($pdo, $caseId) {
     $complainants = array_filter($participants, fn($p) => $p['role'] === 'complainant');
     $respondents = array_filter($participants, fn($p) => $p['role'] === 'respondent');
 
+    // Auto-fill current date
+    $currentDate = new DateTime();
+    $day = $currentDate->format('j');
+    $month = $currentDate->format('F');
+    $year = $currentDate->format('Y');
+
+    // fetch latest pending schedule proposal
+    $sStmt = $pdo->prepare("
+        SELECT proposed_date, proposed_time
+        FROM schedule_proposals
+        WHERE blotter_case_id = ?
+        ORDER BY id DESC
+        LIMIT 1
+    ");
+    $sStmt->execute([$caseId]);
+    $sched = $sStmt->fetch(PDO::FETCH_ASSOC) ?: [];
+    $hDate = isset($sched['proposed_date']) ? new DateTime($sched['proposed_date']) : new DateTime();
+    $hDay   = $hDate->format('j');
+    $hMonth = $hDate->format('F');
+    $hYear  = $hDate->format('Y');
+    $hTime  = isset($sched['proposed_time'])
+             ? DateTime::createFromFormat('H:i:s', $sched['proposed_time'])->format('g:i A')
+             : '';
+
     ob_start(); ?>
     <!DOCTYPE html>
     <html>
@@ -175,7 +210,6 @@ function generateSummonsForm($pdo, $caseId) {
         <style>
             @page { margin: 25mm 20mm; size: A4; }
             body { font-family: 'Times New Roman', serif; font-size: 12pt; margin: 0; color: #000; }
-            /* Remove absolute positioning for form-number to avoid overlap */
             .form-number { font-size: 11pt; margin-bottom: 2mm; }
             .header-table { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
             .header-table td { vertical-align: middle; }
@@ -219,21 +253,22 @@ function generateSummonsForm($pdo, $caseId) {
                     <?php foreach($complainants as $c): ?>
                         <?= htmlspecialchars($c['full_name'] ?? 'Unknown') ?><br>
                     <?php endforeach; ?>
-                    <?php if (empty($complainants)): ?>
-                        &nbsp;
-                    <?php endif; ?>
+                    <?php if (empty($complainants)): ?>&nbsp;<?php endif; ?>
                 </div>
                 <div class="label">(Mga) Maysumbong</div>
-                <div style="margin:2mm 0;">-laban kay (kina)-</div>
-                <div class="underline" style="min-width:180px;">
-                    <?php foreach($respondents as $r): ?>
-                        <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
-                    <?php endforeach; ?>
-                    <?php if (empty($respondents)): ?>
-                        &nbsp;
-                    <?php endif; ?>
+
+                <div style="margin:2mm 0;">
+                    laban kay (kina):
+                    <span class="underline" style="min-width:180px; display:inline-block; vertical-align:top;">
+                        <?php foreach($respondents as $r): ?>
+                            <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
+                        <?php endforeach; ?>
+                        <?php if (empty($respondents)): ?>&nbsp;<?php endif; ?>
+                    </span>
+                    <span class="label" style="display:inline-block; vertical-align:middle;margin-bottom: 30px;">
+                        (Mga) Ipinagsusumbong
+                    </span>
                 </div>
-                <div class="label">(Mga) Ipinagsusumbong</div>
             </div>
             <div style="width:10%;display:inline-block;"></div>
             <div style="width:45%;display:inline-block;vertical-align:top;">
@@ -243,13 +278,22 @@ function generateSummonsForm($pdo, $caseId) {
         </div>
         <div class="summons-title">PATAWAG</div>
         <div style="margin-bottom:2mm;">
-            Kay/Kina: <span class="underline" style="min-width:180px;">
-                <?php foreach($respondents as $r) echo htmlspecialchars($r['full_name']) . ' '; ?>
+            Kay/Kina:
+            <span class="underline"
+                  style="min-width:180px; display:inline-block; vertical-align:middle; margin-right:4px;">
+                <?php foreach ($respondents as $r): ?>
+                    <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
+                <?php endforeach; ?>
+                <?php if (empty($respondents)): ?>&nbsp;<?php endif; ?>
             </span>
-            <div class="label">(Mga) Ipinagsusumbong</div>
+            <span class="label" style="vertical-align:middle;">(Mga) Ipinagsusumbong</span>
         </div>
         <div style="margin-bottom:2mm;">
-            Sa pamamagitan nito, kayo'y tinatawag upang personal na humarap sa akin, kasama ang inyong mga testigo, sa ika-<span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>, sa ganap na ika-<span class="underline" style="min-width:40px;"></span> ng umaga/hapon, upang sagutin ang isang sumbong na idinulog sa akin, na ang kopya'y kalakip nito, para pagmagitanan/pagpakasunduin kayo sa inyong alitan ng (mga) maysumbong.
+            Sa pamamagitan nito, kayo'y tinatawag upang personal na humarap sa akin, kasama ang inyong mga testigo,
+            sa ika-<span class="underline" style="min-width:30px;"><?= $hDay ?></span> araw ng 
+            <span class="underline" style="min-width:80px;"><?= $hMonth ?></span>, <?= $hYear ?>,
+            sa ganap na ika-<span class="underline" style="min-width:40px;"><?= $hTime ?></span> ng umaga/hapon,
+            upang sagutin ang isang sumbong na idinulog sa akin, na ang kopya'y kalakip nito, para pagmagitanan/pagpakasunduin kayo sa inyong alitan ng (mga) maysumbong.
         </div>
         <div style="margin-bottom:2mm;">
             Sa pamamagitan nito, kayo'y binabalaan na ang inyong pagtanggi o sadyang di-pagharap bilang pagtaliwas sa patawag na ito ay magbibigay ng karapatan sa (mga) maysumbong upang tuwiran kayong ipagsakdal sa hukuman/tanggapan ng pamahalaan, na doon ay mahahadlangan kayong magharap ng kontra-demanda bunga ng nabanggit na sumbong.
@@ -260,12 +304,13 @@ function generateSummonsForm($pdo, $caseId) {
         <div class="signature-section">
             <table style="width:100%; margin-top:6mm;">
                 <tr>
-                    <td>
-                        Ngayon ika-<span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>.
+                    <td style="width:60%">
+                        Ngayon ika-<span class="underline" style="min-width:30px;"><?= $day ?></span> araw ng <span class="underline" style="min-width:80px;"><?= $month ?></span>, <?= $year ?>.
                     </td>
-                    <td style="text-align:right;">
-                        <?php if ($esignaturePath): ?>
-                            <img src="<?= htmlspecialchars($esignaturePath) ?>" alt="E-signature" style="height:50px;max-width:180px;display:block;margin-left:auto;margin-bottom:2mm;">
+                    <td style="width:40%; text-align:center;">
+                        <?php if ($sigData): ?>
+                            <img src="<?= $sigData ?>" alt="E-signature"
+                                 style="height:50px;max-width:180px;display:block;margin-left:auto;margin-right:auto;margin-bottom:2mm;">
                         <?php endif; ?>
                         <div class="signature-line"></div><br>
                         Punong Barangay/Pangulo ng Lupon
@@ -298,14 +343,25 @@ function generateReportForm($pdo, $caseId) {
     }
     
     // Get appropriate signature based on availability
-    // Prioritize captain's signature if available, otherwise use chief officer's
     $esignaturePath = null;
-    if (in_array($case['status'], ['open','closed','completed','solved','endorsed_to_court','cfa_eligible'])) {
-        $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
-        if ($captainEsignaturePath) {
-            $esignaturePath = $captainEsignaturePath;
-        } else {
-            $esignaturePath = getChiefOfficerEsignature($pdo, $case['barangay_id']);
+    $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
+    if ($captainEsignaturePath) {
+        $esignaturePath = $captainEsignaturePath;
+    } else {
+        $chiefEsignaturePath = getChiefOfficerEsignature($pdo, $case['barangay_id']);
+        if ($chiefEsignaturePath) {
+            $esignaturePath = $chiefEsignaturePath;
+        }
+    }
+
+    // embed signature as data URI
+    $sigData = '';
+    if ($esignaturePath) {
+        $full = $_SERVER['DOCUMENT_ROOT'] . '/iBarangay/' . $esignaturePath;
+        if (file_exists($full)) {
+            $type = mime_content_type($full);
+            $bin  = base64_encode(file_get_contents($full));
+            $sigData = "data:{$type};base64,{$bin}";
         }
     }
 
@@ -327,6 +383,12 @@ function generateReportForm($pdo, $caseId) {
     
     $complainants = array_filter($participants, fn($p) => $p['role'] === 'complainant');
     $respondents = array_filter($participants, fn($p) => $p['role'] === 'respondent');
+    
+    // Auto-fill current date
+    $currentDate = new DateTime();
+    $day = $currentDate->format('j');
+    $month = $currentDate->format('F');
+    $year = $currentDate->format('Y');
     
     ob_start();
     ?>
@@ -381,21 +443,23 @@ function generateReportForm($pdo, $caseId) {
                     <?php foreach($complainants as $c): ?>
                         <?= htmlspecialchars($c['full_name'] ?? 'Unknown') ?><br>
                     <?php endforeach; ?>
-                    <?php if (empty($complainants)): ?>
-                        &nbsp;
-                    <?php endif; ?>
+                    <?php if (empty($complainants)): ?>&nbsp;<?php endif; ?>
                 </div>
                 <div class="label">(Mga) Maysumbong</div>
-                <div style="margin:2mm 0;">-laban kay (kina)-</div>
-                <div class="underline" style="min-width:180px;">
-                    <?php foreach($respondents as $r): ?>
-                        <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
-                    <?php endforeach; ?>
-                    <?php if (empty($respondents)): ?>
-                        &nbsp;
-                    <?php endif; ?>
+
+                <div style="margin:2mm 0;">
+                    laban kay (kina):
+                    <span class="underline" style="min-width:180px; display:inline-block; vertical-align:top;">
+                        <?php foreach($respondents as $r): ?>
+                            <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
+                        <?php endforeach; ?>
+                        <?php if (empty($respondents)): ?>&nbsp;<?php endif; ?>
+                    </span>
+                    <span class="label" style="display:inline-block; vertical-align:middle; margin-bottom: 30px;">
+                        (Mga) Ipinagsusumbong
+                    </span>
                 </div>
-                <div class="label">(Mga) Ipinagsusumbong</div>
+             
             </div>
             <div style="width:10%;display:inline-block;"></div>
             <div style="width:45%;display:inline-block;vertical-align:top;">
@@ -416,9 +480,9 @@ function generateReportForm($pdo, $caseId) {
             <table style="width:100%; margin-top:6mm;">
                 <tr>
                     <td style="width:60%">
-                        Ginawa ngayong ika- <span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>.
+                        Ginawa ngayong ika- <span class="underline" style="min-width:30px;"><?= $day ?></span> araw ng <span class="underline" style="min-width:80px;"><?= $month ?></span>, <?= $year ?>.
                     </td>
-                    <td style="width:40%; text-align:right;">
+                    <td style="width:40%; text-align:center;">
                         <div class="signature-line"></div><br>
                         (Mga) Maysumbong
                     </td>
@@ -428,123 +492,130 @@ function generateReportForm($pdo, $caseId) {
                 </tr>
                 <tr>
                     <td>
-                        Tinanggap at itinala ngayong ika- <span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>.
+                        Tinanggap at itinala ngayong ika- <span class="underline" style="min-width:30px;"><?= $day ?></span> araw ng <span class="underline" style="min-width:80px;"><?= $month ?></span>, <?= $year ?>.
                     </td>
-                    <td style="text-align:right;">
-                        <?php if ($esignaturePath): ?>
-                            <img src="<?= htmlspecialchars($esignaturePath) ?>" alt="E-signature" style="height:50px;max-width:180px;display:block;margin-left:auto;margin-bottom:2mm;">
+                    <td style="text-align:center;">
+                        <?php if ($sigData): ?>
+                            <img src="<?= $sigData ?>" alt="E-signature"
+                                 style="height:50px;max-width:180px;display:block;margin-left:auto;margin-right:auto;margin-bottom:2mm;">
                         <?php endif; ?>
                         <div class="signature-line"></div><br>
                         Punong Barangay/Pangulo ng Lupon
                     </td>
                 </tr>
             </table>
-        </div>
-        <div class="footer-motto">"ASENSO at PROGRESO"</div>
     </body>
     </html>
     <?php
     return ob_get_clean();
 }
 
-// Add this function after generateSummonsForm()
-function generateSummonsPDF($pdo, $caseId) {
-    $html = generateSummonsForm($pdo, $caseId);
-    $pdf = new Dompdf();
-    $pdf->loadHtml($html, 'UTF-8');
-    $pdf->setPaper('A4','portrait');
-    $pdf->render();
-    return $pdf->output();
-}
-
-
-
-// Helper to get captain's esignature for a barangay
+// --- add missing helpers for e-signature paths ---
 function getCaptainEsignature($pdo, $barangayId) {
     $stmt = $pdo->prepare("
-        SELECT esignature_path 
-        FROM users 
-        WHERE role_id = 3 
-        AND barangay_id = ? 
-        AND is_active = 1 
+        SELECT esignature_path
+        FROM users
+        WHERE role_id = 3
+          AND barangay_id = ?
+          AND is_active = 1
+          AND esignature_path IS NOT NULL
         LIMIT 1
     ");
     $stmt->execute([$barangayId]);
     $path = $stmt->fetchColumn();
-    
-    // Return full path if exists, otherwise null
-    return $path ? $path : null;
+    if ($path) {
+        $webPath  = str_replace('../', '', $path);
+        $fullPath = $_SERVER['DOCUMENT_ROOT'] . '/iBarangay/' . $webPath;
+        if (file_exists($fullPath)) {
+            return $webPath;
+        }
+    }
+    return null;
 }
 
 function getChiefOfficerEsignature($pdo, $barangayId) {
     $stmt = $pdo->prepare("
-        SELECT esignature_path 
-        FROM users 
-        WHERE role_id = 7 
-        AND barangay_id = ? 
-        AND is_active = 1 
+        SELECT chief_officer_esignature_path
+        FROM users
+        WHERE role_id = 7
+          AND barangay_id = ?
+          AND is_active = 1
+          AND chief_officer_esignature_path IS NOT NULL
         LIMIT 1
     ");
     $stmt->execute([$barangayId]);
     $path = $stmt->fetchColumn();
-    
-    // Return full path if exists, otherwise null
-    return $path ? $path : null;
+    if ($path) {
+        $webPath  = str_replace('../', '', $path);
+        $fullPath = $_SERVER['DOCUMENT_ROOT'] . '/iBarangay/' . $webPath;
+        if (file_exists($fullPath)) {
+            return $webPath;
+        }
+    }
+    return null;
 }
 
 function sendSummonsEmails($pdo, $caseId, $proposalId) {
-    // Generate PDF once for all emails
-    $pdfContent = generateSummonsPDF($pdo, $caseId);
-    $filename = "Summons-Case-{$caseId}.pdf";
-
-    // Fetch emails for complainants and respondents
-    $stmt = $pdo->prepare("
-        SELECT u.email, CONCAT(u.first_name, ' ', u.last_name) AS name
-        FROM users u
-        JOIN blotter_participants bp ON u.id = bp.person_id
-        WHERE bp.blotter_case_id = ? AND bp.role IN ('complainant','respondent')
+    // fetch schedule proposal details
+    $sStmt = $pdo->prepare("
+        SELECT proposed_date, proposed_time 
+        FROM schedule_proposals 
+        WHERE id = ?
     ");
-    $stmt->execute([$caseId]);
-    $participants = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $sStmt->execute([$proposalId]);
+    $sched = $sStmt->fetch(PDO::FETCH_ASSOC) ?: [];
 
-    foreach ($participants as $p) {
-        $mail = new PHPMailer(true);
+    // format date/time for body
+    $date = isset($sched['proposed_date'])
+        ? date('F j, Y', strtotime($sched['proposed_date']))
+        : 'N/A';
+    $time = isset($sched['proposed_time'])
+        ? DateTime::createFromFormat('H:i:s', $sched['proposed_time'])->format('g:i A')
+        : 'N/A';
+
+    // generate summons PDF
+    $html    = generateSummonsForm($pdo, $caseId);
+    $dompdf  = new Dompdf();
+    $dompdf->loadHtml($html);
+    $dompdf->setPaper('A4', 'portrait');
+    $dompdf->render();
+    $pdfData = $dompdf->output();
+
+    // fetch respondent emails
+    $pStmt = $pdo->prepare("
+        SELECT DISTINCT u.email
+        FROM blotter_participants bp
+        JOIN users u ON bp.person_id = u.id
+        WHERE bp.blotter_case_id = ? 
+          AND bp.role = 'respondent'
+          AND u.email IS NOT NULL
+    ");
+    $pStmt->execute([$caseId]);
+    $emails = $pStmt->fetchAll(PDO::FETCH_COLUMN);
+
+    foreach ($emails as $email) {
         try {
-            // Server settings (adjust as needed)
+            // initialize and configure PHPMailer
+            $mail = new PHPMailer(true);
             $mail->isSMTP();
-            $mail->Host       = 'smtp.example.com';
+            $mail->Host       = 'smtp.gmail.com';
             $mail->SMTPAuth   = true;
             $mail->Username   = 'barangayhub2@gmail.com';
             $mail->Password   = 'eisy hpjz rdnt bwrp';
             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
             $mail->Port       = 587;
 
-            // Recipients
-            $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
-            $mail->addAddress($p['email'], $p['name']);
-
-            // Attach PDF
-            $mail->addStringAttachment($pdfContent, $filename);
-
-            // Email content
-            $mail->isHTML(true);
-            $mail->Subject = 'Summons Notice for Your Blotter Case';
-            $mail->Body    = 'Dear ' . htmlspecialchars($p['name']) . ',<br><br>'
-                . 'You are being summoned for a hearing regarding your case. '
-                . 'Please find the attached summons document.<br><br>'
-                . 'Thank you,<br>iBarangay Admin';
-            $mail->AltBody = 'Dear ' . $p['name'] . ', '
-                . 'You are being summoned for a hearing regarding your case. '
-                . 'Please find the attached summons document.';
-
+            $mail->setFrom('no-reply@ibarangay.local', 'Barangay Tambubong');
+            $mail->addAddress($email);
+            $mail->Subject = "Summons for Blotter Case #{$caseId}";
+            $mail->Body    = "You are hereby summoned to appear on {$date} at {$time}. Please find the attached summons for details.";
+            $mail->addStringAttachment($pdfData, "Summons-Case-{$caseId}.pdf", 'base64', 'application/pdf');
             $mail->send();
         } catch (Exception $e) {
-            error_log("Summons email failed for " . $p['email'] . ": " . $mail->ErrorInfo);
+            // optionally log $e->getMessage()
         }
     }
 }
-
-
 
 // === POST: Add New Case ===
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
@@ -735,7 +806,14 @@ if (!empty($_GET['action'])) {
                 $pdf = new Dompdf();
                 $pdf->loadHtml($html, 'UTF-8');
                 $pdf->setPaper('A4','portrait');
-                $pdf->render();
+                try {
+                    $pdf->render();
+                } catch (Exception $e) {
+                    // GD not available → remove images and re-render
+                    $htmlNoImg = preg_replace('/<img[^>]+>/', '', $html);
+                    $pdf->loadHtml($htmlNoImg, 'UTF-8');
+                    $pdf->render();
+                }
 
                 header('Content-Type: application/pdf');
                 header('Content-Disposition: inline; filename="Summons-Case-'.$id.'.pdf"');
@@ -752,7 +830,13 @@ if (!empty($_GET['action'])) {
                 $pdf = new Dompdf();
                 $pdf->loadHtml($html, 'UTF-8');
                 $pdf->setPaper('A4','portrait');
-                $pdf->render();
+                try {
+                    $pdf->render();
+                } catch (Exception $e) {
+                    $htmlNoImg = preg_replace('/<img[^>]+>/', '', $html);
+                    $pdf->loadHtml($htmlNoImg, 'UTF-8');
+                    $pdf->render();
+                }
 
                 header('Content-Type: application/pdf');
                 header('Content-Disposition: inline; filename="Report-Form-Case-'.$id.'.pdf"');
@@ -798,52 +882,36 @@ if (!empty($_GET['action'])) {
                 $year  = intval($_GET['year']  ?? date('Y'));
                 $month = intval($_GET['month'] ?? date('n'));
 
-                // Fetch the latest monthly report for the given year/month
-                $stmt = $pdo->prepare("
-                    SELECT
-                        m.*,
-                        CONCAT(u.first_name, ' ', u.last_name) AS prepared_by_name
-                    FROM monthly_reports m
-                    JOIN users u ON m.prepared_by_user_id = u.id
-                    WHERE m.report_year  = :y
-                      AND m.report_month = :m
-                      AND m.barangay_id = :bid
-                    ORDER BY m.id DESC
-                    LIMIT 1
-                ");
-                $stmt->execute(['y'=>$year,'m'=>$month,'bid'=>$bid]);
-                $report = $stmt->fetch(PDO::FETCH_ASSOC);
-
-                // Always run the details query
+                // Always generate report from actual case data instead of requiring pre-existing monthly reports
                 $dStmt = $pdo->prepare("
                     SELECT
                         c.name AS category_name,
                         COUNT(DISTINCT bc.id) AS total_cases,
-                        COUNT(DISTINCT IF(
-                          bci.intervention_id = (
-                            SELECT id FROM case_interventions WHERE name = 'M/CSWD'
-                          ), bc.id, NULL
-                        )) AS mcwsd,
-                        COUNT(DISTINCT IF(
-                          bci.intervention_id = (
-                            SELECT id FROM case_interventions WHERE name = 'PNP'
-                          ), bc.id, NULL
-                        )) AS total_pnp,
-                        COUNT(DISTINCT IF(
-                          bci.intervention_id = (
-                            SELECT id FROM case_interventions WHERE name = 'Court'
-                          ), bc.id, NULL
-                        )) AS total_court,
-                        COUNT(DISTINCT IF(
-                          bci.intervention_id = (
-                            SELECT id FROM case_interventions WHERE name = 'Issued BPO'
-                          ), bc.id, NULL
-                        )) AS total_bpo,
-                        COUNT(DISTINCT IF(
-                          bci.intervention_id = (
-                            SELECT id FROM case_interventions WHERE name = 'Medical'
-                          ), bc.id, NULL
-                        )) AS total_medical
+                        SUM(CASE WHEN EXISTS(
+                            SELECT 1 FROM blotter_case_interventions bci 
+                            JOIN case_interventions ci ON bci.intervention_id = ci.id
+                            WHERE bci.blotter_case_id = bc.id AND ci.name = 'M/CSWD'
+                        ) THEN 1 ELSE 0 END) AS mcwsd,
+                        SUM(CASE WHEN EXISTS(
+                            SELECT 1 FROM blotter_case_interventions bci 
+                            JOIN case_interventions ci ON bci.intervention_id = ci.id
+                            WHERE bci.blotter_case_id = bc.id AND ci.name = 'PNP'
+                        ) THEN 1 ELSE 0 END) AS total_pnp,
+                        SUM(CASE WHEN EXISTS(
+                            SELECT 1 FROM blotter_case_interventions bci 
+                            JOIN case_interventions ci ON bci.intervention_id = ci.id
+                            WHERE bci.blotter_case_id = bc.id AND ci.name = 'Court'
+                        ) THEN 1 ELSE 0 END) AS total_court,
+                        SUM(CASE WHEN EXISTS(
+                            SELECT 1 FROM blotter_case_interventions bci 
+                            JOIN case_interventions ci ON bci.intervention_id = ci.id
+                            WHERE bci.blotter_case_id = bc.id AND ci.name = 'Issued BPO'
+                        ) THEN 1 ELSE 0 END) AS total_bpo,
+                        SUM(CASE WHEN EXISTS(
+                            SELECT 1 FROM blotter_case_interventions bci 
+                            JOIN case_interventions ci ON bci.intervention_id = ci.id
+                            WHERE bci.blotter_case_id = bc.id AND ci.name = 'Medical'
+                        ) THEN 1 ELSE 0 END) AS total_medical
                     FROM case_categories c
                     LEFT JOIN blotter_case_categories bcc
                       ON c.id = bcc.category_id
@@ -852,10 +920,8 @@ if (!empty($_GET['action'])) {
                         AND YEAR(COALESCE(bc.incident_date, bc.created_at)) = :y
                         AND MONTH(COALESCE(bc.incident_date, bc.created_at)) = :m
                         AND bc.barangay_id = :bid
-                        AND bc.status != 'Deleted'
-                    LEFT JOIN blotter_case_interventions bci
-                      ON bci.blotter_case_id = bc.id
-                    GROUP BY c.id
+                        AND bc.status IN ('closed', 'completed', 'solved', 'endorsed_to_court', 'dismissed')
+                    GROUP BY c.id, c.name
                     ORDER BY c.name
                 ");
                 $dStmt->execute([
@@ -865,19 +931,53 @@ if (!empty($_GET['action'])) {
                 ]);
                 $details = $dStmt->fetchAll(PDO::FETCH_ASSOC);
 
-                // If no monthly report and no cases, show friendly message and exit
+                // Check if there are any cases to report on
                 $hasCases = false;
+                $totalCasesCount = 0;
                 foreach ($details as $row) {
+                    $totalCasesCount += $row['total_cases'];
                     if ($row['total_cases'] > 0) {
                         $hasCases = true;
-                        break;
                     }
                 }
-                if (!$report && !$hasCases) {
+
+                // Always try to fetch existing monthly report for prepared_by info
+                $stmt = $pdo->prepare("
+                    SELECT
+                        m.*,
+                        CONCAT(u.first_name, ' ', u.last_name) AS prepared_by_name
+                    FROM monthly_reports m
+                    JOIN users u ON m.prepared_by_user_id = u.id
+                    WHERE m.report_year = :y
+                      AND m.report_month = :m
+                      AND m.barangay_id = :bid
+                    ORDER BY m.id DESC
+                    LIMIT 1
+                ");
+                $stmt->execute(['y'=>$year,'m'=>$month,'bid'=>$bid]);
+                $report = $stmt->fetch(PDO::FETCH_ASSOC);
+
+                // Get current user info for prepared_by if no existing report
+                if (!$report) {
+                    $userStmt = $pdo->prepare("SELECT CONCAT(first_name, ' ', last_name) AS name FROM users WHERE id = ?");
+                    $userStmt->execute([$current_admin_id]);
+                    $currentUser = $userStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    $report = [
+                        'prepared_by_name' => $currentUser['name'] ?? 'System Generated',
+                        'submitted_at' => date('Y-m-d H:i:s')
+                    ];
+                }
+
+                // If no cases found, show informative message instead of error
+                if (!$hasCases && $totalCasesCount == 0) {
                     header('Content-Type: text/html');
-                    echo "<!DOCTYPE html><html><head><title>No Report</title></head><body style='font-family:sans-serif;padding:2em;'><h2>No monthly report found for the selected period.</h2><p>Please ensure a report has been created for this barangay, year, and month.</p><a href='blotter.php' style='color:#2563eb;'>Back to Blotter Cases</a></body></html>";
+                    echo "<!DOCTYPE html><html><head><title>No Cases Found</title></head><body style='font-family:sans-serif;padding:2em;'><h2>No completed cases found for " . date('F Y', mktime(0, 0, 0, $month, 1, $year)) . "</h2><p>There are no closed, completed, solved, endorsed to court, or dismissed cases for the selected period in this barangay.</p><a href='blotter.php' style='color:#2563eb;'>Back to Blotter Cases</a></body></html>";
                     exit;
                 }
+
+                // Generate the month name
+                $monthName = date('F', mktime(0, 0, 0, $month, 1, $year));
 
                 // Build HTML payload
                 ob_start(); ?>
@@ -889,15 +989,13 @@ if (!empty($_GET['action'])) {
                     table { width:100%; border-collapse:collapse; margin-top:1rem; }
                     th,td { border:1px solid #333; padding:6px; text-align:center; }
                     th { background:#eee; }
-                  </style>
-                </head><body>
-                  <h1>Monthly Report – <?= htmlspecialchars("$month/$year") ?></h1>
-                  <p>
-                    Prepared by <?= htmlspecialchars($report['prepared_by_name'] ?? 'N/A') ?>
-                    on <?= !empty($report['submitted_at']) && $report['submitted_at'] !== '0000-00-00 00:00:00'
-                            ? date('M j, Y g:i A', strtotime($report['submitted_at']))
-                            : 'N/A' ?>
-                  </p>
+                    .header { text-align: center; margin-bottom: 20px; }
+                  <div class="summary">
+                    <p><strong>Report Period:</strong> <?= htmlspecialchars("$monthName $year") ?></p>
+                    <p><strong>Prepared by:</strong> <?= htmlspecialchars($report['prepared_by_name']) ?></p>
+                    <p><strong>Generated on:</strong> <?= date('M j, Y g:i A', strtotime($report['submitted_at'])) ?></p>
+                    <p><strong>Total Cases:</strong> <?= $totalCasesCount ?></p>
+                  </div>
                     <table>
                       <thead>
                         <tr>
@@ -911,7 +1009,22 @@ if (!empty($_GET['action'])) {
                         </tr>
                       </thead>
                     <tbody>
-                      <?php foreach ($details as $row): ?>
+                      <?php 
+                      $totalCases = 0;
+                      $totalMcwsd = 0;
+                      $totalPnp = 0;
+                      $totalCourt = 0;
+                      $totalBpo = 0;
+                      $totalMedical = 0;
+                      
+                      foreach ($details as $row): 
+                        $totalCases += $row['total_cases'];
+                        $totalMcwsd += $row['mcwsd'];
+                        $totalPnp += $row['total_pnp'];
+                        $totalCourt += $row['total_court'];
+                        $totalBpo += $row['total_bpo'];
+                        $totalMedical += $row['total_medical'];
+                      ?>
                       <tr>
                       <td><?= htmlspecialchars($row['category_name']) ?></td>
                       <td><?= $row['total_cases'] ?></td>
@@ -922,8 +1035,21 @@ if (!empty($_GET['action'])) {
                       <td><?= $row['total_medical'] ?></td>
                       </tr>
                       <?php endforeach; ?>
+                      <tr style="background: #e9e9e9; font-weight: bold;">
+                        <td>TOTAL</td>
+                        <td><?= $totalCases ?></td>
+                        <td><?= $totalMcwsd ?></td>
+                        <td><?= $totalPnp ?></td>
+                        <td><?= $totalCourt ?></td>
+                        <td><?= $totalBpo ?></td>
+                        <td><?= $totalMedical ?></td>
+                      </tr>
                     </tbody>
                   </table>
+                  <div style="margin-top: 30px; font-size: 12px; color: #666;">
+                    <p><em>Note: This report includes cases with status: closed, completed, solved, endorsed to court, or dismissed.</em></p>
+                    <p><em>Report generated automatically from case database on <?= date('Y-m-d H:i:s') ?>.</em></p>
+                  </div>
                 </body></html>
                 <?php
                 $html = ob_get_clean();
@@ -931,10 +1057,16 @@ if (!empty($_GET['action'])) {
                 $pdf = new Dompdf();
                 $pdf->loadHtml($html, 'UTF-8');
                 $pdf->setPaper('A4','landscape');
-                $pdf->render();
+                try {
+                    $pdf->render();
+                } catch (Exception $e) {
+                    $htmlNoImg = preg_replace('/<img[^>]+>/', '', $html);
+                    $pdf->loadHtml($htmlNoImg, 'UTF-8');
+                    $pdf->render();
+                }
 
                 header('Content-Type: application/pdf');
-                header('Content-Disposition: inline; filename="Report-'.$year.'-'.$month.'.pdf"');
+                header('Content-Disposition: inline; filename="Blotter-Report-'.$year.'-'.$month.'.pdf"');
                 echo $pdf->output();
                 exit;
 
@@ -1065,7 +1197,7 @@ if (!empty($_GET['action'])) {
                       exit;
                   }
                   
-                  // Check if case is accepted and within 5-day deadline
+                  // Check if case is within 5-day deadline and hearing limits
                   $stmt = $pdo->prepare("
                       SELECT bc.*, 
                              DATE_ADD(bc.filing_date, INTERVAL 5 DAY) as deadline,
@@ -1080,11 +1212,6 @@ if (!empty($_GET['action'])) {
                   
                   if (!$case) {
                       echo json_encode(['success'=>false,'message'=>'Case not found']);
-                      exit;
-                  }
-                  
-                  if ($case['status'] === 'pending') {
-                      echo json_encode(['success'=>false,'message'=>'Case must be accepted before scheduling']);
                       exit;
                   }
                   
@@ -1147,12 +1274,13 @@ if (!empty($_GET['action'])) {
                   // Insert schedule proposal
                   $stmt = $pdo->prepare("
                       INSERT INTO schedule_proposals
-                      (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position, status)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_user_confirmation')
+                      (blotter_case_id, proposed_by_user_id, proposed_by_role_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position, status)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_user_confirmation')
                   ");
                   $stmt->execute([
                       $id,
                       $current_admin_id,
+                      $userRole,
                       $data['hearing_date'],
                       $data['hearing_time'],
                       $data['hearing_location'] ?? 'Barangay Hall',
@@ -1166,7 +1294,10 @@ if (!empty($_GET['action'])) {
               
                   $pdo->commit();
                   logAuditTrail($pdo, $current_admin_id, 'INSERT', 'schedule_proposals', $proposalId, "Scheduled hearing proposal for case $id");
-                  echo json_encode(['success'=>true, 'message'=>'Summons sent to all parties. Awaiting confirmations.']);
+                  echo json_encode([
+                    'success' => true,
+                    'message' => 'Schedule set and awaiting confirmation. Summons has been sent to all parties.'
+                  ]);
                   break;
 
 
@@ -1462,7 +1593,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     .document-buttons button {
         padding: 2px 6px;
         font-size: 10px;
-        border-radius: 3px;
+               border-radius: 3px;
         border: none;
         cursor: pointer;
         color: white;
@@ -1478,7 +1609,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         border-radius: 10px;
         margin-left: 4px;
         vertical-align: middle;
-    }
+       }
     
     .intervention-icon {
         display: inline-flex;
@@ -1498,6 +1629,9 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
 <body>
 <section id="blotter" class="p-6">
 
+<!-- Include signature upload modal -->
+<?php include '../components/signature_upload_modal.php'; ?>
+
 <!-- Edit Modal -->
 <div id="editBlotterModal" tabindex="-1"
      class="hidden fixed top-0 left-0 right-0 z-50 w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
@@ -1516,7 +1650,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         </button>
       </div>
       <!-- Form -->
-      <form id="editBlotterForm" class="p-6 space-y-4 overflow-y-auto max-h-[calc(100%-6rem)]">
+      <form id="editBlotterForm" class="p-6 space-y-4 overflow-y-auto max-h-[calc(100%-6rem)]" enctype="multipart/form-data">
         <input type="hidden" id="editCaseId" name="case_id">
         <div class="grid gap-4 md:grid-cols-2">
           <!-- Location -->
@@ -1531,22 +1665,6 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <textarea id="editDescription" name="description" rows="4" required
                       class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500"></textarea>
           </div>
-          <!-- Interventions -->
-        <div class="space-y-2">
-          <label class="block text-sm font-medium text-gray-700">Interventions</label>
-          <div id="editInterventionContainer" class="grid grid-cols-2 gap-2">
-            <?php foreach ($interventions as $int): ?>
-              <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="interventions[]"
-                  value="<?= $int['id'] ?>"
-                >
-                <?= htmlspecialchars($int['name']) ?>
-              </label>
-            <?php endforeach; ?>
-          </div>
-        </div>
           <!-- Categories -->
           <div>
             <label class="block text-sm font-medium text-gray-700">Status</label>
@@ -1569,7 +1687,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
               + Add Registered Resident
             </button>
             <button type="button" id="editAddUnregisteredBtn"
-                    class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                                                                             class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
               + Add Unregistered Person
             </button>
           </div>
@@ -1585,7 +1703,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
 
         <!-- Footer -->
         <div class="flex items-center justify-end pt-6 space-x-3 border-t border-gray-200">
-          <button type="button" id="editCancelBtn" onclick="toggleEditBlotterModal()"
+                   <button type="button" id="editCancelBtn" onclick="toggleEditBlotterModal()"
                   class="text-gray-500 bg-white hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-blue-300 rounded-lg border border-gray-200 text-sm font-medium px-5 py-2.5 hover:text-gray-900">
             Cancel
           </button>
@@ -1636,19 +1754,6 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <textarea name="complaint" rows="4" required placeholder="Enter details..."
                       class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500"></textarea>
           </div>
-                <!-- Interventions -->
-      <div class="md:col-span-2">
-        <label class="block text-sm font-medium text-gray-700">Interventions</label>
-        <div class="grid grid-cols-2 gap-2">
-          <?php foreach ($interventions as $int): ?>
-            <label class="flex items-center gap-2">
-              <input type="checkbox" name="interventions[]" value="<?= $int['id'] ?>" 
-                     class="rounded">
-              <span class="text-sm"><?= htmlspecialchars($int['name']) ?></span>
-            </label>
-          <?php endforeach; ?>
-        </div>
-      </div>
           <!-- Categories -->
           <div>
           <label class="block text-sm font-medium text-gray-700">Categories <span class="text-red-500">*</span></label>
@@ -1709,6 +1814,16 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
                font-medium rounded-lg text-sm px-5 py-2.5"
       >
         + Add New Case
+      </button>
+      <?php endif; ?>
+      
+      <?php if (in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])): ?>
+      <button 
+        onclick="toggleSignatureModal()"
+        class="w-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
+               font-medium rounded-lg text-sm px-5 py-2.5"
+      >
+         Upload Signature
       </button>
       <?php endif; ?>
       
@@ -1776,11 +1891,6 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <?php if (!empty($case['is_cfa_eligible'])): ?>
               <span class="text-red-600 font-medium">(CFA Eligible)</span>
             <?php endif; ?>
-            <?php if (!empty($case['intervention_count']) && $case['intervention_count'] > 0): ?>
-              <span class="intervention-indicator" title="<?= $case['intervention_count'] ?> intervention(s) recorded">
-                <span class="intervention-icon">✓</span><?= $case['intervention_count'] ?>
-              </span>
-            <?php endif; ?>
           </td>
           <td class="px-4 py-3 text-sm text-gray-600">
             <div class="hearing-actions">
@@ -1790,10 +1900,10 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
                 <div class="document-buttons">
                     <?php if ($canManageBlotter): ?>
                     <button class="btn-summons generate-summons-btn" data-id="<?= $case['id'] ?>" title="Generate Summons">
-                      📋 Summons
+                      Summons
                     </button>
                     <button class="btn-report-form generate-report-form-btn" data-id="<?= $case['id'] ?>" title="Generate Report Form">
-                      📄 Report
+                      Report
                     </button>
                     <?php endif; ?>
                 </div>
@@ -1918,6 +2028,450 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
   <?php endif; ?>
   
   <script>
+// Define handler functions globally first
+async function handleEditCase(caseId) {
+  try {
+    // Show loading state
+    Swal.fire({
+      title: 'Loading...',
+      text: 'Fetching case details',
+      allowOutsideClick: false,
+      didOpen: () => {
+        Swal.showLoading();
+      }
+    });
+    
+    // Fetch case details from the server
+    const response = await fetch(`?action=get_case_details&id=${caseId}`);
+    const data = await response.json();
+    Swal.close();
+    
+    if (!data.success) {
+      Swal.fire('Error', 'Failed to load case details', 'error');
+      return;
+    }
+    
+    const { case: caseData, participants, interventions } = data;
+    
+    // Populate the edit form
+    document.getElementById('editCaseId').value = caseId;
+    document.getElementById('editLocation').value = caseData.location || '';
+    document.getElementById('editDescription').value = caseData.description || '';
+    document.getElementById('editStatus').value = caseData.status || 'pending';
+    
+    // Check intervention checkboxes
+    const interventionCheckboxes = document.querySelectorAll('#editInterventionContainer input[type="checkbox"]');
+    interventionCheckboxes.forEach(checkbox => {
+      checkbox.checked = false; // Reset all checkboxes
+    });
+    
+    interventions.forEach(intervention => {
+      const checkbox = document.querySelector(`#editInterventionContainer input[value="${intervention.intervention_id}"]`);
+      if (checkbox) checkbox.checked = true;
+    });
+    
+    // Populate participants
+    const participantContainer = document.getElementById('editParticipantContainer');
+    participantContainer.innerHTML = '';
+    
+    participants.forEach((participant, index) => {
+      if (participant.participant_type === 'registered') {
+        // Add a registered participant row
+        const template = `
+          <div class="participant flex gap-2 bg-blue-50 p-2 rounded mb-2">
+            <input type="hidden" name="participants[${index}][type]" value="registered">
+            <select name="participants[${index}][user_id]" class="flex-1 p-2 border rounded" required>
+              <option value="">Select Resident</option>
+              <?php foreach ($residents as $r): ?>
+                <option value="<?= $r['user_id'] ?>" ${participant.person_id == <?= $r['user_id'] ?> ? 'selected' : ''}><?= htmlspecialchars($r['name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+            <select name="participants[${index}][role]" class="flex-1 p-2 border rounded">
+              <option value="complainant" ${participant.role === 'complainant' ? 'selected' : ''}>Complainant</option>
+              <option value="respondent" ${participant.role === 'respondent' ? 'selected' : ''}>Respondent</option>
+              <option value="witness" ${participant.role === 'witness' ? 'selected' : ''}>Witness</option>
+            </select>
+            <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
+          </div>`;
+        
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = template;
+        const node = wrapper.firstElementChild;
+        node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
+        participantContainer.appendChild(node);
+        
+        // Set the selected value for the resident dropdown
+        const userSelect = node.querySelector(`select[name="participants[${index}][user_id]"]`);
+        if (userSelect) {
+          for (let i = 0; i < userSelect.options.length; i++) {
+            if (userSelect.options[i].value == participant.person_id) {
+              userSelect.options[i].selected = true;
+              break;
+            }
+          }
+        }
+      } else {
+        // External participant
+        const template = `
+          <div class="participant flex gap-2 bg-green-50 p-2 rounded mb-2">
+            <input type="hidden" name="participants[${index}][type]" value="unregistered">
+            <div class="flex-1 grid grid-cols-2 gap-2">
+              <input type="text" name="participants[${index}][first_name]" placeholder="First Name" required value="${participant.first_name || ''}" class="p-2 border rounded">
+              <input type="text" name="participants[${index}][last_name]" placeholder="Last Name" required value="${participant.last_name || ''}" class="p-2 border rounded">
+              <input type="text" name="participants[${index}][contact_number]" placeholder="Contact" value="${participant.contact_number || ''}" class="p-2 border rounded">
+              <input type="text" name="participants[${index}][address]" placeholder="Address" value="${participant.address || ''}" class="p-2 border rounded">
+              <input type="number" name="participants[${index}][age]" placeholder="Age" value="${participant.age || ''}" class="p-2 border rounded">
+              <select name="participants[${index}][gender]" class="p-2 border rounded">
+                <option value="">Gender</option>
+                <option value="Male" ${participant.gender === 'Male' ? 'selected' : ''}>Male</option>
+                <option value="Female" ${participant.gender === 'Female' ? 'selected' : ''}>Female</option>
+                <option value="Other" ${participant.gender === 'Other' ? 'selected' : ''}>Other</option>
+              </select>
+            </div>
+            <select name="participants[${index}][role]" class="w-28 p-2 border rounded">
+              <option value="complainant" ${participant.role === 'complainant' ? 'selected' : ''}>Complainant</option>
+              <option value="respondent" ${participant.role === 'respondent' ? 'selected' : ''}>Respondent</option>
+              <option value="witness" ${participant.role === 'witness' ? 'selected' : ''}>Witness</option>
+            </select>
+            <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
+          </div>`;
+        
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = template;
+        const node = wrapper.firstElementChild;
+        node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
+        participantContainer.appendChild(node);
+      }
+    });
+    
+    // Show the edit modal
+    document.getElementById('editBlotterModal').classList.remove('hidden');
+    
+  } catch (error) {
+    console.error('Error loading case details:', error);
+    Swal.fire('Error', 'An unexpected error occurred while loading case details', 'error');
+  }
+}
+
+async function handleCompleteCase(caseId) {
+  try {
+    const result = await Swal.fire({
+      title: 'Close Case?',
+      text: 'This will mark the case as closed. Continue?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, close it'
+    });
+    
+    if (result.isConfirmed) {
+      const response = await fetch(`?action=complete&id=${caseId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: 'Case has been closed successfully.',
+          timer: 1500,
+          showConfirmButton: false
+        }).then(() => location.reload());
+      } else {
+        Swal.fire('Error', data.message || 'Failed to close case', 'error');
+      }
+    }
+  } catch (error) {
+    console.error('Error closing case:', error);
+    Swal.fire('Error', 'An unexpected error occurred.', 'error');
+  }
+}
+
+async function handleDeleteCase(caseId) {
+  try {
+    const result = await Swal.fire({
+      title: 'Dismiss Case?',
+      text: 'This will dismiss the case. Continue?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#6b7280',
+      confirmButtonText: 'Yes, dismiss it'
+    });
+    
+    if (result.isConfirmed) {
+      const response = await fetch(`?action=delete&id=${caseId}`);
+      const data = await response.json();
+      
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: 'Case has been dismissed successfully.',
+          timer: 1500,
+          showConfirmButton: false
+        }).then(() => location.reload());
+      } else {
+        Swal.fire('Error', data.message || 'Failed to dismiss case', 'error');
+      }
+    }
+  } catch (error) {
+    console.error('Error dismissing case:', error);
+    Swal.fire('Error', 'An unexpected error occurred.', 'error');
+  }
+}
+
+async function handleScheduleHearing(caseId) {
+  try {
+    // Create today's date and max date (5 days from now)
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+    
+    // Calculate max date (5 days from today)
+    const maxDate = new Date();
+    maxDate.setDate(today.getDate() + 5);
+    const maxDateStr = maxDate.toISOString().split('T')[0];
+    
+    // Get available dates/times from the server or create date picker
+    const { value: formValues } = await Swal.fire({
+      title: 'Schedule Hearing',
+      html: `
+        <div class="mb-3">
+          <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-date">
+            Hearing Date (within 5 days)
+          </label>
+          <input id="hearing-date" type="date" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" 
+            min="${todayStr}" max="${maxDateStr}" required>
+          <small class="text-gray-500">Hearings must be scheduled within 5 days from today</small>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-time">
+            Hearing Time (8:00 AM - 5:00 PM)
+          </label>
+          <input id="hearing-time" type="time" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" 
+            min="08:00" max="17:00" required>
+          <small class="text-gray-500">Barangay office hours: 8:00 AM to 5:00 PM</small>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-location">
+            Location
+          </label>
+          <input id="hearing-location" type="text" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" value="Barangay Hall" required>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Schedule',
+      preConfirm: () => {
+        const hearingDate = document.getElementById('hearing-date').value;
+        const hearingTime = document.getElementById('hearing-time').value;
+        const hearingLocation = document.getElementById('hearing-location').value;
+        
+        if (!hearingDate || !hearingTime) {
+          Swal.showValidationMessage('Please fill in all required fields');
+          return false;
+        }
+        
+        // Additional validation for date range
+        if (hearingDate < todayStr || hearingDate > maxDateStr) {
+          Swal.showValidationMessage('Hearing date must be within the next 5 days (including today)');
+          return false;
+        }
+        
+        // Validate time is within barangay hours (8:00 AM - 5:00 PM)
+        if (hearingTime < '08:00' || hearingTime > '17:00') {
+          Swal.showValidationMessage('Hearing time must be between 8:00 AM and 5:00 PM (barangay office hours)');
+          return false;
+        }
+        return {
+          hearing_date: hearingDate,
+          hearing_time: hearingTime,
+          hearing_location: hearingLocation
+        };
+      }
+    });
+    
+    if (formValues) {
+      // Show loading state
+      Swal.fire({
+        title: 'Scheduling...',
+        text: 'Please wait',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
+        }
+      });
+      
+      // Send the scheduling request to the server
+      const response = await fetch(`?action=schedule_hearing&id=${caseId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formValues)
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: data.message || 'Hearing has been scheduled successfully.',
+          timer: 2000,
+          showConfirmButton: false
+        }).then(() => location.reload());
+      } else {
+        Swal.fire('Error', data.message || 'Failed to schedule hearing', 'error');
+      }
+    }
+  } catch (error) {
+    console.error('Error scheduling hearing:', error);
+    Swal.fire('Error', 'An unexpected error occurred.', 'error');
+  }
+}
+
+async function handleIssueCFA(caseId) {
+  try {
+    // First get case details to show complainants
+    const detailsResponse = await fetch(`?action=get_case_details&id=${caseId}`);
+    const detailsData = await detailsResponse.json();
+    
+    if (!detailsData.success) {
+      Swal.fire('Error', 'Failed to load case details', 'error');
+      return;
+    }
+    
+    const complainants = detailsData.participants.filter(p => p.role === 'complainant');
+    
+    if (complainants.length === 0) {
+      Swal.fire('Error', 'No complainants found for this case', 'error');
+      return;
+    }
+    
+    // Show complainant selection
+    const { value: complainantId } = await Swal.fire({
+      title: 'Select Complainant',
+      text: 'Select the complainant for whom to issue the CFA certificate:',
+      input: 'select',
+      inputOptions: complainants.reduce((options, c) => {
+        const id = c.person_id || c.external_participant_id;
+        const name = `${c.first_name} ${c.last_name}`;
+        options[id] = name;
+        return options;
+      }, {}),
+      showCancelButton: true,
+      inputValidator: (value) => {
+        if (!value) {
+          return 'Please select a complainant';
+        }
+      }
+    });
+    
+    if (complainantId) {
+      // Issue CFA
+      const response = await fetch(`?action=issue_cfa&id=${caseId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ complainant_id: complainantId })
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'CFA Issued!',
+          text: `Certificate number: ${data.certificate_number}`,
+          timer: 3000,
+          showConfirmButton: true
+        }).then(() => location.reload());
+      } else {
+        Swal.fire('Error', data.message || 'Failed to issue CFA', 'error');
+      }
+    }
+  } catch (error) {
+    console.error('Error issuing CFA:', error);
+    Swal.fire('Error', 'An unexpected error occurred.', 'error');
+  }
+}
+
+async function handleAddIntervention(caseId) {
+  try {
+    const { value: formValues } = await Swal.fire({
+      title: 'Add Intervention',
+      html: `
+        <div class="mb-3">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Intervention Type</label>
+          <select id="intervention-type" class="w-full p-2 border rounded">
+            <option value="">Select intervention...</option>
+            <?php foreach ($interventions as $int): ?>
+              <option value="<?= $int['id'] ?>"><?= htmlspecialchars($int['name']) ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Date Intervened</label>
+          <input id="intervention-date" type="date" class="w-full p-2 border rounded" value="${new Date().toISOString().split('T')[0]}">
+        </div>
+        <div class="mb-3">
+          <label class="block text-gray-700 text-sm font-bold mb-2">Remarks</label>
+          <textarea id="intervention-remarks" class="w-full p-2 border rounded" rows="3"></textarea>
+        </div>
+      `,
+      focusConfirm: false,
+      showCancelButton: true,
+      confirmButtonText: 'Add Intervention',
+      preConfirm: () => {
+        const interventionType = document.getElementById('intervention-type').value;
+        const interventionDate = document.getElementById('intervention-date').value;
+        const remarks = document.getElementById('intervention-remarks').value;
+        
+        if (!interventionType || !interventionDate) {
+          Swal.showValidationMessage('Please fill in all required fields');
+          return false;
+        }
+        
+        return {
+          intervention_id: interventionType,
+          date_intervened: interventionDate,
+          remarks: remarks
+        };
+      }
+    });
+    
+    if (formValues) {
+      const response = await fetch(`?action=add_intervention&id=${caseId}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(formValues)
+      });
+      
+      const data = await response.json();
+      
+      if (data.success) {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success!',
+          text: 'Intervention has been added successfully.',
+          timer: 1500,
+          showConfirmButton: false
+        }).then(() => location.reload());
+      } else {
+        Swal.fire('Error', data.message || 'Failed to add intervention', 'error');
+      }
+    }
+  } catch (error) {
+    console.error('Error adding intervention:', error);
+    Swal.fire('Error', 'An unexpected error occurred.', 'error');
+  }
+}
+
+// Now document ready event listener
 document.addEventListener('DOMContentLoaded', function() {
     // Participant templates
     const registeredTemplate = `
@@ -1972,13 +2526,12 @@ document.addEventListener('DOMContentLoaded', function() {
       node.scrollIntoView({ behavior: 'smooth' });
     }
     
-    // Modal toggle functions - Improve these to ensure robustness
+    // Modal toggle functions
     window.toggleAddBlotterModal = function() {
         const modal = document.getElementById('addBlotterModal');
         const container = document.getElementById('participantContainer');
         if (modal) {
             modal.classList.toggle('hidden');
-            // Clear participants when opening
             if (!modal.classList.contains('hidden') && container) {
                 container.innerHTML = '';
             }
@@ -1995,25 +2548,22 @@ document.addEventListener('DOMContentLoaded', function() {
         if (modal) modal.classList.toggle('hidden');
     };
 
-    // Add modal setup - Improve button click handler
-    const addModal = document.getElementById('addBlotterModal');
-    const openBtn  = document.getElementById('openModalBtn');
+    // Button event listeners
+    const openBtn = document.getElementById('openModalBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const participantContainer = document.getElementById('participantContainer');
     
-    // Event listeners - Make more robust
     if (openBtn) {
-      // Make sure this handler works properly
       openBtn.addEventListener('click', function(e) {
         e.preventDefault();
         if (participantContainer) participantContainer.innerHTML = '';
-        if (addModal) addModal.classList.remove('hidden');
+        document.getElementById('addBlotterModal').classList.remove('hidden');
       });
     }
     
     if (cancelBtn) {
       cancelBtn.addEventListener('click', () => {
-        if (addModal) addModal.classList.add('hidden');
+        document.getElementById('addBlotterModal').classList.add('hidden');
       });
     }
     
@@ -2028,8 +2578,8 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 
     // Edit modal setup
-    const editModal  = document.getElementById('editBlotterModal');
-    const editForm   = document.getElementById('editBlotterForm');
+    const editModal = document.getElementById('editBlotterModal');
+    const editForm = document.getElementById('editBlotterForm');
     const editCancel = document.getElementById('editCancelBtn');
     const editPartCont = document.getElementById('editParticipantContainer');
     
@@ -2047,7 +2597,57 @@ document.addEventListener('DOMContentLoaded', function() {
       editCancel.addEventListener('click', () => editModal.classList.add('hidden'));
     }
 
-    // Status change handlers using event delegation
+    // Direct button event listeners - this is the key fix
+    document.querySelectorAll('.edit-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const caseId = this.getAttribute('data-id');
+            handleEditCase(caseId);
+        });
+    });
+    
+    document.querySelectorAll('.generate-summons-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const caseId = this.getAttribute('data-id');
+            window.open(`?action=generate_summons&id=${caseId}`, '_blank');
+        });
+    });
+    
+    document.querySelectorAll('.generate-report-form-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const caseId = this.getAttribute('data-id');
+            window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
+        });
+    });
+    
+    document.querySelectorAll('.schedule-hearing-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const caseId = this.getAttribute('data-id');
+            handleScheduleHearing(caseId);
+        });
+    });
+    
+    document.querySelectorAll('.complete-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const caseId = this.getAttribute('data-id');
+            handleCompleteCase(caseId);
+        });
+    });
+    
+    document.querySelectorAll('.delete-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const caseId = this.getAttribute('data-id');
+            handleDeleteCase(caseId);
+        });
+    });
+    
+    document.querySelectorAll('.intervention-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const caseId = this.getAttribute('data-id');
+            handleAddIntervention(caseId);
+        });
+    });
+
+    // Status change handlers
     document.addEventListener('change', async (e) => {
       if (e.target.classList.contains('status-select')) {
         const res = await fetch(`?action=set_status&id=${e.target.dataset.id}&new_status=${encodeURIComponent(e.target.value)}`);
@@ -2070,96 +2670,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
 
-    // Improved click event delegation
-    document.addEventListener('click', async (e) => {
-      // More robust target finding - look for the button itself or its parent if clicking on child elements
-      let target = e.target;
-      
-      // Check if we clicked on something inside a button (like an icon or text)
-      if (!target.matches('button, a') && !target.closest('button, a')) {
-        return; // Not a clickable element
-      }
-      
-      // If we clicked on a child element inside a button, get the actual button
-      if (!target.matches('button, a')) {
-        target = target.closest('button, a');
-      }
-      
-      // Debug to verify correct element targeting
-      console.log('Button clicked:', target.className, target);
-      
-      // View button
-      if (target.classList.contains('view-btn')) {
-        const caseId = target.dataset.id;
-        await openViewModal(caseId);
-        return;
-      }
-      
-      // Edit button
-      if (target.classList.contains('edit-btn')) {
-        const id = target.dataset.id;
-        await handleEditCase(id);
-        return;
-      }
-      
-      // Document generation buttons
-      if (target.classList.contains('generate-summons-btn')) {
-        const caseId = target.dataset.id;
-        window.open(`?action=generate_summons&id=${caseId}`, '_blank');
-        return;
-      }
-      
-      if (target.classList.contains('generate-report-form-btn')) {
-        const caseId = target.dataset.id;
-        window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
-        return;
-      }
-      
-      // Schedule hearing button
-      if (target.classList.contains('schedule-hearing-btn')) {
-        const caseId = target.dataset.id;
-        await handleScheduleHearing(caseId);
-        return;
-      }
-      
-      // Issue CFA button
-      if (target.classList.contains('issue-cfa-btn')) {
-        const caseId = target.dataset.id;
-        await handleIssueCFA(caseId);
-        return;
-      }
-      
-      // Complete button
-      if (target.classList.contains('complete-btn')) {
-        const caseId = target.dataset.id;
-        await handleCompleteCase(caseId);
-        return;
-      }
-      
-      // Delete button
-      if (target.classList.contains('delete-btn')) {
-        const caseId = target.dataset.id;
-        await handleDeleteCase(caseId);
-        return;
-      }
-      
-      // Intervention button
-      if (target.classList.contains('intervention-btn')) {
-        const caseId = target.dataset.id;
-        await handleAddIntervention(caseId);
-        return;
-      }
-      
-      // Record hearing button
-      if (target.classList.contains('record-hearing-btn')) {
-        const hearingId = target.dataset.hearingId;
-        const caseId = target.dataset.caseId;
-        await handleRecordHearing(hearingId, caseId);
-        return;
-      }
-    });
-
-    // Participant event delegation - handle removal of participants
+    // Participant event delegation
     document.getElementById('participantContainer')?.addEventListener('click', (e) => {
       if (e.target.classList.contains('remove-participant')) {
         e.target.closest('.participant').remove();
@@ -2172,334 +2683,7 @@ document.addEventListener('DOMContentLoaded', function() {
       }
     });
 
-    // Fix button handling by attaching event listeners directly when the page loads
-    // This ensures all buttons will work regardless of when they're added to the DOM
-    window.addEventListener('load', function() {
-        console.log("Window loaded, attaching button handlers");
-        
-        // Add New Case button
-        const openModalBtn = document.getElementById('openModalBtn');
-        if (openModalBtn) {
-            console.log("Found Add New Case button, attaching listener");
-            openModalBtn.addEventListener('click', function(e) {
-                e.preventDefault();
-                const modal = document.getElementById('addBlotterModal');
-                const container = document.getElementById('participantContainer');
-                if (container) container.innerHTML = '';
-                if (modal) modal.classList.remove('hidden');
-                console.log("Add New Case button clicked, showing modal");
-            });
-        }
-        
-        // Cancel button in add modal
-        const cancelBtn = document.getElementById('cancelBtn');
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', function() {
-                const modal = document.getElementById('addBlotterModal');
-                if (modal) modal.classList.add('hidden');
-            });
-        }
-        
-        // Directly attach handlers to all action buttons
-        document.querySelectorAll('.edit-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const caseId = this.getAttribute('data-id');
-                console.log("Edit button clicked, ID:", caseId);
-                handleEditCase(caseId);
-            });
-        });
-        
-        document.querySelectorAll('.generate-summons-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const caseId = this.getAttribute('data-id');
-                console.log("Summons button clicked, ID:", caseId);
-                window.open(`?action=generate_summons&id=${caseId}`, '_blank');
-            });
-        });
-        
-        document.querySelectorAll('.generate-report-form-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const caseId = this.getAttribute('data-id');
-                console.log("Report button clicked, ID:", caseId);
-                window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
-            });
-        });
-        
-        document.querySelectorAll('.schedule-hearing-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const caseId = this.getAttribute('data-id');
-                console.log("Schedule hearing button clicked, ID:", caseId);
-                handleScheduleHearing(caseId);
-            });
-        });
-        
-        document.querySelectorAll('.complete-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const caseId = this.getAttribute('data-id');
-                console.log("Close button clicked, ID:", caseId);
-                handleCompleteCase(caseId);
-            });
-        });
-        
-        document.querySelectorAll('.delete-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const caseId = this.getAttribute('data-id');
-                console.log("Dismiss button clicked, ID:", caseId);
-                handleDeleteCase(caseId);
-            });
-        });
-        
-        document.querySelectorAll('.intervention-btn').forEach(btn => {
-            btn.addEventListener('click', function() {
-                const caseId = this.getAttribute('data-id');
-                console.log("Intervention button clicked, ID:", caseId);
-                handleAddIntervention(caseId);
-            });
-        });
-    });
-    
-    // Remove the nested DOMContentLoaded listener that might be causing conflicts
-    // document.addEventListener('DOMContentLoaded', () => {
-    //     // This nested listener was likely causing issues
-    // });
-});
-</script>
-  <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // ...existing code...
-
-    // Add/update these handler functions
-    
-    // Function to handle editing a case
-    async function handleEditCase(caseId) {
-      try {
-        // Show loading state
-        Swal.fire({
-          title: 'Loading...',
-          text: 'Fetching case details',
-          allowOutsideClick: false,
-          didOpen: () => {
-            Swal.showLoading();
-          }
-        });
-        
-        // Fetch case details from the server
-        const response = await fetch(`?action=get_case_details&id=${caseId}`);
-        const data = await response.json();
-        Swal.close();
-        
-        if (!data.success) {
-          Swal.fire('Error', 'Failed to load case details', 'error');
-          return;
-        }
-        
-        const { case: caseData, participants, interventions } = data;
-        
-        // Populate the edit form
-        document.getElementById('editCaseId').value = caseId;
-        document.getElementById('editLocation').value = caseData.location || '';
-        document.getElementById('editDescription').value = caseData.description || '';
-        document.getElementById('editStatus').value = caseData.status || 'pending';
-        
-        // Check intervention checkboxes
-        const interventionCheckboxes = document.querySelectorAll('#editInterventionContainer input[type="checkbox"]');
-        interventionCheckboxes.forEach(checkbox => {
-          checkbox.checked = false; // Reset all checkboxes
-        });
-        
-        interventions.forEach(intervention => {
-          const checkbox = document.querySelector(`#editInterventionContainer input[value="${intervention.intervention_id}"]`);
-          if (checkbox) checkbox.checked = true;
-        });
-        
-        // Populate participants
-        const participantContainer = document.getElementById('editParticipantContainer');
-        participantContainer.innerHTML = '';
-        
-        participants.forEach((participant, index) => {
-          if (participant.participant_type === 'registered') {
-            // Add a registered participant row
-            const template = `
-              <div class="participant flex gap-2 bg-blue-50 p-2 rounded mb-2">
-                <input type="hidden" name="participants[${index}][type]" value="registered">
-                <select name="participants[${index}][user_id]" class="flex-1 p-2 border rounded" required>
-                  <option value="">Select Resident</option>
-                  <?php foreach ($residents as $r): ?>
-                    <option value="<?= $r['user_id'] ?>" ${participant.person_id == <?= $r['user_id'] ?> ? 'selected' : ''}><?= htmlspecialchars($r['name']) ?></option>
-                  <?php endforeach; ?>
-                </select>
-                <select name="participants[${index}][role]" class="flex-1 p-2 border rounded">
-                  <option value="complainant" ${participant.role === 'complainant' ? 'selected' : ''}>Complainant</option>
-                  <option value="respondent" ${participant.role === 'respondent' ? 'selected' : ''}>Respondent</option>
-                  <option value="witness" ${participant.role === 'witness' ? 'selected' : ''}>Witness</option>
-                </select>
-                <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
-              </div>`;
-            
-            const wrapper = document.createElement('div');
-            wrapper.innerHTML = template;
-            const node = wrapper.firstElementChild;
-            node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
-            participantContainer.appendChild(node);
-            
-            // Set the selected value for the resident dropdown
-            const userSelect = node.querySelector(`select[name="participants[${index}][user_id]"]`);
-            if (userSelect) {
-              for (let i = 0; i < userSelect.options.length; i++) {
-                if (userSelect.options[i].value == participant.person_id) {
-                  userSelect.options[i].selected = true;
-                  break;
-                }
-              }
-            }
-          } else {
-            // External participant
-            const template = `
-              <div class="participant flex gap-2 bg-green-50 p-2 rounded mb-2">
-                <input type="hidden" name="participants[${index}][type]" value="unregistered">
-                <div class="flex-1 grid grid-cols-2 gap-2">
-                  <input type="text" name="participants[${index}][first_name]" placeholder="First Name" required value="${participant.first_name || ''}" class="p-2 border rounded">
-                  <input type="text" name="participants[${index}][last_name]" placeholder="Last Name" required value="${participant.last_name || ''}" class="p-2 border rounded">
-                  <input type="text" name="participants[${index}][contact_number]" placeholder="Contact" value="${participant.contact_number || ''}" class="p-2 border rounded">
-                  <input type="text" name="participants[${index}][address]" placeholder="Address" value="${participant.address || ''}" class="p-2 border rounded">
-                  <input type="number" name="participants[${index}][age]" placeholder="Age" value="${participant.age || ''}" class="p-2 border rounded">
-                  <select name="participants[${index}][gender]" class="p-2 border rounded">
-                    <option value="">Gender</option>
-                    <option value="Male" ${participant.gender === 'Male' ? 'selected' : ''}>Male</option>
-                    <option value="Female" ${participant.gender === 'Female' ? 'selected' : ''}>Female</option>
-                    <option value="Other" ${participant.gender === 'Other' ? 'selected' : ''}>Other</option>
-                  </select>
-                </div>
-                <select name="participants[${index}][role]" class="w-28 p-2 border rounded">
-                  <option value="complainant" ${participant.role === 'complainant' ? 'selected' : ''}>Complainant</option>
-                  <option value="respondent" ${participant.role === 'respondent' ? 'selected' : ''}>Respondent</option>
-                  <option value="witness" ${participant.role === 'witness' ? 'selected' : ''}>Witness</option>
-                </select>
-                <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
-              </div>`;
-            
-            const wrapper = document.createElement('div');
-            wrapper.innerHTML = template;
-            const node = wrapper.firstElementChild;
-            node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
-            participantContainer.appendChild(node);
-          }
-        });
-        
-        // Show the edit modal
-        document.getElementById('editBlotterModal').classList.remove('hidden');
-        
-      } catch (error) {
-        console.error('Error loading case details:', error);
-        Swal.fire('Error', 'An unexpected error occurred while loading case details', 'error');
-      }
-    }
-    
-    // Improved scheduleHearing function with proper date validation
-    async function handleScheduleHearing(caseId) {
-      try {
-        // Create today's date and max date (5 days from now)
-        const today = new Date();
-        const todayStr = today.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-        
-        // Calculate max date (5 days from today)
-        const maxDate = new Date();
-        maxDate.setDate(today.getDate() + 5);
-        const maxDateStr = maxDate.toISOString().split('T')[0];
-        
-        // Get available dates/times from the server or create date picker
-        const { value: formValues } = await Swal.fire({
-          title: 'Schedule Hearing',
-          html: `
-            <div class="mb-3">
-              <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-date">
-                Hearing Date (within 5 days)
-              </label>
-              <input id="hearing-date" type="date" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" 
-                min="${todayStr}" max="${maxDateStr}" required>
-              <small class="text-gray-500">Hearings must be scheduled within 5 days from today</small>
-            </div>
-            <div class="mb-3">
-              <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-time">
-                Hearing Time
-              </label>
-              <input id="hearing-time" type="time" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" required>
-            </div>
-            <div class="mb-3">
-              <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-location">
-                Location
-              </label>
-              <input id="hearing-location" type="text" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" value="Barangay Hall" required>
-            </div>
-          `,
-          focusConfirm: false,
-          showCancelButton: true,
-          confirmButtonText: 'Schedule',
-          preConfirm: () => {
-            const hearingDate = document.getElementById('hearing-date').value;
-            const hearingTime = document.getElementById('hearing-time').value;
-            const hearingLocation = document.getElementById('hearing-location').value;
-            
-            if (!hearingDate || !hearingTime) {
-              Swal.showValidationMessage('Please fill in all required fields');
-              return false;
-            }
-            
-            // Additional validation for date range
-            if (hearingDate < todayStr || hearingDate > maxDateStr) {
-              Swal.showValidationMessage('Hearing date must be within the next 5 days (including today)');
-              return false;
-            }
-            
-            return {
-              hearing_date: hearingDate,
-              hearing_time: hearingTime,
-              hearing_location: hearingLocation
-            };
-          }
-        });
-        
-        if (formValues) {
-          // Show loading state
-          Swal.fire({
-            title: 'Scheduling...',
-            text: 'Please wait',
-            allowOutsideClick: false,
-            didOpen: () => {
-              Swal.showLoading();
-            }
-          });
-          
-          // Send the scheduling request to the server
-          const response = await fetch(`?action=schedule_hearing&id=${caseId}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json'
-            },
-            body: JSON.stringify(formValues)
-          });
-          
-          const data = await response.json();
-          
-          if (data.success) {
-            Swal.fire({
-              icon: 'success',
-              title: 'Success!',
-              text: data.message || 'Hearing has been scheduled successfully.',
-              timer: 2000,
-              showConfirmButton: false
-            }).then(() => location.reload());
-          } else {
-            Swal.fire('Error', data.message || 'Failed to schedule hearing', 'error');
-          }
-        }
-      } catch (error) {
-        console.error('Error scheduling hearing:', error);
-        Swal.fire('Error', 'An unexpected error occurred.', 'error');
-      }
-    }
-    
-    // Add form submission handler for edit form
+    // Edit form submission handler
     document.getElementById('editBlotterForm').addEventListener('submit', async function(e) {
       e.preventDefault();
       
@@ -2540,12 +2724,6 @@ document.addEventListener('DOMContentLoaded', function() {
           
           formData.participants.push(participantData);
         });
-        
-        // Validate data
-        if (!formData.location.trim() || !formData.description.trim()) {
-          Swal.fire('Error', 'Location and description are required', 'error');
-          return;
-        }
         
         if (formData.participants.length === 0) {
           Swal.fire('Error', 'At least one participant is required', 'error');
@@ -2594,13 +2772,5 @@ document.addEventListener('DOMContentLoaded', function() {
         Swal.fire('Error', 'An unexpected error occurred while saving the case', 'error');
       }
     });
-
-    // Make handler functions available globally
-    window.handleEditCase = handleEditCase;
-    window.handleCompleteCase = handleCompleteCase;
-    window.handleDeleteCase = handleDeleteCase;
-    window.handleScheduleHearing = handleScheduleHearing;
-    window.handleIssueCFA = handleIssueCFA;
-    window.handleAddIntervention = handleAddIntervention;
 });
 </script>
