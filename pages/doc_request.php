@@ -15,7 +15,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
 
 // Safe to read these now
 $current_admin_id = $_SESSION['user_id'];
-$bid              = 32; // Force to Tambubong for testing purposes
+$bid              = 32; 
 $role             = $_SESSION['role_id'];
 
 /**
