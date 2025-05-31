@@ -789,15 +789,24 @@ unset($case);
                             <?php elseif ($case['user_confirmed'] && !$case['captain_confirmed']): ?>
                             <div class="alert alert-info">You have confirmed. Waiting for Captain's final confirmation.</div>
                             <?php elseif ($case['proposal_status'] === 'both_confirmed'): ?>
-                            <div style="background: #ecfdf5; color: #059669; padding: 1rem; border-radius: 6px; margin-top: 1rem;">
+                            <div class="success-alert">
                                 <i class="fas fa-check-circle"></i>
                                 Hearing schedule confirmed by both parties. Please arrive 15 minutes early.
+                                <?php if ($case['confirmed_by_role']): ?>
+                                <br><small>Confirmed by: <?= $case['confirmed_by_role'] === ROLE_CAPTAIN ? 'Barangay Captain' : 'Chief Officer' ?></small>
+                                <?php endif; ?>
+                            </div>
+                            <?php elseif ($case['proposal_status'] === 'captain_confirmed'): ?>
+                            <div class="info-alert">
+                                <i class="fas fa-info-circle"></i>
+                                Schedule confirmed by <?= $case['confirmed_by_role'] === ROLE_CAPTAIN ? 'Barangay Captain' : 'Chief Officer' ?>. 
+                                Please confirm your availability.
                             </div>
                             <?php elseif ($case['proposal_status'] === 'conflict'): ?>
                             <div class="conflict-alert">
                                 <i class="fas fa-exclamation-triangle"></i>
                                 <strong>Scheduling Conflict:</strong> <?= htmlspecialchars($case['conflict_reason'] ?? 'There was a conflict with the proposed schedule.') ?>
-                                <br><small>The captain will propose alternative dates.</small>
+                                <br><small>The officer will propose alternative dates.</small>
                             </div>
                             <?php endif; ?>
 
@@ -946,6 +955,16 @@ unset($case);
             submitBtn.disabled = true;
             
             try {
+                // Show loading state
+                Swal.fire({
+                    title: 'Processing...',
+                    text: 'Submitting your response...',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
                 const response = await fetch('../api/scheduling_api.php', {
                     method: 'POST',
                     body: new URLSearchParams({

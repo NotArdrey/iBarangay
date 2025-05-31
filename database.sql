@@ -210,3 +210,87 @@ CREATE TABLE participant_notifications (
 /*-------------------------------------------------------------
   SECTION 7: SAMPLE DATA INSERTION
   -------------------------------------------------------------*/
+
+-- Add new status for blotter cases
+ALTER TABLE blotter_cases 
+MODIFY COLUMN status ENUM('pending', 'open', 'closed', 'completed', 'transferred', 'solved', 'endorsed_to_court', 'cfa_eligible', 'dismissed', 'deleted') DEFAULT 'pending';
+
+-- Add new columns for case dismissal
+ALTER TABLE blotter_cases
+ADD COLUMN dismissed_by_user_id INT NULL AFTER resolved_at,
+ADD COLUMN dismissal_reason TEXT NULL AFTER dismissed_by_user_id,
+ADD COLUMN dismissal_date DATETIME NULL AFTER dismissal_reason,
+ADD FOREIGN KEY (dismissed_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- Add new columns for schedule proposals
+ALTER TABLE schedule_proposals
+ADD COLUMN proposed_by_role_id INT NOT NULL AFTER proposed_by_user_id,
+ADD COLUMN notification_sent BOOLEAN DEFAULT FALSE AFTER status,
+ADD COLUMN notification_sent_at DATETIME NULL AFTER notification_sent,
+ADD FOREIGN KEY (proposed_by_role_id) REFERENCES roles(id) ON DELETE CASCADE;
+
+-- Add new table for schedule notifications
+CREATE TABLE schedule_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    schedule_proposal_id INT NOT NULL,
+    notified_user_id INT NOT NULL,
+    notification_type ENUM('proposal', 'confirmation', 'rejection') NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (schedule_proposal_id) REFERENCES schedule_proposals(id) ON DELETE CASCADE,
+    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Add indexes for better performance
+CREATE INDEX idx_schedule_proposals_status ON schedule_proposals(status);
+CREATE INDEX idx_schedule_notifications_user ON schedule_notifications(notified_user_id, is_read);
+CREATE INDEX idx_blotter_cases_dismissed ON blotter_cases(dismissed_by_user_id, dismissal_date);
+
+-- Add view for schedule proposals with notifications
+CREATE VIEW schedule_proposal_summary AS
+SELECT 
+    sp.id,
+    sp.blotter_case_id,
+    bc.case_number,
+    sp.proposed_date,
+    sp.proposed_time,
+    sp.hearing_location,
+    sp.status,
+    sp.user_confirmed,
+    sp.captain_confirmed,
+    u1.email as proposed_by_email,
+    u2.email as notified_officer_email,
+    sn.is_read as notification_read
+FROM schedule_proposals sp
+JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+JOIN users u1 ON sp.proposed_by_user_id = u1.id
+LEFT JOIN users u2 ON u2.id = (
+    SELECT user_id 
+    FROM user_roles 
+    WHERE barangay_id = bc.barangay_id 
+    AND role_id = CASE 
+        WHEN sp.proposed_by_role_id = 3 THEN 7 
+        ELSE 3 
+    END 
+    AND is_active = 1 
+    LIMIT 1
+)
+LEFT JOIN schedule_notifications sn ON sp.id = sn.schedule_proposal_id
+WHERE sp.status IN ('proposed', 'pending_user_confirmation', 'pending_officer_confirmation');
+
+-- Add view for dismissed cases
+CREATE VIEW dismissed_cases_summary AS
+SELECT 
+    bc.id,
+    bc.case_number,
+    bc.incident_date,
+    bc.dismissal_date,
+    bc.dismissal_reason,
+    u.email as dismissed_by_email,
+    b.name as barangay_name
+FROM blotter_cases bc
+JOIN users u ON bc.dismissed_by_user_id = u.id
+JOIN barangay b ON bc.barangay_id = b.id
+WHERE bc.status = 'dismissed';

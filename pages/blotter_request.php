@@ -406,7 +406,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !isset($_POST['action'])) {
                 INSERT INTO blotter_cases 
                 (case_number, incident_date, location, description, status, barangay_id, reported_by_person_id, 
                  created_at) 
-                VALUES (?, ?, ?, ?, 'new', ?, ?, NOW())
+                VALUES (?, ?, ?, ?, 'pending', ?, ?, NOW())
             ");
             $stmt->execute([$caseNumber, $incident_date, $location, $description, $barangay_id, $person_id]);
             $case_id = $conn->lastInsertId();
@@ -921,8 +921,8 @@ require "../components/navbar.php";
             </a>
             
             <h2>
-                <i class="fas fa-bullhorn"></i>
-                File a Blotter Case
+                <i class="fas fa-gavel"></i>
+                File Blotter Case
             </h2>
 
             <?php if ($success): ?>
@@ -951,7 +951,7 @@ require "../components/navbar.php";
             <?php endif; ?>
 
             <?php if (!$success): ?>
-            <form method="post" id="blotterForm" autocomplete="off">
+            <form method="post" id="blotterForm" onsubmit="return confirmSubmit(event)">
                 <!-- Basic Information Section -->
                 <div class="form-section">
                     <h3><i class="fas fa-info-circle"></i> Basic Information</h3>
@@ -1181,47 +1181,103 @@ require "../components/navbar.php";
 
     <script>
     document.addEventListener('DOMContentLoaded', function() {
-        // Form validation and submission
-        document.getElementById('blotterForm').addEventListener('submit', function(e) {
-            e.preventDefault();
+        // Function to confirm form submission
+        function confirmSubmit(event) {
+            event.preventDefault();
             
-            const description = document.getElementById('description').value;
-            if (description.length < 10) {
+            // Get form data
+            const form = document.getElementById('blotterForm');
+            const formData = new FormData(form);
+            
+            // Validate required fields
+            const requiredFields = ['incident_date', 'location', 'description', 'role'];
+            const missingFields = requiredFields.filter(field => !formData.get(field));
+            
+            if (missingFields.length > 0) {
                 Swal.fire({
-                    title: 'Invalid Description',
-                    text: 'Please provide a detailed description (at least 10 characters)',
-                    icon: 'error'
+                    title: 'Missing Information',
+                    text: 'Please fill in all required fields.',
+                    icon: 'warning',
+                    confirmButtonColor: '#0056b3'
                 });
-                return;
+                return false;
             }
 
             // Show confirmation dialog
             Swal.fire({
-                title: 'Submit Blotter Case?',
-                text: 'Are you sure you want to submit this blotter case? You will receive email notifications about the progress.',
+                title: 'Confirm Blotter Case Submission',
+                html: `
+                    <div class="text-left">
+                        <p>Are you sure you want to submit this blotter case?</p>
+                        <div class="mt-3 p-3 bg-gray-50 rounded">
+                            <p><strong>Incident Date:</strong> ${formData.get('incident_date')}</p>
+                            <p><strong>Location:</strong> ${formData.get('location')}</p>
+                            <p><strong>Description:</strong> ${formData.get('description').substring(0, 100)}${formData.get('description').length > 100 ? '...' : ''}</p>
+                        </div>
+                    </div>
+                `,
                 icon: 'question',
                 showCancelButton: true,
                 confirmButtonColor: '#0056b3',
-                cancelButtonColor: '#dc3545',
-                confirmButtonText: 'Yes, submit it!',
-                cancelButtonText: 'No, review first'
+                cancelButtonColor: '#6c757d',
+                confirmButtonText: 'Yes, submit case',
+                cancelButtonText: 'Review details',
+                showLoaderOnConfirm: true,
+                preConfirm: () => {
+                    return new Promise((resolve) => {
+                        // Submit the form
+                        form.submit();
+                        resolve();
+                    });
+                }
             }).then((result) => {
                 if (result.isConfirmed) {
                     // Show loading state
                     Swal.fire({
-                        title: 'Submitting...',
-                        text: 'Please wait while we process your request',
+                        title: 'Submitting Case',
+                        html: 'Please wait while we process your blotter case...',
                         allowOutsideClick: false,
                         didOpen: () => {
                             Swal.showLoading();
                         }
                     });
-
-                    // Submit the form
-                    this.submit();
                 }
             });
+
+            return false;
+        }
+
+        // Handle success message from URL parameters
+        <?php if (isset($_GET['success']) && $_GET['success'] == 1): ?>
+        Swal.fire({
+            title: 'Case Filed Successfully!',
+            html: `
+                <div class="text-left">
+                    <p>Your blotter case has been filed successfully.</p>
+                    <div class="mt-3 p-3 bg-green-50 rounded">
+                        <p><strong>Case Number:</strong> <?= htmlspecialchars($_GET['case_number'] ?? '') ?></p>
+                        <p class="text-sm text-gray-600 mt-2">You will receive an email confirmation shortly.</p>
+                    </div>
+                </div>
+            `,
+            icon: 'success',
+            confirmButtonColor: '#0056b3',
+            confirmButtonText: 'View Case Status'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.location.href = 'blotter_status.php';
+            }
         });
+        <?php endif; ?>
+
+        <?php if ($error): ?>
+        Swal.fire({
+            title: 'Error',
+            text: '<?= addslashes($error) ?>',
+            icon: 'error',
+            confirmButtonColor: '#dc2626'
+        });
+        <?php endif; ?>
 
         // Participant management
         const participantContainer = document.getElementById('participantContainer');

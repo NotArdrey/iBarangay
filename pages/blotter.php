@@ -7,70 +7,44 @@ use Dompdf\Dompdf;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;  
 
+// Define role constants
+const ROLE_PROGRAMMER   = 1;
+const ROLE_SUPER_ADMIN  = 2;
+const ROLE_CAPTAIN      = 3;
+const ROLE_SECRETARY    = 4;
+const ROLE_TREASURER    = 5;
+const ROLE_COUNCILOR    = 6;
+const ROLE_CHIEF        = 7;
+const ROLE_RESIDENT     = 8;
+
 // Authentication & role check
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
     header("Location: ../pages/login.php");
     exit;
 }
 
-function transcribeFile(string $filePath): string {
-    $apiKey = getenv('OPENAI_API_KEY') ?: '';
-    if (!$apiKey) throw new Exception("Missing OPENAI_API_KEY");
+// Check if user has appropriate role for blotter management
+$current_admin_id = $_SESSION['user_id'];
+$bid = $_SESSION['barangay_id'];
+$role = $_SESSION['role_id'];
 
-    $fileSize = filesize($filePath);
-    if ($fileSize > 25 * 1024 * 1024) {
-        throw new Exception("File too large. Maximum size is 25MB.");
-    }
+// Define role-based permissions
+$canManageBlotter = in_array($role, [ROLE_CAPTAIN, ROLE_SECRETARY, ROLE_CHIEF]);
+$canScheduleHearings = in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF]);
+$canIssueCFA = in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF]);
+$canGenerateReports = in_array($role, [ROLE_CAPTAIN, ROLE_SECRETARY, ROLE_CHIEF]);
 
-    $finfo = new finfo(FILEINFO_MIME_TYPE);
-    $mimeType = $finfo->file($filePath);
-    $allowedTypes = [
-        'audio/mpeg', 'audio/mp4', 'audio/mp3', 'audio/wav', 'audio/x-wav', 
-        'audio/webm', 'audio/ogg', 'video/mp4', 'video/webm', 'video/ogg'
-    ];
-    
-    if (!in_array($mimeType, $allowedTypes)) {
-        throw new Exception("Unsupported file type: $mimeType. Please upload an audio or video file.");
-    }
-
-    $cfile = new CURLFile($filePath);
-    $post = [
-        'file'  => $cfile,
-        'model' => 'whisper-1',
-        'response_format' => 'json',
-        'temperature' => 0.2,
-    ];
-
-    $ch = curl_init('https://api.openai.com/v1/audio/transcriptions');
-    curl_setopt_array($ch, [
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_POST => true,
-        CURLOPT_HTTPHEADER => ["Authorization: Bearer {$apiKey}", "Content-Type: multipart/form-data"],
-        CURLOPT_POSTFIELDS => $post,
-        CURLOPT_TIMEOUT => 300,
-    ]);
-
-    $resp = curl_exec($ch);
-    $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-    if (curl_errno($ch)) throw new Exception('Connection error: ' . curl_error($ch));
-    curl_close($ch);
-
-    if ($httpCode !== 200) {
-        $error = json_decode($resp, true);
-        $message = $error['error']['message'] ?? "API returned HTTP $httpCode";
-        throw new Exception("Transcription failed: $message");
-    }
-
-    $data = json_decode($resp, true);
-    if (empty($data['text'])) throw new Exception('No transcription text returned from API.');
-
-    return trim($data['text']);
+// Redirect users without blotter management permissions
+if (!$canManageBlotter && !isset($_GET['action'])) {
+    $_SESSION['error_message'] = "You don't have permission to access the blotter management system.";
+    header("Location: dashboard.php");
+    exit;
 }
 
 $current_admin_id = $_SESSION['user_id'];
 $bid = $_SESSION['barangay_id'];
 $role = $_SESSION['role_id'];
-$allowedStatuses = ['pending','open','closed','completed','solved','endorsed_to_court','cfa_eligible'];
+$allowedStatuses = ['pending','open','closed','completed','solved','endorsed_to_court','cfa_eligible','dismissed'];
 
 function logAuditTrail($pdo, $adminId, $action, $table, $recordId, $desc = '') {
     $pdo->prepare("INSERT INTO audit_trails
@@ -118,26 +92,23 @@ function validateBlotterData(array $data, &$errors) {
     return empty($errors);
 }
 
-function updateCaseStatus($pdo, $caseId) {
+function updateCaseStatus($pdo, $caseId, $newStatus, $userId) {
     $stmt = $pdo->prepare("
-        SELECT hearing_number, hearing_outcome, is_mediation_successful 
-        FROM case_hearings 
-        WHERE blotter_case_id = ? 
-        ORDER BY hearing_number DESC 
-        LIMIT 1
+        UPDATE blotter_cases 
+        SET status = ?, 
+            updated_at = CURRENT_TIMESTAMP,
+            resolved_at = CASE 
+                WHEN ? IN ('closed', 'dismissed') THEN CURRENT_TIMESTAMP 
+                ELSE resolved_at 
+            END
+        WHERE id = ?
     ");
-    $stmt->execute([$caseId]);
-    $lastHearing = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt->execute([$newStatus, $newStatus, $caseId]);
     
-    if ($lastHearing) {
-        if ($lastHearing['is_mediation_successful']) {
-            $pdo->prepare("UPDATE blotter_cases SET status = 'solved' WHERE id = ?")->execute([$caseId]);
-        } elseif ($lastHearing['hearing_number'] >= 3 && 
-                in_array($lastHearing['hearing_outcome'], ['failed', 'no_show'])) {
-            $pdo->prepare("UPDATE blotter_cases SET status = 'cfa', is_cfa_eligible = TRUE WHERE id = ?")
-                ->execute([$caseId]);
-        }
-    }
+    // Log the status change
+    logAuditTrail($pdo, $userId, 'UPDATE', 'blotter_cases', $caseId, "Case status updated to: $newStatus");
+    
+    return $stmt->rowCount() > 0;
 }
 
 function generateCFACertificate($pdo, $caseId, $complainantId, $issuedBy) {
@@ -169,10 +140,16 @@ function generateSummonsForm($pdo, $caseId) {
     $case = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$case) throw new Exception("Case not found");
 
-    // Get captain's esignature if available and case is open or later
+    // Get appropriate signature based on availability
+    // Prioritize captain's signature if available, otherwise use chief officer's
     $esignaturePath = null;
     if (in_array($case['status'], ['open','closed','completed','solved','endorsed_to_court','cfa_eligible'])) {
-        $esignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
+        $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
+        if ($captainEsignaturePath) {
+            $esignaturePath = $captainEsignaturePath;
+        } else {
+            $esignaturePath = getChiefOfficerEsignature($pdo, $case['barangay_id']);
+        }
     }
 
     $pStmt = $pdo->prepare("
@@ -320,10 +297,16 @@ function generateReportForm($pdo, $caseId) {
         throw new Exception("Case not found");
     }
     
-    // Get captain's esignature if available and case is open or later
+    // Get appropriate signature based on availability
+    // Prioritize captain's signature if available, otherwise use chief officer's
     $esignaturePath = null;
     if (in_array($case['status'], ['open','closed','completed','solved','endorsed_to_court','cfa_eligible'])) {
-        $esignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
+        $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
+        if ($captainEsignaturePath) {
+            $esignaturePath = $captainEsignaturePath;
+        } else {
+            $esignaturePath = getChiefOfficerEsignature($pdo, $case['barangay_id']);
+        }
     }
 
     // Get participants
@@ -436,9 +419,6 @@ function generateReportForm($pdo, $caseId) {
                         Ginawa ngayong ika- <span class="underline" style="min-width:30px;"></span> araw ng <span class="underline" style="min-width:80px;"></span>, 20<span class="underline" style="min-width:30px;"></span>.
                     </td>
                     <td style="width:40%; text-align:right;">
-                        <?php if ($esignaturePath): ?>
-                            <img src="<?= htmlspecialchars($esignaturePath) ?>" alt="E-signature" style="height:50px;max-width:180px;display:block;margin-left:auto;margin-bottom:2mm;">
-                        <?php endif; ?>
                         <div class="signature-line"></div><br>
                         (Mga) Maysumbong
                     </td>
@@ -466,6 +446,7 @@ function generateReportForm($pdo, $caseId) {
     <?php
     return ob_get_clean();
 }
+
 // Add this function after generateSummonsForm()
 function generateSummonsPDF($pdo, $caseId) {
     $html = generateSummonsForm($pdo, $caseId);
@@ -481,15 +462,34 @@ function generateSummonsPDF($pdo, $caseId) {
 // Helper to get captain's esignature for a barangay
 function getCaptainEsignature($pdo, $barangayId) {
     $stmt = $pdo->prepare("
-        SELECT u.esignature_path
-        FROM users u
-        JOIN roles r ON u.role_id = r.id
-        WHERE u.barangay_id = ? AND r.name = 'Barangay Captain'
+        SELECT esignature_path 
+        FROM users 
+        WHERE role_id = 3 
+        AND barangay_id = ? 
+        AND is_active = 1 
         LIMIT 1
     ");
     $stmt->execute([$barangayId]);
     $path = $stmt->fetchColumn();
-    return $path ? "../$path" : null;
+    
+    // Return full path if exists, otherwise null
+    return $path ? $path : null;
+}
+
+function getChiefOfficerEsignature($pdo, $barangayId) {
+    $stmt = $pdo->prepare("
+        SELECT esignature_path 
+        FROM users 
+        WHERE role_id = 7 
+        AND barangay_id = ? 
+        AND is_active = 1 
+        LIMIT 1
+    ");
+    $stmt->execute([$barangayId]);
+    $path = $stmt->fetchColumn();
+    
+    // Return full path if exists, otherwise null
+    return $path ? $path : null;
 }
 
 function sendSummonsEmails($pdo, $caseId, $proposalId) {
@@ -557,23 +557,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
 
     $location = trim($_POST['location'] ?? '');
     $description = trim($_POST['complaint'] ?? '');
-
-    // Only attempt transcription if no description and a file was uploaded
-    if (empty($description) && !empty($_FILES['transcript_file']['tmp_name'])) {
-        try {
-            $_SESSION['info_message'] = 'Processing audio transcription...';
-            session_write_close();
-            $tmpPath = $_FILES['transcript_file']['tmp_name'];
-            $description = transcribeFile($tmpPath);
-            session_start();
-            unset($_SESSION['info_message']);
-        } catch (Exception $e) {
-            $_SESSION['error_message'] = 'Transcription failed: ' . $e->getMessage();
-            header('Location: blotter.php');
-            exit;
-        }
-    }
-
     $participants = $_POST['participants'] ?? [];
 
     if ($location === '' || $description === '' || !is_array($participants) || count($participants) === 0) {
@@ -614,6 +597,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
             VALUES (?, ?, ?, 'pending', ?, NOW())
         ")->execute([$caseNumber, $location, $description, $bid]);
         $caseId = $pdo->lastInsertId();
+
+
+        $pdo->prepare("UPDATE blotter_cases SET filing_date = NOW() WHERE id = ?")->execute([$caseId]);
+
+        // Notify Captain and Chief Officer
+        $stmt = $pdo->prepare("
+            INSERT INTO case_notifications (blotter_case_id, notified_user_id, notification_type)
+            SELECT ?, id, 'case_filed' 
+            FROM users 
+            WHERE role_id IN (3, 7) AND barangay_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$caseId, $bid]);
 
         // Categories
         if (!empty($_POST['categories'])) {
@@ -697,41 +692,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
     exit;
 }
 
-// Handle AJAX transcription requests
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'transcribe_only') {
-    header('Content-Type: application/json');
-    
-    if (empty($_FILES['transcript_file']['tmp_name'])) {
-        echo json_encode(['success' => false, 'message' => 'No file uploaded']);
-        exit;
-    }
-    
-    try {
-        $tmpPath = $_FILES['transcript_file']['tmp_name'];
-        $transcriptionText = transcribeFile($tmpPath);
-        
-        echo json_encode([
-            'success' => true, 
-            'text' => $transcriptionText
-        ]);
-    } catch (Exception $e) {
-        echo json_encode([
-            'success' => false, 
-            'message' => $e->getMessage()
-        ]);
-    }
-    exit;
-}
-
 // === AJAX actions ===
 if (!empty($_GET['action'])) {
     header('Content-Type: application/json');
     $action = $_GET['action'];
     $id     = intval($_GET['id'] ?? 0);
 
-    if (in_array($action, ['delete','complete','set_status','add_intervention','update_case', 'schedule_hearing', 'record_hearing', 'issue_cfa'], true)
-        && !in_array($role, [3, 4, 5], true)) {
-        echo json_encode(['success'=>false,'message'=>'Permission denied']);
+    // Role-based permission checks for different actions
+    $permissionDenied = false;
+    
+    if (in_array($action, ['delete', 'complete', 'set_status'])) {
+        if (!$canManageBlotter) $permissionDenied = true;
+    }
+    
+    if (in_array($action, ['schedule_hearing', 'issue_cfa'])) {
+        if (!$canScheduleHearings) $permissionDenied = true;
+    }
+    
+    if (in_array($action, ['add_intervention', 'update_case', 'record_hearing'])) {
+        if (!$canManageBlotter) $permissionDenied = true;
+    }
+    
+    if (in_array($action, ['generate_report'])) {
+        if (!$canGenerateReports) $permissionDenied = true;
+    }
+    
+    if ($permissionDenied) {
+        echo json_encode(['success'=>false,'message'=>'Permission denied for this action']);
         exit;
     }
 
@@ -772,6 +759,41 @@ if (!empty($_GET['action'])) {
                 echo $pdf->output();
                 exit;
 
+
+                case 'sign_case':
+                  if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                      echo json_encode(['success'=>false,'message'=>'Permission denied']);
+                      exit;
+                  }
+                  
+                  $signatureColumn = ($role == ROLE_CAPTAIN) ? 'captain_signature_date' : 'chief_signature_date';
+                  
+                  $stmt = $pdo->prepare("
+                      UPDATE blotter_cases 
+                      SET $signatureColumn = NOW()
+                      WHERE id = ? AND barangay_id = ? AND status IN ('closed', 'dismissed')
+                  ");
+                  
+                  if ($stmt->execute([$id, $bid])) {
+                      // Check if both signatures are present
+                      $stmt = $pdo->prepare("
+                          SELECT captain_signature_date, chief_signature_date 
+                          FROM blotter_cases 
+                          WHERE id = ?
+                      ");
+                      $stmt->execute([$id]);
+                      $signatures = $stmt->fetch(PDO::FETCH_ASSOC);
+                      
+                      if ($signatures['captain_signature_date'] && $signatures['chief_signature_date']) {
+                          $pdo->prepare("UPDATE blotter_cases SET status = 'completed' WHERE id = ?")->execute([$id]);
+                      }
+                      
+                      echo json_encode(['success'=>true, 'message'=>'Case signed successfully']);
+                  } else {
+                      echo json_encode(['success'=>false,'message'=>'Failed to sign case']);
+                  }
+                  break;
+
             case 'generate_report':
                 $year  = intval($_GET['year']  ?? date('Y'));
                 $month = intval($_GET['month'] ?? date('n'));
@@ -799,37 +821,27 @@ if (!empty($_GET['action'])) {
                         COUNT(DISTINCT bc.id) AS total_cases,
                         COUNT(DISTINCT IF(
                           bci.intervention_id = (
-                            SELECT id
-                            FROM case_interventions
-                            WHERE name = 'M/CSWD'
+                            SELECT id FROM case_interventions WHERE name = 'M/CSWD'
                           ), bc.id, NULL
                         )) AS mcwsd,
                         COUNT(DISTINCT IF(
                           bci.intervention_id = (
-                            SELECT id
-                            FROM case_interventions
-                            WHERE name = 'PNP'
+                            SELECT id FROM case_interventions WHERE name = 'PNP'
                           ), bc.id, NULL
                         )) AS total_pnp,
                         COUNT(DISTINCT IF(
                           bci.intervention_id = (
-                            SELECT id
-                            FROM case_interventions
-                            WHERE name = 'Court'
+                            SELECT id FROM case_interventions WHERE name = 'Court'
                           ), bc.id, NULL
                         )) AS total_court,
                         COUNT(DISTINCT IF(
                           bci.intervention_id = (
-                            SELECT id
-                            FROM case_interventions
-                            WHERE name = 'Issued BPO'
+                            SELECT id FROM case_interventions WHERE name = 'Issued BPO'
                           ), bc.id, NULL
                         )) AS total_bpo,
                         COUNT(DISTINCT IF(
                           bci.intervention_id = (
-                            SELECT id
-                            FROM case_interventions
-                            WHERE name = 'Medical'
+                            SELECT id FROM case_interventions WHERE name = 'Medical'
                           ), bc.id, NULL
                         )) AS total_medical
                     FROM case_categories c
@@ -889,13 +901,13 @@ if (!empty($_GET['action'])) {
                     <table>
                       <thead>
                         <tr>
-                          <th>Nature of case</th>
-                          <th>Total number of case reported</th>
+                          <th>Category</th>
+                          <th>Total Cases</th>
                           <th>M/CSWD</th>
                           <th>PNP</th>
-                          <th>COURT</th>
-                          <th>ISSUED BPOs</th>
-                          <th>MEDICAL</th>
+                          <th>Court</th>
+                          <th>BPO</th>
+                          <th>Medical</th>
                         </tr>
                       </thead>
                     <tbody>
@@ -927,9 +939,9 @@ if (!empty($_GET['action'])) {
                 exit;
 
             case 'delete':
-                $pdo->prepare("UPDATE blotter_cases SET status='closed' WHERE id=?")
+                $pdo->prepare("UPDATE blotter_cases SET status='dismissed' WHERE id=?")
                     ->execute([$id]);
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, 'Status → Deleted');
+                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, 'Status → Dismissed');
                 echo json_encode(['success'=>true]);
                 break;
 
@@ -979,7 +991,7 @@ if (!empty($_GET['action'])) {
                     bp.role,
                     CASE 
                       WHEN bp.person_id IS NOT NULL THEN 'registered'
-                      WHEN bp.external_participant_id IS NOT NULL THEN 'unregistered'
+                      WHEN bp.external_participant_id IS NOT NULL THEN 'external'
                       ELSE 'unknown'
                     END AS participant_type
                   FROM blotter_participants bp
@@ -1046,66 +1058,117 @@ if (!empty($_GET['action'])) {
                 echo json_encode(['success'=>true]);
                 break;
 
-            case 'schedule_hearing':
-                $data = json_decode(file_get_contents('php://input'), true);
-                if (empty($data['hearing_date']) || empty($data['hearing_time'])) {
-                    echo json_encode(['success'=>false,'message'=>'Hearing date and time are required']);
-                    exit;
-                }
+                case 'schedule_hearing':
+                  // Check if user can schedule (Captain or Chief Officer)
+                  if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                      echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can schedule hearings']);
+                      exit;
+                  }
+                  
+                  // Check if case is accepted and within 5-day deadline
+                  $stmt = $pdo->prepare("
+                      SELECT bc.*, 
+                             DATE_ADD(bc.filing_date, INTERVAL 5 DAY) as deadline,
+                             COUNT(ch.id) as hearing_count
+                      FROM blotter_cases bc
+                      LEFT JOIN case_hearings ch ON bc.id = ch.blotter_case_id
+                      WHERE bc.id = ? AND bc.barangay_id = ?
+                      GROUP BY bc.id
+                  ");
+                  $stmt->execute([$id, $bid]);
+                  $case = $stmt->fetch(PDO::FETCH_ASSOC);
+                  
+                  if (!$case) {
+                      echo json_encode(['success'=>false,'message'=>'Case not found']);
+                      exit;
+                  }
+                  
+                  if ($case['status'] === 'pending') {
+                      echo json_encode(['success'=>false,'message'=>'Case must be accepted before scheduling']);
+                      exit;
+                  }
+                  
+                  if ($case['hearing_count'] >= 3) {
+                      echo json_encode(['success'=>false,'message'=>'Maximum of 3 hearings per case reached']);
+                      exit;
+                  }
+                  
+                  if (new DateTime() > new DateTime($case['deadline'])) {
+                      echo json_encode(['success'=>false,'message'=>'Scheduling deadline exceeded (5 days from filing)']);
+                      exit;
+                  }
+                  
+                  // Check if there's a pending hearing
+                  $stmt = $pdo->prepare("
+                      SELECT id FROM case_hearings 
+                      WHERE blotter_case_id = ? AND hearing_outcome = 'scheduled'
+                  ");
+                  $stmt->execute([$id]);
+                  if ($stmt->fetch()) {
+                      echo json_encode(['success'=>false,'message'=>'Complete current hearing before scheduling new one']);
+                      exit;
+                  }
+              
+                  $data = json_decode(file_get_contents('php://input'), true);
+                  if (empty($data['hearing_date']) || empty($data['hearing_time'])) {
+                      echo json_encode(['success'=>false,'message'=>'Hearing date and time are required']);
+                      exit;
+                  }
+              
+                  // Check if user is Captain or Chief Officer
+                  $stmt = $pdo->prepare("SELECT role_id FROM users WHERE id = ?");
+                  $stmt->execute([$current_admin_id]);
+                  $userRole = $stmt->fetchColumn();
+                  
+                  if (!in_array($userRole, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                      echo json_encode(['success'=>false,'message'=>'Only Barangay Captain or Chief Officer can schedule hearings.']);
+                      exit;
+                  }
+              
+                  // Hearing date must be within 5 days from today (inclusive)
+                  $hearingDate = $data['hearing_date'];
+                  $today = new DateTime();
+                  $minDate = $today->format('Y-m-d');
+                  $maxDate = (clone $today)->modify('+5 days')->format('Y-m-d');
+                  if ($hearingDate < $minDate || $hearingDate > $maxDate) {
+                      echo json_encode(['success'=>false,'message'=>'Hearing date must be within the next 5 days (including today).']);
+                      exit;
+                  }
+              
+                  // Check for existing pending proposal for this case
+                  $stmt = $pdo->prepare("SELECT id FROM schedule_proposals WHERE blotter_case_id=? AND status IN ('proposed','user_confirmed','captain_confirmed')");
+                  $stmt->execute([$id]);
+                  if ($stmt->fetch()) {
+                      echo json_encode(['success'=>false,'message'=>'There is already a pending schedule proposal for this case.']);
+                      exit;
+                  }
+              
+                  $pdo->beginTransaction();
+                  // Insert schedule proposal
+                  $stmt = $pdo->prepare("
+                      INSERT INTO schedule_proposals
+                      (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position, status)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, 'pending_user_confirmation')
+                  ");
+                  $stmt->execute([
+                      $id,
+                      $current_admin_id,
+                      $data['hearing_date'],
+                      $data['hearing_time'],
+                      $data['hearing_location'] ?? 'Barangay Hall',
+                      $data['presiding_officer'] ?? ($userRole === ROLE_CAPTAIN ? 'Barangay Captain' : 'Chief Officer'),
+                      $data['officer_position'] ?? ($userRole === ROLE_CAPTAIN ? 'barangay_captain' : 'chief_officer')
+                  ]);
+                  $proposalId = $pdo->lastInsertId();
+              
+                  // Send summons emails to all parties using PHPMailer
+                  sendSummonsEmails($pdo, $id, $proposalId);
+              
+                  $pdo->commit();
+                  logAuditTrail($pdo, $current_admin_id, 'INSERT', 'schedule_proposals', $proposalId, "Scheduled hearing proposal for case $id");
+                  echo json_encode(['success'=>true, 'message'=>'Summons sent to all parties. Awaiting confirmations.']);
+                  break;
 
-                // Only Barangay Captain allowed
-                if (
-                    empty($data['presiding_officer']) ||
-                    strtolower(trim($data['presiding_officer'])) !== 'barangay captain' ||
-                    (isset($data['officer_position']) && strtolower($data['officer_position']) !== 'barangay_captain')
-                ) {
-                    echo json_encode(['success'=>false,'message'=>'Only Barangay Captain can be the presiding officer for the hearing.']);
-                    exit;
-                }
-
-                // Hearing date must be within 5 days from today (inclusive)
-                $hearingDate = $data['hearing_date'];
-                $today = new DateTime();
-                $minDate = $today->format('Y-m-d');
-                $maxDate = (clone $today)->modify('+5 days')->format('Y-m-d');
-                if ($hearingDate < $minDate || $hearingDate > $maxDate) {
-                    echo json_encode(['success'=>false,'message'=>'Hearing date must be within the next 5 days (including today).']);
-                    exit;
-                }
-
-                // Check for existing pending proposal for this case
-                $stmt = $pdo->prepare("SELECT id FROM schedule_proposals WHERE blotter_case_id=? AND status IN ('proposed','user_confirmed','captain_confirmed')");
-                $stmt->execute([$id]);
-                if ($stmt->fetch()) {
-                    echo json_encode(['success'=>false,'message'=>'There is already a pending schedule proposal for this case.']);
-                    exit;
-                }
-
-                $pdo->beginTransaction();
-                // Insert schedule proposal
-                $stmt = $pdo->prepare("
-                    INSERT INTO schedule_proposals
-                    (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'proposed')
-                ");
-                $stmt->execute([
-                    $id,
-                    $current_admin_id,
-                    $data['hearing_date'],
-                    $data['hearing_time'],
-                    $data['hearing_location'] ?? 'Barangay Hall',
-                    $data['presiding_officer'] ?? 'Barangay Captain',
-                    $data['officer_position'] ?? 'barangay_captain'
-                ]);
-                $proposalId = $pdo->lastInsertId();
-
-                // Send summons emails to all parties using PHPMailer
-                sendSummonsEmails($pdo, $id, $proposalId);
-
-                $pdo->commit();
-                logAuditTrail($pdo, $current_admin_id, 'INSERT', 'schedule_proposals', $proposalId, "Scheduled hearing proposal for case $id");
-                echo json_encode(['success'=>true, 'message'=>'Summons sent to all parties. Awaiting confirmations.']);
-                break;
 
             case 'record_hearing':
                 $data = json_decode(file_get_contents('php://input'), true);
@@ -1138,24 +1201,22 @@ if (!empty($_GET['action'])) {
                 if (!empty($data['attendance'])) {
                     foreach ($data['attendance'] as $attendance) {
                         $pdo->prepare("
-                            INSERT INTO hearing_attendances 
-                            (hearing_id, participant_id, is_present, participant_type, attendance_remarks)
-                            VALUES (?, ?, ?, ?, ?)
-                            ON DUPLICATE KEY UPDATE 
-                            is_present = VALUES(is_present),
+                            INSERT INTO hearing_attendance (hearing_id, participant_id, attended, attendance_remarks)
+                            VALUES (?, ?, ?, ?)
+                            ON DUPLICATE KEY UPDATE
+                            attended = VALUES(attended),
                             attendance_remarks = VALUES(attendance_remarks)
                         ")->execute([
                             $hearingId,
                             $attendance['participant_id'],
-                            $attendance['is_present'] ? 1 : 0,
-                            $attendance['type'],
+                            $attendance['attended'] ? 1 : 0,
                             $attendance['remarks'] ?? ''
                         ]);
                     }
                 }
                 
                 // Update case status based on hearing outcome
-                updateCaseStatus($pdo, $id);
+                updateCaseStatus($pdo, $id, $data['outcome'], $current_admin_id);
                 
                 $pdo->commit();
                 logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'case_hearings', $hearingId, "Recorded hearing outcome: " . $data['outcome']);
@@ -1212,8 +1273,7 @@ if (!empty($_GET['action'])) {
                         ->execute([$cid]);
                     if (!empty($input['interventions']) && is_array($input['interventions'])) {
                         $intStmt = $pdo->prepare("
-                            INSERT INTO blotter_case_interventions
-                              (blotter_case_id, intervention_id, intervened_at)
+                            INSERT INTO blotter_case_interventions (blotter_case_id, intervention_id, intervened_at)
                             VALUES (?, ?, NOW())
                         ");
                         foreach ($input['interventions'] as $intId) {
@@ -1241,16 +1301,10 @@ if (!empty($_GET['action'])) {
                     $insertedParticipants = [];
                     foreach ($input['participants'] as $p) {
                         if (!empty($p['user_id'])) {
-                            $key = $cid . '-' . intval($p['user_id']) . '-' . $p['role'];
-                            if (isset($insertedParticipants[$key])) continue;
-                            $insertedParticipants[$key] = true;
                             $regStmt->execute([$cid, (int)$p['user_id'], $p['role']]);
                         } else {
                             $fname = trim($p['first_name']);
                             $lname = trim($p['last_name']);
-                            $key = $cid . '-null-' . $fname . '-' . $lname . '-' . $p['role'];
-                            if (isset($insertedParticipants[$key])) continue;
-                            $insertedParticipants[$key] = true;
                             $extStmt->execute([
                                 $fname,
                                 $lname,
@@ -1325,10 +1379,16 @@ require_once "../components/header.php";
 
 // Fetch for UI
 $stmt = $pdo->prepare("
-    SELECT bc.*, GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+    SELECT bc.*, GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories,
+           bc.accepted_by_user_id, bc.filing_date, bc.scheduling_deadline,
+           bc.captain_signature_date, bc.chief_signature_date,
+           COUNT(ch.id) as hearing_count,
+           EXISTS(SELECT 1 FROM case_hearings WHERE blotter_case_id = bc.id AND hearing_outcome = 'scheduled') as has_pending_hearing,
+           (SELECT COUNT(*) FROM blotter_case_interventions WHERE blotter_case_id = bc.id) as intervention_count
     FROM blotter_cases bc
     LEFT JOIN blotter_case_categories bcc ON bc.id=bcc.blotter_case_id
     LEFT JOIN case_categories cc ON bcc.category_id=cc.id
+    LEFT JOIN case_hearings ch ON bc.id = ch.blotter_case_id
     WHERE bc.barangay_id=? AND bc.status!='deleted'
     GROUP BY bc.id
     ORDER BY bc.created_at DESC
@@ -1348,41 +1408,6 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
   <script src="https://code.jquery.com/jquery-3.6.4.min.js"></script>
   <style>
-    /* Transcription loader styles */
-    .transcript-loader {
-        display: none;
-        position: relative;
-        padding: 15px;
-        text-align: center;
-        background-color: #f9fafb;
-        border-radius: 8px;
-        margin-top: 10px;
-    }
-    .spinner {
-        display: inline-block;
-        width: 40px;
-        height: 40px;
-        border: 4px solid rgba(0, 0, 0, 0.1);
-        border-radius: 50%;
-        border-top-color: #3b82f6;
-        animation: spin 1s ease-in-out infinite;
-    }
-    @keyframes spin {
-        to { transform: rotate(360deg); }
-    }
-    .transcript-status {
-        margin-top: 10px;
-        font-size: 14px;
-    }
-    .transcript-result {
-        display: none;
-        margin-top: 10px;
-        padding: 10px;
-        background-color: #ecfdf5;
-        border-radius: 8px;
-        color: #065f46;
-    }
-    
     /* Hearing table styles */
     .hearing-table {
         margin-top: 20px;
@@ -1442,6 +1467,32 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         cursor: pointer;
         color: white;
     }
+
+    /* New styles for intervention indicator */
+    .intervention-indicator {
+        display: inline-block;
+        font-size: 11px;
+        background-color: #8b5cf6;
+        color: white;
+        padding: 2px 6px;
+        border-radius: 10px;
+        margin-left: 4px;
+        vertical-align: middle;
+    }
+    
+    .intervention-icon {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 18px;
+        height: 18px;
+        background-color: #8b5cf6;
+        color: white;
+        border-radius: 50%;
+        font-size: 12px;
+        margin-right: 4px;
+        font-weight: bold;
+    }
   </style>
 </head>
 <body>
@@ -1500,9 +1551,10 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
           <div>
             <label class="block text-sm font-medium text-gray-700">Status</label>
             <select id="editStatus" name="status" required
-                    class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
-              <?php foreach ($allowedStatuses as $s): ?>
-                <option value="<?= $s ?>"><?= ucfirst(str_replace('_', ' ', $s)) ?></option>
+                    class="w-full p-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500">
+              <option value="">Select Status</option>
+              <?php foreach ($allowedStatuses as $status): ?>
+                <option value="<?= $status ?>"><?= ucfirst(str_replace('_', ' ', $status)) ?></option>
               <?php endforeach; ?>
             </select>
           </div>
@@ -1513,18 +1565,18 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
           <div id="editParticipantContainer" class="space-y-2"></div>
           <div class="flex gap-2">
             <button type="button" id="editAddRegisteredBtn"
-                    class="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">
-              Add Registered
+                    class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+              + Add Registered Resident
             </button>
             <button type="button" id="editAddUnregisteredBtn"
-                    class="text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:outline-none focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5">
-              Add Unregistered
+                    class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+              + Add Unregistered Person
             </button>
           </div>
         </div>
 
         <!-- Hearings Section -->
-        <div class="space-y-2">
+                                                                               <div class="space-y-2">
           <label class="block text-sm font-medium text-gray-700">Hearings</label>
           <div id="editHearingsContainer">
             <!-- Hearings will be populated here -->
@@ -1565,8 +1617,8 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         </button>
       </div>
       <!-- Form -->
-      <form
-         
+      <form 
+         id="addBlotterForm"
           method="POST"
           enctype="multipart/form-data"
           class="p-6 space-y-4 overflow-y-auto max-h-[calc(100%-6rem)]"
@@ -1584,49 +1636,15 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <textarea name="complaint" rows="4" required placeholder="Enter details..."
                       class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500"></textarea>
           </div>
-          <!-- Improved Audio/Video Upload Section -->
-          <div class="md:col-span-2">
-            <label class="block text-sm font-medium text-gray-700">
-              Upload Audio/Video for Transcription (optional)
-            </label>
-            <div class="flex items-center mt-1">
-              <input 
-                type="file" 
-                id="transcript_file" 
-                name="transcript_file" 
-                accept="audio/*,video/*"
-                class="block w-full text-sm text-gray-900 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-              />
-              <button 
-                type="button" 
-                id="transcribe_btn"
-                class="ml-3 inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500"
-              >
-                Transcribe
-              </button>
-            </div>
-            <div id="transcript_loader" class="transcript-loader">
-              <div class="spinner"></div>
-              <div class="transcript-status">Transcribing your audio/video... This may take a few moments.</div>
-            </div>
-            <div id="transcript_result" class="transcript-result">
-              <div class="font-medium">Transcription Complete!</div>
-              <div id="transcript_text" class="mt-1 text-sm"></div>
-            </div>
-          </div>
                 <!-- Interventions -->
       <div class="md:col-span-2">
         <label class="block text-sm font-medium text-gray-700">Interventions</label>
         <div class="grid grid-cols-2 gap-2">
           <?php foreach ($interventions as $int): ?>
             <label class="flex items-center gap-2">
-              <input
-                type="checkbox"
-               
-                name="interventions[]"
-                value="<?= $int['id'] ?>"
-              >
-              <?= htmlspecialchars($int['name']) ?>
+              <input type="checkbox" name="interventions[]" value="<?= $int['id'] ?>" 
+                     class="rounded">
+              <span class="text-sm"><?= htmlspecialchars($int['name']) ?></span>
             </label>
           <?php endforeach; ?>
         </div>
@@ -1637,12 +1655,9 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <div class="grid grid-cols-2 gap-2">
             <?php foreach ($categories as $i => $cat): ?>
               <label class="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  name="categories[]"
-                  value="<?= $cat['id'] ?>"
-                >
-                <?= htmlspecialchars($cat['name']) ?>
+                <input type="checkbox" name="categories[]" value="<?= $cat['id'] ?>" 
+                       class="rounded" <?= $i === 0 ? 'required' : '' ?>>
+                <span class="text-sm"><?= htmlspecialchars($cat['name']) ?></span>
               </label>
             <?php endforeach; ?>
             </div>
@@ -1653,12 +1668,12 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <div id="participantContainer" class="space-y-2"></div>
             <div class="flex gap-2 mt-2">
               <button type="button" id="addRegisteredBtn"
-                      class="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">
-                Add Registered Resident
+                      class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
+                + Add Registered Resident
               </button>
               <button type="button" id="addUnregisteredBtn"
-                      class="text-white bg-green-600 hover:bg-green-700 focus:ring-4 focus:outline-none focus:ring-green-300 font-medium rounded-lg text-sm px-5 py-2.5">
-                Add Unregistered Person
+                      class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
+                + Add Unregistered Person
               </button>
             </div>
           </div>
@@ -1687,6 +1702,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     </h1>
     <!-- Action buttons -->
     <div class="flex flex-col sm:flex-row sm:space-x-4 w-full md:w-auto">
+      <?php if ($canManageBlotter): ?>
       <button 
         id="openModalBtn"
         class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
@@ -1694,6 +1710,9 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       >
         + Add New Case
       </button>
+      <?php endif; ?>
+      
+      <?php if ($canGenerateReports): ?>
       <a
         href="?action=generate_report&year=<?=date('Y')?>&month=<?=date('n')?>"
         class="w-full sm:w-auto inline-block text-center text-white bg-indigo-600 hover:bg-indigo-700 
@@ -1701,6 +1720,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
       >
         Generate <?=date('F Y')?> Report
       </a>
+      <?php endif; ?>
     </div>
   </header>
   
@@ -1723,17 +1743,8 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         <tr class="hover:bg-gray-50 transition-colors">
           <td class="px-4 py-3 text-sm text-gray-900">
             <?php
-              // Display the name of who reported (complainant)
-              $stmt = $pdo->prepare("
-                SELECT COALESCE(CONCAT(p.first_name, ' ', p.last_name), CONCAT(ep.first_name, ' ', ep.last_name)) AS reporter
-                FROM blotter_participants bp
-                LEFT JOIN persons p ON bp.person_id = p.id
-                LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
-                WHERE bp.blotter_case_id = ? AND bp.role = 'complainant'
-                LIMIT 1
-              ");
-              $stmt->execute([$case['id']]);
-              $reporter = $stmt->fetchColumn();
+              $reporter = 'System Filed';
+              $date = $case['incident_date'] ?: $case['created_at'];
               echo htmlspecialchars($reporter ?: '—');
             ?>
           </td>
@@ -1747,15 +1758,15 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
           <td class="px-4 py-3 text-sm text-gray-600"><?= $case['categories'] ?: 'None' ?></td>
           <td class="px-4 py-3">
             <?php if ($role <= 2): ?>
-              <select class="status-select p-1 border rounded text-sm" data-id="<?= $case['id'] ?>">
-                <?php foreach ($allowedStatuses as $s): ?>
-                  <option value="<?= $s ?>" <?= $case['status']===$s?'selected':'' ?>>
-                    <?= ucfirst(str_replace('_', ' ', $s)) ?>
+              <select class="status-select text-xs border rounded px-2 py-1" data-id="<?= $case['id'] ?>">
+                <?php foreach ($allowedStatuses as $status): ?>
+                  <option value="<?= $status ?>" <?= $case['status'] === $status ? 'selected' : '' ?>>
+                    <?= ucfirst(str_replace('_', ' ', $status)) ?>
                   </option>
                 <?php endforeach; ?>
               </select>
             <?php else: ?>
-              <span class="status-badge status-<?= str_replace('_', '-', $case['status']) ?>">
+              <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $case['status'])) ?>">
                 <?= ucfirst(str_replace('_', ' ', $case['status'])) ?>
               </span>
             <?php endif; ?>
@@ -1765,37 +1776,56 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <?php if (!empty($case['is_cfa_eligible'])): ?>
               <span class="text-red-600 font-medium">(CFA Eligible)</span>
             <?php endif; ?>
+            <?php if (!empty($case['intervention_count']) && $case['intervention_count'] > 0): ?>
+              <span class="intervention-indicator" title="<?= $case['intervention_count'] ?> intervention(s) recorded">
+                <span class="intervention-icon">✓</span><?= $case['intervention_count'] ?>
+              </span>
+            <?php endif; ?>
           </td>
           <td class="px-4 py-3 text-sm text-gray-600">
             <div class="hearing-actions">
-              <button class="view-btn text-blue-600 hover:text-blue-900" data-id="<?= $case['id'] ?>">View</button>
-              <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['id'] ?>">Edit</button>
-              
-              <!-- Document Generation Buttons -->
-              <div class="document-buttons">
-                <button class="btn-summons generate-summons-btn" data-id="<?= $case['id'] ?>" title="Generate Summons">
-                  📋 Summons
-                </button>
-                <button class="btn-report-form generate-report-form-btn" data-id="<?= $case['id'] ?>" title="Generate Report Form">
-                  📄 Report
-                </button>
-              </div>
-              
-              <?php if (in_array($role, [3, 4, 5])): ?>
-                <?php if (($case['hearing_count'] ?? 0) < 3 && !in_array($case['status'], ['solved', 'endorsed_to_court'])): ?>
+            <?php if ($canManageBlotter): ?>
+                <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['id'] ?>">Edit</button>
+                <!-- Document Generation Buttons -->
+                <div class="document-buttons">
+                    <?php if ($canManageBlotter): ?>
+                    <button class="btn-summons generate-summons-btn" data-id="<?= $case['id'] ?>" title="Generate Summons">
+                      📋 Summons
+                    </button>
+                    <button class="btn-report-form generate-report-form-btn" data-id="<?= $case['id'] ?>" title="Generate Report Form">
+                      📄 Report
+                    </button>
+                    <?php endif; ?>
+                </div>
+            <?php endif; ?>
+            
+            <?php if ($canScheduleHearings): ?>
+                <?php if (($case['hearing_count'] ?? 0) < 3 && !in_array($case['status'], ['solved', 'endorsed_to_court', 'dismissed'])): ?>
                   <button class="btn-schedule schedule-hearing-btn" data-id="<?= $case['id'] ?>">Schedule Hearing</button>
                 <?php endif; ?>
                 <?php if (!empty($case['is_cfa_eligible']) && $case['status'] === 'cfa_eligible'): ?>
                   <button class="btn-cfa issue-cfa-btn" data-id="<?= $case['id'] ?>">Issue CFA</button>
                 <?php endif; ?>
-                <?php if ($case['status'] !== 'closed'): ?>
+            <?php endif; ?>
+            
+            <?php if ($canManageBlotter): ?>
+                <?php if ($case['status'] !== 'closed' && $case['status'] !== 'dismissed'): ?>
                   <button class="complete-btn text-green-600 hover:text-green-900" data-id="<?= $case['id'] ?>">Close</button>
                 <?php endif; ?>
-                <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Dismiss</button>
-                <?php if (in_array($case['status'], ['closed', 'solved'])): ?>
-                  <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
+                <?php if ($case['status'] !== 'dismissed' && $case['status'] !== 'closed'): ?>
+                  <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Dismiss</button>
                 <?php endif; ?>
-              <?php endif; ?>
+                <?php if (in_array($case['status'], ['closed', 'solved', 'dismissed']) && empty($case['intervention_count'])): ?>
+                  <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
+                <?php elseif (!empty($case['intervention_count'])): ?>
+                  <span class="text-purple-600 font-medium flex items-center">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Intervened
+                  </span>
+                <?php endif; ?>
+            <?php endif; ?>
             </div>
           </td>
         </tr>
@@ -1888,7 +1918,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
   <?php endif; ?>
   
   <script>
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', function() {
     // Participant templates
     const registeredTemplate = `
       <div class="participant flex gap-2 bg-blue-50 p-2 rounded mb-2">
@@ -1942,37 +1972,60 @@ document.addEventListener('DOMContentLoaded', () => {
       node.scrollIntoView({ behavior: 'smooth' });
     }
     
-    // Modal toggle functions
-    window.toggleViewBlotterModal = () => {
-      document.getElementById('viewBlotterModal').classList.toggle('hidden');
+    // Modal toggle functions - Improve these to ensure robustness
+    window.toggleAddBlotterModal = function() {
+        const modal = document.getElementById('addBlotterModal');
+        const container = document.getElementById('participantContainer');
+        if (modal) {
+            modal.classList.toggle('hidden');
+            // Clear participants when opening
+            if (!modal.classList.contains('hidden') && container) {
+                container.innerHTML = '';
+            }
+        }
     };
     
-    window.toggleAddBlotterModal = () => {
-      document.getElementById('addBlotterModal').classList.toggle('hidden');
+    window.toggleEditBlotterModal = function() {
+        const modal = document.getElementById('editBlotterModal');
+        if (modal) modal.classList.toggle('hidden');
     };
     
-    window.toggleEditBlotterModal = () => {
-      document.getElementById('editBlotterModal').classList.toggle('hidden');
+    window.toggleViewBlotterModal = function() {
+        const modal = document.getElementById('viewBlotterModal');
+        if (modal) modal.classList.toggle('hidden');
     };
-    
-    // Add modal setup
+
+    // Add modal setup - Improve button click handler
     const addModal = document.getElementById('addBlotterModal');
     const openBtn  = document.getElementById('openModalBtn');
     const cancelBtn = document.getElementById('cancelBtn');
     const participantContainer = document.getElementById('participantContainer');
     
-    // Event listeners
-    openBtn.addEventListener('click', () => {
-      participantContainer.innerHTML = '';
-      addModal.classList.remove('hidden');
-    });
+    // Event listeners - Make more robust
+    if (openBtn) {
+      // Make sure this handler works properly
+      openBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (participantContainer) participantContainer.innerHTML = '';
+        if (addModal) addModal.classList.remove('hidden');
+      });
+    }
     
-    cancelBtn.addEventListener('click', () => addModal.classList.add('hidden'));
+    if (cancelBtn) {
+      cancelBtn.addEventListener('click', () => {
+        if (addModal) addModal.classList.add('hidden');
+      });
+    }
     
-    document.getElementById('addRegisteredBtn')
-      .addEventListener('click', () => addParticipant(registeredTemplate, participantContainer));
-    document.getElementById('addUnregisteredBtn')
-      .addEventListener('click', () => addParticipant(unregisteredTemplate, participantContainer));
+    const addRegisteredBtn = document.getElementById('addRegisteredBtn');
+    const addUnregisteredBtn = document.getElementById('addUnregisteredBtn');
+    
+    if (addRegisteredBtn) {
+      addRegisteredBtn.addEventListener('click', () => addParticipant(registeredTemplate, participantContainer));
+    }
+    if (addUnregisteredBtn) {
+      addUnregisteredBtn.addEventListener('click', () => addParticipant(unregisteredTemplate, participantContainer));
+    }
 
     // Edit modal setup
     const editModal  = document.getElementById('editBlotterModal');
@@ -1980,551 +2033,574 @@ document.addEventListener('DOMContentLoaded', () => {
     const editCancel = document.getElementById('editCancelBtn');
     const editPartCont = document.getElementById('editParticipantContainer');
     
-    document.getElementById('editAddRegisteredBtn')
-      .addEventListener('click', () => addParticipant(registeredTemplate, editPartCont));
-    document.getElementById('editAddUnregisteredBtn')
-      .addEventListener('click', () => addParticipant(unregisteredTemplate, editPartCont));
+    const editAddRegisteredBtn = document.getElementById('editAddRegisteredBtn');
+    const editAddUnregisteredBtn = document.getElementById('editAddUnregisteredBtn');
     
-    editCancel.addEventListener('click', () => editModal.classList.add('hidden'));
-
-    // Status change handlers
-    document.querySelectorAll('.status-select').forEach(el => {
-      el.addEventListener('change', async () => {
-        const res = await fetch(`?action=set_status&id=${el.dataset.id}&new_status=${encodeURIComponent(el.value)}`);
-        const data = await res.json();
-        if (!data.success) alert(data.message || 'Failed');
-        else location.reload();
-      });
-    });
-
-    // View modal handler
-    async function openViewModal(caseId) {
-      const response = await fetch(`?action=get_case_details&id=${caseId}`);
-      const data = await response.json();
-      
-      if (!data.success || !data.case) {
-        Swal.fire('Error', 'Could not load case details', 'error');
-        return;
-      }
-
-      // Populate basic case details
-      document.getElementById('viewCaseNumber').textContent = data.case.case_number || '—';
-      document.getElementById('viewDate').textContent = data.case.date_reported ? 
-        new Date(data.case.date_reported).toLocaleString() : '—';
-      document.getElementById('viewLocation').textContent = data.case.location || '—';
-      document.getElementById('viewDescription').textContent = data.case.description || '—';
-      document.getElementById('viewCategories').textContent = data.case.categories || '—';
-      document.getElementById('viewStatus').textContent = data.case.status ? 
-        data.case.status.charAt(0).toUpperCase() + data.case.status.slice(1) : '—';
-
-      // Populate participants list
-      document.getElementById('viewParticipants').innerHTML = data.participants.length ?
-        data.participants.map(p => `
-          <li>
-            <strong>${p.first_name} ${p.last_name}</strong> (${p.role})
-            ${p.contact_number ? `<br>Contact: ${p.contact_number}` : ''}
-            ${p.address ? `<br>Address: ${p.address}` : ''}
-          </li>
-        `).join('') : '<li>No participants recorded</li>';
-
-      // Populate interventions
-      const iList = data.interventions.length ?
-        data.interventions.map(i => `<li><strong>${i.intervention_name}</strong> (${i.intervened_at}): ${i.remarks || 'No remarks'}</li>`).join('') :
-        '<li>None</li>';
-      document.getElementById('viewInterventions').innerHTML = iList;
-
-      // Display hearings
-      const hearingsBody = document.getElementById('viewHearingsBody');
-      if (data.hearings && data.hearings.length > 0) {
-        hearingsBody.innerHTML = data.hearings.map(h => {
-          const outcome = h.hearing_outcome ? h.hearing_outcome.replace('_', '-') : 'scheduled';
-          const outcomeText = h.hearing_outcome ? h.hearing_outcome.replace('_', ' ') : 'Scheduled';
-          return `
-          <tr>
-            <td>Hearing ${h.hearing_number}</td>
-            <td>${new Date(h.hearing_date).toLocaleString()}</td>
-            <td>${h.presiding_officer_name} (${h.presiding_officer_position ? h.presiding_officer_position.replace('_', ' ') : ''})</td>
-            <td>
-              <span class="status-badge status-${outcome}">
-                ${outcomeText}
-              </span>
-              ${h.is_mediation_successful ? '<br><strong>✓ Mediation Successful</strong>' : ''}
-            </td>
-            <td>
-              ${h.hearing_outcome === 'scheduled' ? 
-                `<button class="btn-record record-hearing-btn" data-hearing-id="${h.id}" data-case-id="${caseId}">Record Outcome</button>` : 
-                'Completed'
-              }
-            </td>
-          </tr>
-        `}).join('');
-      } else {
-        hearingsBody.innerHTML = '<tr><td colspan="5">No hearings scheduled</td></tr>';
-      }
-
-      // Show the modal
-      toggleViewBlotterModal();
+    if (editAddRegisteredBtn) {
+      editAddRegisteredBtn.addEventListener('click', () => addParticipant(registeredTemplate, editPartCont));
+    }
+    if (editAddUnregisteredBtn) {
+      editAddUnregisteredBtn.addEventListener('click', () => addParticipant(unregisteredTemplate, editPartCont));
+    }
+    
+    if (editCancel) {
+      editCancel.addEventListener('click', () => editModal.classList.add('hidden'));
     }
 
-    // Event delegation for document generation buttons
-    document.addEventListener('click', e => {
-      if (e.target.classList.contains('generate-summons-btn')) {
-        const caseId = e.target.dataset.id;
-        window.open(`?action=generate_summons&id=${caseId}`, '_blank');
+    // Status change handlers using event delegation
+    document.addEventListener('change', async (e) => {
+      if (e.target.classList.contains('status-select')) {
+        const res = await fetch(`?action=set_status&id=${e.target.dataset.id}&new_status=${encodeURIComponent(e.target.value)}`);
+        const data = await res.json();
+        if (!data.success) {
+          Swal.fire({
+            icon: 'error',
+            title: 'Error',
+            text: data.message || 'Failed to update status'
+          });
+        } else {
+          Swal.fire({
+            icon: 'success',
+            title: 'Success',
+            text: 'Status updated successfully',
+            timer: 1500,
+            showConfirmButton: false
+          }).then(() => location.reload());
+        }
+      }
+    });
+
+    // Improved click event delegation
+    document.addEventListener('click', async (e) => {
+      // More robust target finding - look for the button itself or its parent if clicking on child elements
+      let target = e.target;
+      
+      // Check if we clicked on something inside a button (like an icon or text)
+      if (!target.matches('button, a') && !target.closest('button, a')) {
+        return; // Not a clickable element
       }
       
-      if (e.target.classList.contains('generate-report-form-btn')) {
-        const caseId = e.target.dataset.id;
+      // If we clicked on a child element inside a button, get the actual button
+      if (!target.matches('button, a')) {
+        target = target.closest('button, a');
+      }
+      
+      // Debug to verify correct element targeting
+      console.log('Button clicked:', target.className, target);
+      
+      // View button
+      if (target.classList.contains('view-btn')) {
+        const caseId = target.dataset.id;
+        await openViewModal(caseId);
+        return;
+      }
+      
+      // Edit button
+      if (target.classList.contains('edit-btn')) {
+        const id = target.dataset.id;
+        await handleEditCase(id);
+        return;
+      }
+      
+      // Document generation buttons
+      if (target.classList.contains('generate-summons-btn')) {
+        const caseId = target.dataset.id;
+        window.open(`?action=generate_summons&id=${caseId}`, '_blank');
+        return;
+      }
+      
+      if (target.classList.contains('generate-report-form-btn')) {
+        const caseId = target.dataset.id;
         window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
+        return;
+      }
+      
+      // Schedule hearing button
+      if (target.classList.contains('schedule-hearing-btn')) {
+        const caseId = target.dataset.id;
+        await handleScheduleHearing(caseId);
+        return;
+      }
+      
+      // Issue CFA button
+      if (target.classList.contains('issue-cfa-btn')) {
+        const caseId = target.dataset.id;
+        await handleIssueCFA(caseId);
+        return;
+      }
+      
+      // Complete button
+      if (target.classList.contains('complete-btn')) {
+        const caseId = target.dataset.id;
+        await handleCompleteCase(caseId);
+        return;
+      }
+      
+      // Delete button
+      if (target.classList.contains('delete-btn')) {
+        const caseId = target.dataset.id;
+        await handleDeleteCase(caseId);
+        return;
+      }
+      
+      // Intervention button
+      if (target.classList.contains('intervention-btn')) {
+        const caseId = target.dataset.id;
+        await handleAddIntervention(caseId);
+        return;
+      }
+      
+      // Record hearing button
+      if (target.classList.contains('record-hearing-btn')) {
+        const hearingId = target.dataset.hearingId;
+        const caseId = target.dataset.caseId;
+        await handleRecordHearing(hearingId, caseId);
+        return;
       }
     });
 
-    // View buttons
-    document.querySelectorAll('.view-btn').forEach(btn => {
-      btn.addEventListener('click', () => openViewModal(btn.dataset.id));
+    // Participant event delegation - handle removal of participants
+    document.getElementById('participantContainer')?.addEventListener('click', (e) => {
+      if (e.target.classList.contains('remove-participant')) {
+        e.target.closest('.participant').remove();
+      }
+    });
+    
+    document.getElementById('editParticipantContainer')?.addEventListener('click', (e) => {
+      if (e.target.classList.contains('remove-participant')) {
+        e.target.closest('.participant').remove();
+      }
     });
 
-    // Complete button handler
-    document.querySelectorAll('.complete-btn').forEach(btn => btn.addEventListener('click', async () => {
-      const ok = await Swal.fire({ title:'Close this case?', icon:'question', showCancelButton:true });
-      if (!ok.isConfirmed) return;
-      const res = await fetch(`?action=complete&id=${btn.dataset.id}`);
-      const d   = await res.json();
-      if (d.success) Swal.fire({ icon:'success', timer:1200 }).then(() => location.reload());
-      else Swal.fire('Error', d.message, 'error');
-    }));
-
-    // Delete button handler
-    document.querySelectorAll('.delete-btn').forEach(btn => btn.addEventListener('click', async () => {
-      const ok = await Swal.fire({ title:'Dismiss this case?', icon:'warning', showCancelButton:true, confirmButtonColor:'#d33' });
-      if (!ok.isConfirmed) return;
-      const res = await fetch(`?action=delete&id=${btn.dataset.id}`);
-      const d   = await res.json();
-      if (d.success) Swal.fire({ icon:'success', timer:1200 }).then(() => location.reload());
-      else Swal.fire('Error', d.message, 'error');
-    }));
-
-    // Intervention button handler
-    document.querySelectorAll('.intervention-btn').forEach(btn => btn.addEventListener('click', async () => {
-      let opts = '';
-      <?php foreach ($interventions as $int): ?>
-        opts += `<option value="<?= $int['id'] ?>"><?= htmlspecialchars($int['name']) ?></option>`;
-      <?php endforeach; ?>
-      const { value } = await Swal.fire({
-        title: 'Add Intervention',
-        html: `
-          <select id="iv" class="swal2-input"><option value="">Select type</option>${opts}</select>
-          <input id="d" type="date" class="swal2-input" value="${new Date().toISOString().split('T')[0]}">
-          <textarea id="r" class="swal2-textarea" placeholder="Remarks"></textarea>`,
-        focusConfirm:false,
-        showCancelButton:true,
-        preConfirm: () => {
-          const iv = document.getElementById('iv').value;
-          const dt = document.getElementById('d').value;
-          if (!iv||!dt) { Swal.showValidationMessage('Select type & date'); return false; }
-          return { intervention_id: iv, date_intervened: dt, remarks: document.getElementById('r').value };
-        }
-      });
-      if (!value) return;
-      const res = await fetch(`?action=add_intervention&id=${btn.dataset.id}`, {
-        method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(value)
-      });
-      const d   = await res.json();
-      if (d.success) Swal.fire({ icon:'success', timer:1200 }).then(() => location.reload());
-      else Swal.fire('Error', d.message, 'error');
-    }));
-
-    // Schedule Hearing Handler
-    document.querySelectorAll('.schedule-hearing-btn').forEach(btn => btn.addEventListener('click', async () => {
-      const today = new Date();
-      const minDate = today.toISOString().split('T')[0];
-      const maxDateObj = new Date(today.getTime() + 5 * 24 * 60 * 60 * 1000);
-      const maxDate = maxDateObj.toISOString().split('T')[0];
-
-      const { value } = await Swal.fire({
-        title: 'Schedule Hearing',
-        html: `
-          <input id="hearingDate" type="date" class="swal2-input" min="${minDate}" max="${maxDate}" required>
-          <input id="hearingTime" type="time" class="swal2-input" required>
-          <input id="presidingOfficer" class="swal2-input" value="Barangay Captain" readonly>
-          <textarea id="hearingNotes" class="swal2-textarea" placeholder="Hearing notes (optional)"></textarea>`,
-        focusConfirm: false,
-        showCancelButton: true,
-        preConfirm: () => {
-          const date = document.getElementById('hearingDate').value;
-          const time = document.getElementById('hearingTime').value;
-          const officer = document.getElementById('presidingOfficer').value;
-          if (!date || !time) {
-            Swal.showValidationMessage('Date and time are required');
-            return false;
-          }
-          return {
-            hearing_date: date,
-            hearing_time: time,
-            presiding_officer: officer,
-            officer_position: 'barangay_captain',
-            notes: document.getElementById('hearingNotes').value
-          };
-        }
-      });
-
-      if (!value) return;
-
-      const res = await fetch(`?action=schedule_hearing&id=${btn.dataset.id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(value)
-      });
-
-      const data = await res.json();
-      if (data.success) {
-        Swal.fire('Success', 'Hearing scheduled successfully', 'success').then(() => location.reload());
-      } else {
-        Swal.fire('Error', data.message, 'error');
-      }
-    }));
-
-    // Record Hearing Handler (event delegation)
-    document.addEventListener('click', async e => {
-      if (e.target.classList.contains('record-hearing-btn')) {
-        const hearingId = e.target.dataset.hearingId;
-        const caseId = e.target.dataset.caseId;
+    // Fix button handling by attaching event listeners directly when the page loads
+    // This ensures all buttons will work regardless of when they're added to the DOM
+    window.addEventListener('load', function() {
+        console.log("Window loaded, attaching button handlers");
         
-        const { value } = await Swal.fire({
-          title: 'Record Hearing Outcome',
+        // Add New Case button
+        const openModalBtn = document.getElementById('openModalBtn');
+        if (openModalBtn) {
+            console.log("Found Add New Case button, attaching listener");
+            openModalBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                const modal = document.getElementById('addBlotterModal');
+                const container = document.getElementById('participantContainer');
+                if (container) container.innerHTML = '';
+                if (modal) modal.classList.remove('hidden');
+                console.log("Add New Case button clicked, showing modal");
+            });
+        }
+        
+        // Cancel button in add modal
+        const cancelBtn = document.getElementById('cancelBtn');
+        if (cancelBtn) {
+            cancelBtn.addEventListener('click', function() {
+                const modal = document.getElementById('addBlotterModal');
+                if (modal) modal.classList.add('hidden');
+            });
+        }
+        
+        // Directly attach handlers to all action buttons
+        document.querySelectorAll('.edit-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const caseId = this.getAttribute('data-id');
+                console.log("Edit button clicked, ID:", caseId);
+                handleEditCase(caseId);
+            });
+        });
+        
+        document.querySelectorAll('.generate-summons-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const caseId = this.getAttribute('data-id');
+                console.log("Summons button clicked, ID:", caseId);
+                window.open(`?action=generate_summons&id=${caseId}`, '_blank');
+            });
+        });
+        
+        document.querySelectorAll('.generate-report-form-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const caseId = this.getAttribute('data-id');
+                console.log("Report button clicked, ID:", caseId);
+                window.open(`?action=generate_report_form&id=${caseId}`, '_blank');
+            });
+        });
+        
+        document.querySelectorAll('.schedule-hearing-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const caseId = this.getAttribute('data-id');
+                console.log("Schedule hearing button clicked, ID:", caseId);
+                handleScheduleHearing(caseId);
+            });
+        });
+        
+        document.querySelectorAll('.complete-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const caseId = this.getAttribute('data-id');
+                console.log("Close button clicked, ID:", caseId);
+                handleCompleteCase(caseId);
+            });
+        });
+        
+        document.querySelectorAll('.delete-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const caseId = this.getAttribute('data-id');
+                console.log("Dismiss button clicked, ID:", caseId);
+                handleDeleteCase(caseId);
+            });
+        });
+        
+        document.querySelectorAll('.intervention-btn').forEach(btn => {
+            btn.addEventListener('click', function() {
+                const caseId = this.getAttribute('data-id');
+                console.log("Intervention button clicked, ID:", caseId);
+                handleAddIntervention(caseId);
+            });
+        });
+    });
+    
+    // Remove the nested DOMContentLoaded listener that might be causing conflicts
+    // document.addEventListener('DOMContentLoaded', () => {
+    //     // This nested listener was likely causing issues
+    // });
+});
+</script>
+  <script>
+document.addEventListener('DOMContentLoaded', function() {
+    // ...existing code...
+
+    // Add/update these handler functions
+    
+    // Function to handle editing a case
+    async function handleEditCase(caseId) {
+      try {
+        // Show loading state
+        Swal.fire({
+          title: 'Loading...',
+          text: 'Fetching case details',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          }
+        });
+        
+        // Fetch case details from the server
+        const response = await fetch(`?action=get_case_details&id=${caseId}`);
+        const data = await response.json();
+        Swal.close();
+        
+        if (!data.success) {
+          Swal.fire('Error', 'Failed to load case details', 'error');
+          return;
+        }
+        
+        const { case: caseData, participants, interventions } = data;
+        
+        // Populate the edit form
+        document.getElementById('editCaseId').value = caseId;
+        document.getElementById('editLocation').value = caseData.location || '';
+        document.getElementById('editDescription').value = caseData.description || '';
+        document.getElementById('editStatus').value = caseData.status || 'pending';
+        
+        // Check intervention checkboxes
+        const interventionCheckboxes = document.querySelectorAll('#editInterventionContainer input[type="checkbox"]');
+        interventionCheckboxes.forEach(checkbox => {
+          checkbox.checked = false; // Reset all checkboxes
+        });
+        
+        interventions.forEach(intervention => {
+          const checkbox = document.querySelector(`#editInterventionContainer input[value="${intervention.intervention_id}"]`);
+          if (checkbox) checkbox.checked = true;
+        });
+        
+        // Populate participants
+        const participantContainer = document.getElementById('editParticipantContainer');
+        participantContainer.innerHTML = '';
+        
+        participants.forEach((participant, index) => {
+          if (participant.participant_type === 'registered') {
+            // Add a registered participant row
+            const template = `
+              <div class="participant flex gap-2 bg-blue-50 p-2 rounded mb-2">
+                <input type="hidden" name="participants[${index}][type]" value="registered">
+                <select name="participants[${index}][user_id]" class="flex-1 p-2 border rounded" required>
+                  <option value="">Select Resident</option>
+                  <?php foreach ($residents as $r): ?>
+                    <option value="<?= $r['user_id'] ?>" ${participant.person_id == <?= $r['user_id'] ?> ? 'selected' : ''}><?= htmlspecialchars($r['name']) ?></option>
+                  <?php endforeach; ?>
+                </select>
+                <select name="participants[${index}][role]" class="flex-1 p-2 border rounded">
+                  <option value="complainant" ${participant.role === 'complainant' ? 'selected' : ''}>Complainant</option>
+                  <option value="respondent" ${participant.role === 'respondent' ? 'selected' : ''}>Respondent</option>
+                  <option value="witness" ${participant.role === 'witness' ? 'selected' : ''}>Witness</option>
+                </select>
+                <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
+              </div>`;
+            
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = template;
+            const node = wrapper.firstElementChild;
+            node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
+            participantContainer.appendChild(node);
+            
+            // Set the selected value for the resident dropdown
+            const userSelect = node.querySelector(`select[name="participants[${index}][user_id]"]`);
+            if (userSelect) {
+              for (let i = 0; i < userSelect.options.length; i++) {
+                if (userSelect.options[i].value == participant.person_id) {
+                  userSelect.options[i].selected = true;
+                  break;
+                }
+              }
+            }
+          } else {
+            // External participant
+            const template = `
+              <div class="participant flex gap-2 bg-green-50 p-2 rounded mb-2">
+                <input type="hidden" name="participants[${index}][type]" value="unregistered">
+                <div class="flex-1 grid grid-cols-2 gap-2">
+                  <input type="text" name="participants[${index}][first_name]" placeholder="First Name" required value="${participant.first_name || ''}" class="p-2 border rounded">
+                  <input type="text" name="participants[${index}][last_name]" placeholder="Last Name" required value="${participant.last_name || ''}" class="p-2 border rounded">
+                  <input type="text" name="participants[${index}][contact_number]" placeholder="Contact" value="${participant.contact_number || ''}" class="p-2 border rounded">
+                  <input type="text" name="participants[${index}][address]" placeholder="Address" value="${participant.address || ''}" class="p-2 border rounded">
+                  <input type="number" name="participants[${index}][age]" placeholder="Age" value="${participant.age || ''}" class="p-2 border rounded">
+                  <select name="participants[${index}][gender]" class="p-2 border rounded">
+                    <option value="">Gender</option>
+                    <option value="Male" ${participant.gender === 'Male' ? 'selected' : ''}>Male</option>
+                    <option value="Female" ${participant.gender === 'Female' ? 'selected' : ''}>Female</option>
+                    <option value="Other" ${participant.gender === 'Other' ? 'selected' : ''}>Other</option>
+                  </select>
+                </div>
+                <select name="participants[${index}][role]" class="w-28 p-2 border rounded">
+                  <option value="complainant" ${participant.role === 'complainant' ? 'selected' : ''}>Complainant</option>
+                  <option value="respondent" ${participant.role === 'respondent' ? 'selected' : ''}>Respondent</option>
+                  <option value="witness" ${participant.role === 'witness' ? 'selected' : ''}>Witness</option>
+                </select>
+                <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
+              </div>`;
+            
+            const wrapper = document.createElement('div');
+            wrapper.innerHTML = template;
+            const node = wrapper.firstElementChild;
+            node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
+            participantContainer.appendChild(node);
+          }
+        });
+        
+        // Show the edit modal
+        document.getElementById('editBlotterModal').classList.remove('hidden');
+        
+      } catch (error) {
+        console.error('Error loading case details:', error);
+        Swal.fire('Error', 'An unexpected error occurred while loading case details', 'error');
+      }
+    }
+    
+    // Improved scheduleHearing function with proper date validation
+    async function handleScheduleHearing(caseId) {
+      try {
+        // Create today's date and max date (5 days from now)
+        const today = new Date();
+        const todayStr = today.toISOString().split('T')[0]; // Format as YYYY-MM-DD
+        
+        // Calculate max date (5 days from today)
+        const maxDate = new Date();
+        maxDate.setDate(today.getDate() + 5);
+        const maxDateStr = maxDate.toISOString().split('T')[0];
+        
+        // Get available dates/times from the server or create date picker
+        const { value: formValues } = await Swal.fire({
+          title: 'Schedule Hearing',
           html: `
-            <select id="outcome" class="swal2-input">
-              <option value="conducted">Hearing Conducted</option>
-              <option value="both_present">Both Parties Present</option>
-              <option value="no_show_complainant">Complainant Did Not Appear</option>
-              <option value="no_show_respondent">Respondent Did Not Appear</option>
-              <option value="postponed">Postponed</option>
-              <option value="mediation_successful">Mediation Successful (Case Resolved)</option>
-              <option value="failed">Mediation Failed</option>
-            </select>
-            <textarea id="resolution" class="swal2-textarea" placeholder="Resolution details"></textarea>
-            <textarea id="notes" class="swal2-textarea" placeholder="Additional remarks"></textarea>`,
+            <div class="mb-3">
+              <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-date">
+                Hearing Date (within 5 days)
+              </label>
+              <input id="hearing-date" type="date" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" 
+                min="${todayStr}" max="${maxDateStr}" required>
+              <small class="text-gray-500">Hearings must be scheduled within 5 days from today</small>
+            </div>
+            <div class="mb-3">
+              <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-time">
+                Hearing Time
+              </label>
+              <input id="hearing-time" type="time" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" required>
+            </div>
+            <div class="mb-3">
+              <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-location">
+                Location
+              </label>
+              <input id="hearing-location" type="text" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" value="Barangay Hall" required>
+            </div>
+          `,
           focusConfirm: false,
           showCancelButton: true,
+          confirmButtonText: 'Schedule',
           preConfirm: () => {
-            const outcome = document.getElementById('outcome').value;
-            if (!outcome) {
-              Swal.showValidationMessage('Please select an outcome');
+            const hearingDate = document.getElementById('hearing-date').value;
+            const hearingTime = document.getElementById('hearing-time').value;
+            const hearingLocation = document.getElementById('hearing-location').value;
+            
+            if (!hearingDate || !hearingTime) {
+              Swal.showValidationMessage('Please fill in all required fields');
               return false;
             }
+            
+            // Additional validation for date range
+            if (hearingDate < todayStr || hearingDate > maxDateStr) {
+              Swal.showValidationMessage('Hearing date must be within the next 5 days (including today)');
+              return false;
+            }
+            
             return {
-              hearing_id: hearingId,
-              outcome: outcome,
-              resolution: document.getElementById('resolution').value,
-              notes: document.getElementById('notes').value
+              hearing_date: hearingDate,
+              hearing_time: hearingTime,
+              hearing_location: hearingLocation
             };
           }
         });
         
-        if (!value) return;
-        
-        const res = await fetch(`?action=record_hearing&id=${caseId}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(value)
-        });
-        
-        const data = await res.json();
-        if (data.success) {
-          Swal.fire('Success', 'Hearing outcome recorded successfully', 'success').then(() => location.reload());
-        } else {
-          Swal.fire('Error', data.message, 'error');
-        }
-      }
-    });
-
-    // Issue CFA Handler
-    document.querySelectorAll('.issue-cfa-btn').forEach(btn => btn.addEventListener('click', async () => {
-      const caseId = btn.dataset.id;
-      
-      // Get case details
-      const caseRes = await fetch(`?action=get_case_details&id=${caseId}`);
-      const caseData = await caseRes.json();
-      
-      if (!caseData.success) {
-        Swal.fire('Error', 'Could not fetch case details', 'error');
-        return;
-      }
-      
-      const complainants = caseData.participants.filter(p => p.role.toLowerCase() === 'complainant');
-      
-      if (complainants.length === 0) {
-        Swal.fire('Error', 'No complainant found for this case', 'error');
-        return;
-      }
-      
-      let complainantOptions = '';
-      complainants.forEach(c => {
-        complainantOptions += `<option value="${c.participant_id}">${c.first_name} ${c.last_name}</option>`;
-      });
-      
-      const { value } = await Swal.fire({
-        title: 'Issue Certificate to File Action',
-        html: `
-          <p>This will issue a CFA certificate and mark the case as "Endorsed to Court".</p>
-          <select id="complainantId" class="swal2-input">
-            <option value="">Select Complainant</option>
-            ${complainantOptions}
-          </select>`,
-        focusConfirm: false,
-        showCancelButton: true,
-        preConfirm: () => {
-          const complainantId = document.getElementById('complainantId').value;
-          if (!complainantId) {
-            Swal.showValidationMessage('Please select a complainant');
-            return false;
-          }
-          return { complainant_id: complainantId };
-        }
-      });
-      
-      if (!value) return;
-      
-      const res = await fetch(`?action=issue_cfa&id=${caseId}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(value)
-      });
-      
-      const data = await res.json();
-      if (data.success) {
-        Swal.fire('Success', `CFA Certificate issued: ${data.certificate_number}`, 'success').then(() => location.reload());
-      } else {
-        Swal.fire('Error', data.message, 'error');
-      }
-    }));
-
-    // Edit button handler
-    document.addEventListener('click', async e => {
-      if (!e.target.classList.contains('edit-btn')) return;
-      const id = e.target.dataset.id;
-
-      // Reset form
-      editForm.reset();
-      editPartCont.innerHTML = '';
-      document.getElementById('editHearingsContainer').innerHTML = '';
-      
-      // Clear existing checks
-      document.querySelectorAll('#editCategoryContainer input, #editInterventionContainer input')
-        .forEach(cb => cb.checked = false);
-
-      Swal.fire({ title: 'Loading…', didOpen: () => Swal.showLoading(), showConfirmButton: false });
-      const response = await fetch(`?action=get_case_details&id=${id}`);
-      const payload  = await response.json();
-      Swal.close();
-
-      if (!payload.success) {
-        Swal.fire('Error', payload.message, 'error');
-        return;
-      }
-
-      // Populate fields
-      document.getElementById('editCaseId').value      = id;
-      document.getElementById('editLocation').value    = payload.case.location;
-      document.getElementById('editDescription').value = payload.case.description;
-      document.getElementById('editStatus').value      = payload.case.status || '';
-
-      // Only show intervention section if case is closed or solved
-      const interventionSection = document.querySelector('.space-y-2:has(#editInterventionContainer)');
-      if (interventionSection) {
-        if (['closed', 'solved'].includes(payload.case.status)) {
-          interventionSection.style.display = 'block';
-        } else {
-          interventionSection.style.display = 'none';
-        }
-      }
-
-      // Populate participants
-      payload.participants.forEach((p, idx) => {
-        const tmpl = p.participant_type === 'registered' ? registeredTemplate : unregisteredTemplate;
-        const wrapper = document.createElement('div');
-        wrapper.innerHTML = tmpl.replace(/INDEX/g, idx);
-        const node = wrapper.firstElementChild;
-
-        if (p.participant_type === 'registered') {
-          node.querySelector('select[name$="[user_id]"]').value = p.person_id || p.user_id;
-        } else {
-          node.querySelector('input[name$="[first_name]"]').value     = p.first_name;
-          node.querySelector('input[name$="[last_name]"]').value      = p.last_name;
-          node.querySelector('input[name$="[contact_number]"]').value = p.contact_number || '';
-          node.querySelector('input[name$="[address]"]').value        = p.address        || '';
-          node.querySelector('input[name$="[age]"]').value            = p.age            || '';
-          node.querySelector('select[name$="[gender]"]').value        = p.gender         || '';
-        }
-        node.querySelector('select[name$="[role]"]').value = p.role;
-        node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
-        editPartCont.appendChild(node);
-      });
-
-      // Display hearings
-      if (payload.hearings && payload.hearings.length > 0) {
-        const hearingsHtml = `
-          <table class="hearing-table">
-            <thead>
-              <tr>
-                <th>Hearing #</th>
-                <th>Date & Time</th>
-                <th>Presiding Officer</th>
-                <th>Outcome</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${payload.hearings.map(h => {
-                const outcome = h.hearing_outcome ? h.hearing_outcome.replace('_', '-') : 'scheduled';
-                const outcomeText = h.hearing_outcome ? h.hearing_outcome.replace('_', ' ') : 'Scheduled';
-                return `
-                <tr>
-                  <td>Hearing ${h.hearing_number}</td>
-                  <td>${new Date(h.hearing_date).toLocaleString()}</td>
-                  <td>${h.presiding_officer_name} (${h.presiding_officer_position ? h.presiding_officer_position.replace('_', ' ') : ''})</td>
-                  <td>
-                    <span class="status-badge status-${outcome}">
-                      ${outcomeText}
-                    </span>
-                    ${h.is_mediation_successful ? '<br><strong>✓ Mediation Successful</strong>' : ''}
-                  </td>
-                  <td>
-                    ${h.hearing_outcome === 'scheduled' ? 
-                      `<button class="btn-record record-hearing-btn" data-hearing-id="${h.id}" data-case-id="${id}">Record Outcome</button>` : 
-                      'Completed'
-                    }
-                  </td>
-                </tr>
-              `}).join('')}
-            </tbody>
-          </table>
-        `;
-        document.getElementById('editHearingsContainer').innerHTML = hearingsHtml;
-      } else {
-        document.getElementById('editHearingsContainer').innerHTML = '<p class="text-gray-500">No hearings scheduled</p>';
-      }
-
-      // Show modal
-      editModal.classList.remove('hidden');
-    });
-
-    // Edit form submit handler
-    editForm.addEventListener('submit', async e => {
-      e.preventDefault();
-      const formData = { 
-        case_id:       document.getElementById('editCaseId').value,
-        location:      document.getElementById('editLocation').value.trim(),
-        description:   document.getElementById('editDescription').value.trim(),
-        status:        document.getElementById('editStatus').value,
-        participants:  Array.from(editPartCont.children).map(node => {
-          const isReg = !!node.querySelector('select[name$="[user_id]"]');
-          if (isReg) {
-            return {
-              user_id: node.querySelector('select[name$="[user_id]"]').value,
-              role:    node.querySelector('select[name$="[role]"]').value
-            };
+        if (formValues) {
+          // Show loading state
+          Swal.fire({
+            title: 'Scheduling...',
+            text: 'Please wait',
+            allowOutsideClick: false,
+            didOpen: () => {
+              Swal.showLoading();
+            }
+          });
+          
+          // Send the scheduling request to the server
+          const response = await fetch(`?action=schedule_hearing&id=${caseId}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(formValues)
+          });
+          
+          const data = await response.json();
+          
+          if (data.success) {
+            Swal.fire({
+              icon: 'success',
+              title: 'Success!',
+              text: data.message || 'Hearing has been scheduled successfully.',
+              timer: 2000,
+              showConfirmButton: false
+            }).then(() => location.reload());
           } else {
-            return {
-              first_name: node.querySelector('input[name$="[first_name]"]').value.trim(),
-              last_name: node.querySelector('input[name$="[last_name]"]').value.trim(),
-              contact_number: node.querySelector('input[name$="[contact_number]"]').value.trim(),
-              address: node.querySelector('input[name$="[address]"]').value.trim(),
-              age: node.querySelector('input[name$="[age]"]').value,
-              gender: node.querySelector('select[name$="[gender]"]').value,
-              role: node.querySelector('select[name$="[role]"]').value
-            };
+            Swal.fire('Error', data.message || 'Failed to schedule hearing', 'error');
           }
-        })
-      };
-      
-      // Only include interventions if case is closed or solved
-      const interventionContainer = document.getElementById('editInterventionContainer');
-      if (interventionContainer && ['closed', 'solved'].includes(formData.status)) {
-        formData.interventions = Array.from(interventionContainer.querySelectorAll('input[type="checkbox"]:checked'))
-          .map(cb => parseInt(cb.value));
-      } else {
-        formData.interventions = [];
+        }
+      } catch (error) {
+        console.error('Error scheduling hearing:', error);
+        Swal.fire('Error', 'An unexpected error occurred.', 'error');
       }
+    }
+    
+    // Add form submission handler for edit form
+    document.getElementById('editBlotterForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
       
-      // Validation
-      if (!formData.location || !formData.description || !formData.participants.length) {
-        return Swal.fire('Error', 'Location, description, and at least one participant are required', 'error');
-      }
-      
-      Swal.fire({ title:'Saving...', didOpen:()=>Swal.showLoading() });
-      const res = await fetch('?action=update_case', {
-        method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(formData)
-      });
-      const d = await res.json();
-      if (d.success) {
-        Swal.fire('Saved!','Case updated successfully','success').then(() => {
-          editModal.classList.add('hidden');
-          location.reload();
+      try {
+        // Get form data
+        const formData = {
+          case_id: document.getElementById('editCaseId').value,
+          location: document.getElementById('editLocation').value,
+          description: document.getElementById('editDescription').value,
+          status: document.getElementById('editStatus').value,
+          interventions: [],
+          participants: []
+        };
+        
+        // Get checked interventions
+        document.querySelectorAll('#editInterventionContainer input[type="checkbox"]:checked').forEach(checkbox => {
+          formData.interventions.push(checkbox.value);
         });
-      } else {
-        Swal.fire('Error', d.message || 'Failed', 'error');
+        
+        // Get participants
+        document.querySelectorAll('#editParticipantContainer .participant').forEach(participant => {
+          const participantType = participant.querySelector('input[name$="[type]"]').value;
+          const participantData = {};
+          
+          if (participantType === 'registered') {
+            participantData.user_id = participant.querySelector('select[name$="[user_id]"]').value;
+            participantData.role = participant.querySelector('select[name$="[role]"]').value;
+          } else {
+            // Unregistered/external
+            participantData.first_name = participant.querySelector('input[name$="[first_name]"]').value;
+            participantData.last_name = participant.querySelector('input[name$="[last_name]"]').value;
+            participantData.contact_number = participant.querySelector('input[name$="[contact_number]"]').value;
+            participantData.address = participant.querySelector('input[name$="[address]"]').value;
+            participantData.age = participant.querySelector('input[name$="[age]"]').value;
+            participantData.gender = participant.querySelector('select[name$="[gender]"]').value;
+            participantData.role = participant.querySelector('select[name$="[role]"]').value;
+          }
+          
+          formData.participants.push(participantData);
+        });
+        
+        // Validate data
+        if (!formData.location.trim() || !formData.description.trim()) {
+          Swal.fire('Error', 'Location and description are required', 'error');
+          return;
+        }
+        
+        if (formData.participants.length === 0) {
+          Swal.fire('Error', 'At least one participant is required', 'error');
+          return;
+        }
+        
+        // Show loading state
+        Swal.fire({
+          title: 'Saving...',
+          text: 'Updating case details',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          }
+        });
+        
+        // Send data to server
+        const response = await fetch('?action=update_case', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(formData)
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+          Swal.fire({
+            icon: 'success',
+            title: 'Success!',
+            text: 'Case has been updated successfully.',
+            timer: 1500,
+            showConfirmButton: false
+          }).then(() => {
+            // Close modal and reload page
+            document.getElementById('editBlotterModal').classList.add('hidden');
+            location.reload();
+          });
+        } else {
+          Swal.fire('Error', result.message || 'Failed to update case', 'error');
+        }
+        
+      } catch (error) {
+        console.error('Error updating case:', error);
+        Swal.fire('Error', 'An unexpected error occurred while saving the case', 'error');
       }
     });
 
-    // Audio/Video Transcription
-    document.getElementById('transcribe_btn').addEventListener('click', function() {
-      const fileInput = document.getElementById('transcript_file');
-      if (!fileInput.files || fileInput.files.length === 0) {
-        Swal.fire('Error', 'Please select an audio or video file to transcribe.', 'error');
-        return;
-      }
-      
-      const file = fileInput.files[0];
-      const allowedTypes = ['audio/mpeg', 'audio/mp4', 'audio/mp3', 'audio/wav', 'audio/x-wav', 
-                         'audio/webm', 'audio/ogg', 'video/mp4', 'video/webm', 'video/ogg'];
-      
-      if (!allowedTypes.includes(file.type)) {
-        Swal.fire('Error', 'Please upload a supported audio or video file format.', 'error');
-        return;
-      }
-      
-      if (file.size > 25 * 1024 * 1024) { // 25MB limit
-        Swal.fire('Error', 'File too large. Maximum size is 25MB.', 'error');
-        return;
-      }
-      
-      // Show loader
-      document.getElementById('transcript_loader').style.display = 'block';
-      document.getElementById('transcript_result').style.display = 'none';
-      
-      const formData = new FormData();
-      formData.append('transcript_file', file);
-      formData.append('action', 'transcribe_only');
-      
-      fetch('blotter.php', {
-        method: 'POST',
-        body: formData
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          document.getElementById('transcript_result').style.display = 'block';
-          document.getElementById('transcript_text').textContent = data.text;
-          const complaintField = document.querySelector("textarea[name='complaint']");
-          complaintField.value = data.text;
-          complaintField.classList.add('bg-green-50');
-          setTimeout(() => {
-            complaintField.classList.remove('bg-green-50');
-          }, 2000);
-        } else {
-          Swal.fire('Error', data.message || 'Transcription failed.', 'error');
-        }
-      })
-      .catch(error => {
-        Swal.fire('Error', 'Failed to connect to the server.', 'error');
-      })
-      .finally(() => {
-        document.getElementById('transcript_loader').style.display = 'none';
-      });
-    });
+    // Make handler functions available globally
+    window.handleEditCase = handleEditCase;
+    window.handleCompleteCase = handleCompleteCase;
+    window.handleDeleteCase = handleDeleteCase;
+    window.handleScheduleHearing = handleScheduleHearing;
+    window.handleIssueCFA = handleIssueCFA;
+    window.handleAddIntervention = handleAddIntervention;
 });
-  </script>
-</section>
-</body>
-</html>
+</script>
