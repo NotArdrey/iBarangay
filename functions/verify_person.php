@@ -21,62 +21,49 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
     
     try {
-        // Build the census part of the query (no gender)
+        // Fetch all census records
         $censusSql = "
-            SELECT 'census' as source, p.id, p.first_name, p.middle_name, p.last_name, p.birth_date,
-                   pi.other_id_number as id_number
+            SELECT 'census' as source, p.id, p.first_name, p.middle_name, p.last_name, p.birth_date, pi.other_id_number as id_number, a.barangay_id
             FROM persons p
             LEFT JOIN person_identification pi ON p.id = pi.person_id
+            LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
             WHERE LOWER(TRIM(p.last_name)) = LOWER(TRIM(:census_last_name))
             AND LOWER(TRIM(p.first_name)) = LOWER(TRIM(:census_first_name))
             AND p.birth_date = :census_birth_date
         ";
-        
-        // Build the temporary records part (no gender)
         $tempSql = "
-            SELECT 'temporary' as source, id, first_name, middle_name, last_name, date_of_birth as birth_date,
-                   id_number
+            SELECT 'temporary' as source, id, first_name, middle_name, last_name, date_of_birth as birth_date, id_number, barangay_id
             FROM temporary_records
             WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:temp_last_name))
             AND LOWER(TRIM(first_name)) = LOWER(TRIM(:temp_first_name))
             AND date_of_birth = :temp_birth_date
         ";
-        
-        // Prepare parameters for exact match
-        $params = [
+        // Prepare separate parameter arrays for each query
+        $censusParams = [
             ':census_first_name' => $first_name,
             ':census_last_name' => $last_name,
-            ':census_birth_date' => $birth_date,
+            ':census_birth_date' => $birth_date
+        ];
+        $tempParams = [
             ':temp_first_name' => $first_name,
             ':temp_last_name' => $last_name,
             ':temp_birth_date' => $birth_date
         ];
-        
-        // Add middle name condition if provided
         if (!empty($middle_name)) {
             $censusSql .= " AND (p.middle_name = :census_middle_name OR p.middle_name IS NULL)";
             $tempSql .= " AND (middle_name = :temp_middle_name OR middle_name IS NULL)";
-            $params[':census_middle_name'] = $middle_name;
-            $params[':temp_middle_name'] = $middle_name;
+            $censusParams[':census_middle_name'] = $middle_name;
+            $tempParams[':temp_middle_name'] = $middle_name;
         }
-        
-        // Combine the queries
-        $sql = $censusSql . " UNION ALL " . $tempSql;
-        
-        try {
-            $stmt = $pdo->prepare($sql);
-            $stmt->execute($params);
-            $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
-        } catch (PDOException $e) {
-            throw new PDOException(
-                "Error in exact match query: " . $e->getMessage() . 
-                "\nSQL: " . $sql . 
-                "\nParameters: " . json_encode($params)
-            );
-        }
-        
-        // Check if person exists in both records
-        if (count($records) > 1) {
+        // Fetch records
+        $censusStmt = $pdo->prepare($censusSql);
+        $censusStmt->execute($censusParams);
+        $censusRecords = $censusStmt->fetchAll(PDO::FETCH_ASSOC);
+        $tempStmt = $pdo->prepare($tempSql);
+        $tempStmt->execute($tempParams);
+        $tempRecords = $tempStmt->fetchAll(PDO::FETCH_ASSOC);
+        // If found in both census and temporary (any barangay), block registration
+        if (count($censusRecords) > 0 && count($tempRecords) > 0) {
             echo json_encode([
                 'status' => 'error',
                 'message' => 'Person found in both census and temporary records. Please contact the barangay office for assistance.',
@@ -84,50 +71,81 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             ]);
             exit;
         }
-        
-        // If person exists in exactly one record
-        if (count($records) === 1) {
-            $record = $records[0];
-            
-            // Check if ID number matches if provided
-            if (!empty($id_number) && strtolower(trim($record['id_number'])) !== strtolower(trim($id_number))) {
+        // If found in multiple barangays, allow selection (prefer census if both types, but not both in same barangay)
+        $allRecords = array_merge($censusRecords, $tempRecords);
+        if (count($allRecords) > 1) {
+            $censusBarangays = array_filter($allRecords, fn($r) => $r['source'] === 'census');
+            $tempBarangays = array_filter($allRecords, fn($r) => $r['source'] === 'temporary');
+            if (count($censusBarangays) > 0 && count($tempBarangays) === 0) {
+                // Only census records, allow selection
+                $barangay_records = array_map(function($r) use ($pdo) {
+                    return [
+                        'id' => $r['barangay_id'],
+                        'barangay_name' => getBarangayName($pdo, $r['barangay_id']),
+                        'source' => 'census',
+                        'person_id' => $r['id']
+                    ];
+                }, $censusBarangays);
                 echo json_encode([
-                    'status' => 'error',
-                    'message' => 'ID number does not match our records.',
-                    'exists' => false
+                    'status' => 'success',
+                    'exists' => true,
+                    'person_id' => $censusBarangays[0]['id'],
+                    'source' => 'census',
+                    'barangay_records' => $barangay_records
+                ]);
+                exit;
+            } elseif (count($tempBarangays) > 0 && count($censusBarangays) === 0) {
+                // Only temporary records, allow selection
+                $barangay_records = array_map(function($r) use ($pdo) {
+                    return [
+                        'id' => $r['barangay_id'],
+                        'barangay_name' => getBarangayName($pdo, $r['barangay_id']),
+                        'source' => 'temporary',
+                        'person_id' => $r['id']
+                    ];
+                }, $tempBarangays);
+                echo json_encode([
+                    'status' => 'success',
+                    'exists' => true,
+                    'person_id' => $tempBarangays[0]['id'],
+                    'source' => 'temporary',
+                    'barangay_records' => $barangay_records
+                ]);
+                exit;
+            } elseif (count($censusBarangays) > 0 && count($tempBarangays) > 0) {
+                // Found in census in one barangay and temporary in another, only allow census
+                $barangay_records = array_map(function($r) use ($pdo) {
+                    return [
+                        'id' => $r['barangay_id'],
+                        'barangay_name' => getBarangayName($pdo, $r['barangay_id']),
+                        'source' => 'census',
+                        'person_id' => $r['id']
+                    ];
+                }, $censusBarangays);
+                echo json_encode([
+                    'status' => 'success',
+                    'exists' => true,
+                    'person_id' => $censusBarangays[0]['id'],
+                    'source' => 'census',
+                    'barangay_records' => $barangay_records
                 ]);
                 exit;
             }
-            
-            // Get all barangay records for this person
-            $stmt = $pdo->prepare("
-                SELECT DISTINCT b.id, b.name as barangay_name
-                FROM persons p
-                LEFT JOIN household_members hm ON p.id = hm.person_id
-                LEFT JOIN households h ON hm.household_id = h.id
-                LEFT JOIN barangay b ON h.barangay_id = b.id
-                WHERE p.id = ?
-                UNION
-                SELECT DISTINCT b.id, b.name as barangay_name
-                FROM persons p
-                LEFT JOIN addresses a ON p.id = a.person_id
-                LEFT JOIN barangay b ON a.barangay_id = b.id
-                WHERE p.id = ? AND a.is_primary = 1
-                UNION
-                SELECT DISTINCT b.id, b.name as barangay_name
-                FROM temporary_records t
-                LEFT JOIN barangay b ON t.barangay_id = b.id
-                WHERE t.id = ?
-            ");
-            $stmt->execute([$record['id'], $record['id'], $record['id']]);
-            $barangay_records = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            
+        }
+        // If found in only one record, proceed as normal
+        if (count($allRecords) === 1) {
+            $r = $allRecords[0];
+            $barangay_records = [[
+                'id' => $r['barangay_id'],
+                'barangay_name' => getBarangayName($pdo, $r['barangay_id']),
+                'source' => $r['source'],
+                'person_id' => $r['id']
+            ]];
             echo json_encode([
                 'status' => 'success',
                 'exists' => true,
-                'message' => 'Person verification successful.',
-                'person_id' => $record['id'],
-                'source' => $record['source'],
+                'person_id' => $r['id'],
+                'source' => $r['source'],
                 'barangay_records' => $barangay_records
             ]);
             exit;
@@ -142,7 +160,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             OR LOWER(TRIM(first_name)) = LOWER(TRIM(:census_first_name))
             OR birth_date = :census_birth_date
         ";
-        
         $partialTempSql = "
             SELECT 'temporary' as source, first_name, middle_name, last_name, date_of_birth as birth_date, id_number
             FROM temporary_records
@@ -150,17 +167,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             OR LOWER(TRIM(first_name)) = LOWER(TRIM(:temp_first_name))
             OR date_of_birth = :temp_birth_date
         ";
-        
-        // Add ID number condition if provided
-        if (!empty($id_number)) {
-            $partialCensusSql .= " OR LOWER(TRIM(pi.other_id_number)) = LOWER(TRIM(:census_id_number))";
-            $partialTempSql .= " OR LOWER(TRIM(id_number)) = LOWER(TRIM(:temp_id_number))";
-        }
-        
-        // Combine partial match queries
-        $partialSql = $partialCensusSql . " UNION ALL " . $partialTempSql;
-        
-        // Prepare parameters for partial match
         $partialParams = [
             ':census_first_name' => $first_name,
             ':census_last_name' => $last_name,
@@ -169,11 +175,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             ':temp_last_name' => $last_name,
             ':temp_birth_date' => $birth_date
         ];
-        
         if (!empty($id_number)) {
+            $partialCensusSql .= " OR LOWER(TRIM(pi.other_id_number)) = LOWER(TRIM(:census_id_number))";
+            $partialTempSql .= " OR LOWER(TRIM(id_number)) = LOWER(TRIM(:temp_id_number))";
             $partialParams[':census_id_number'] = $id_number;
             $partialParams[':temp_id_number'] = $id_number;
         }
+        $partialSql = $partialCensusSql . " UNION ALL " . $partialTempSql;
         
         try {
             $stmt = $pdo->prepare($partialSql);
@@ -240,4 +248,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         'status' => 'error',
         'message' => 'Invalid request method.'
     ]);
+}
+
+// Helper to get barangay name by ID
+function getBarangayName($pdo, $barangay_id) {
+    if (!$barangay_id) return null;
+    $stmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
+    $stmt->execute([$barangay_id]);
+    $row = $stmt->fetch(PDO::FETCH_ASSOC);
+    return $row ? $row['name'] : null;
 } 

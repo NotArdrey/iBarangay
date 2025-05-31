@@ -268,17 +268,13 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
         
         if (data.status === 'success') {
           if (data.exists) {
-            // Store the person_id in the hidden field
             document.getElementById('person_id').value = data.person_id;
-            
             // Check if person has multiple barangay records
             if (data.barangay_records && data.barangay_records.length > 1) {
-              // Create HTML for barangay selection
-              let barangayOptions = data.barangay_records.map(record => 
-                `<option value="${record.id}">${record.barangay_name}</option>`
+              // Only allow selection for the correct source (census or temporary)
+              let barangayOptions = data.barangay_records.map(record =>
+                `<option value="${record.id}" data-source="${record.source}" data-person="${record.person_id}">${record.barangay_name ? record.barangay_name : 'Barangay #' + record.id} (${record.source})</option>`
               ).join('');
-              
-              // Show barangay selection dialog with enhanced UI
               Swal.fire({
                 title: 'Select Your Primary Barangay',
                 html: `
@@ -294,8 +290,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
                     <div class="mt-4 p-4 bg-blue-50 rounded-lg">
                       <p class="text-sm text-blue-800">
                         <i class="fas fa-info-circle mr-2"></i>
-                        <strong>Important:</strong> You will only be able to access services for your selected barangay.
-                        This selection cannot be changed later without contacting the barangay office.
+                        <strong>Important:</strong> You will only be able to access services for your selected barangay. This selection cannot be changed later without contacting the barangay office.
                       </p>
                     </div>
                   </div>
@@ -312,12 +307,17 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
                   cancelButton: 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded'
                 },
                 preConfirm: () => {
-                  const selectedBarangay = document.getElementById('barangay_select').value;
+                  const select = document.getElementById('barangay_select');
+                  const selectedBarangay = select.value;
+                  const selectedSource = select.options[select.selectedIndex].getAttribute('data-source');
+                  const selectedPerson = select.options[select.selectedIndex].getAttribute('data-person');
                   if (!selectedBarangay) {
                     Swal.showValidationMessage('Please select a barangay');
                     return false;
                   }
-                  return selectedBarangay;
+                  // Set person_id to the correct one for the selected barangay
+                  document.getElementById('person_id').value = selectedPerson;
+                  return {barangay_id: selectedBarangay, source: selectedSource};
                 }
               }).then((result) => {
                 if (result.isConfirmed) {
@@ -325,10 +325,14 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
                   const barangayInput = document.createElement('input');
                   barangayInput.type = 'hidden';
                   barangayInput.name = 'barangay_id';
-                  barangayInput.value = result.value;
+                  barangayInput.value = result.value.barangay_id;
                   document.querySelector('form').appendChild(barangayInput);
-                  
-                  // Show success message and submit form
+                  // Add selected source to form (optional, for backend validation)
+                  const sourceInput = document.createElement('input');
+                  sourceInput.type = 'hidden';
+                  sourceInput.name = 'record_source';
+                  sourceInput.value = result.value.source;
+                  document.querySelector('form').appendChild(sourceInput);
                   Swal.fire({
                     icon: 'success',
                     title: 'Verification Successful',
@@ -348,20 +352,23 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
               barangayInput.name = 'barangay_id';
               barangayInput.value = data.barangay_records[0].id;
               document.querySelector('form').appendChild(barangayInput);
-              
-            // Show success message and submit form
-            Swal.fire({
-              icon: 'success',
-              title: 'Verification Successful',
-              text: 'Your identity has been verified. You can now complete your registration.',
-              showConfirmButton: false,
-              timer: 1500,
-              willClose: () => {
+              // Add source to form
+              const sourceInput = document.createElement('input');
+              sourceInput.type = 'hidden';
+              sourceInput.name = 'record_source';
+              sourceInput.value = data.barangay_records[0].source;
+              document.querySelector('form').appendChild(sourceInput);
+              Swal.fire({
+                icon: 'success',
+                title: 'Verification Successful',
+                text: 'Your identity has been verified. You can now complete your registration.',
+                showConfirmButton: false,
+                timer: 1500,
+                willClose: () => {
                   document.querySelector('form').submit();
-              }
-            });
+                }
+              });
             } else {
-              // No barangay records found
               Swal.fire({
                 icon: 'error',
                 title: 'Verification Failed',
@@ -370,16 +377,14 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
               });
             }
           } else {
-            // Person not found, show error message
             Swal.fire({
               icon: 'error',
               title: 'Verification Failed',
-              text: 'Your information does not match our records. Only verified residents can register. Please contact the barangay office for assistance.',
+              text: data.message || 'Your information does not match our records. Only verified residents can register. Please contact the barangay office for assistance.',
               confirmButtonText: 'OK'
             });
           }
         } else {
-          // Error in verification
           Swal.fire({
             icon: 'error',
             title: 'Verification Error',
