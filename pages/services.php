@@ -92,8 +92,7 @@ if (isset($_SESSION['user_id'])) {
 // Handle form submission for document requests - UPDATED VERSION
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        // Time-gated validation - COMMENTED OUT FOR TESTING
-        /*
+        // Time-gated validation - ENABLED
         $currentTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
         $startTime = new DateTime('08:00:00', new DateTimeZone('Asia/Manila'));
         $endTime = new DateTime('17:00:00', new DateTimeZone('Asia/Manila'));
@@ -101,7 +100,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($currentTime < $startTime || $currentTime > $endTime) {
             throw new Exception("Document requests can only be submitted between 8:00 AM and 5:00 PM.");
         }
-        */
 
         // Check if user has pending blotter cases in ANY barangay
         if ($hasPendingBlotter) {
@@ -441,15 +439,11 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
 $showPending = isset($_GET['show_pending']) || isset($_SESSION['show_pending']);
 unset($_SESSION['show_pending']);
 
-// Time-gated notice - COMMENTED OUT FOR TESTING
-/*
+// Time-gated notice - ENABLED
 $currentTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
 $startTime = new DateTime('08:00:00', new DateTimeZone('Asia/Manila'));
 $endTime = new DateTime('17:00:00', new DateTimeZone('Asia/Manila'));
 $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
-*/
-// FOR TESTING: Always allow submissions
-$isWithinTimeGate = true;
 
 require_once '../components/navbar.php';
 ?>
@@ -999,13 +993,13 @@ require_once '../components/navbar.php';
             <div class="wizard-container">
                 <h2 class="form-header">Document Request</h2>
                 
-                <!-- Time gate notice - COMMENTED OUT FOR TESTING -->
-                <?php /*if (!$isWithinTimeGate): ?>
+                <!-- Time gate notice - ENABLED -->
+                <?php if (!$isWithinTimeGate): ?>
                 <div class="time-gate-notice">
                     <p><i class="fas fa-clock"></i> Document requests can only be submitted between 8:00 AM and 5:00 PM.</p>
                     <p>Please come back during operating hours.</p>
                 </div>
-                <?php endif;*/ ?>
+                <?php endif; ?>
 
                 <?php if ($hasPendingBlotter): ?>
                 <div class="blotter-warning">
@@ -1050,7 +1044,7 @@ require_once '../components/navbar.php';
                 <form method="POST" action="" enctype="multipart/form-data" id="docRequestForm">
                     <div class="form-row">
                         <label for="documentType">Document Type</label>
-                        <select id="documentType" name="document_type_id" required <?= ($hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
+                        <select id="documentType" name="document_type_id" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <option value="">Select Document</option>
                             <?php
                             // Always show all 6 supported documents in the correct order
@@ -1093,7 +1087,7 @@ require_once '../components/navbar.php';
                     <div id="clearanceFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="purposeClearance">Purpose of Clearance</label>
-                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
+                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
@@ -1191,8 +1185,10 @@ require_once '../components/navbar.php';
                     <input type="hidden" name="override_pending" value="1">
                     <?php endif; ?>
 
-                    <button type="submit" class="btn cta-button" id="submitBtn" <?= ($hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
-                        <?php if ($hasInsufficientResidency): ?>
+                    <button type="submit" class="btn cta-button" id="submitBtn" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                        <?php if (!$isWithinTimeGate): ?>
+                            Outside Operating Hours (8AM-5PM)
+                        <?php elseif ($hasInsufficientResidency): ?>
                             Insufficient Residency Period
                         <?php elseif ($hasPendingBlotter): ?>
                             Restricted - Pending Blotter Case
@@ -1212,15 +1208,15 @@ require_once '../components/navbar.php';
     <script>
     // Use barangayPrices in JS
     var barangayPrices = <?= json_encode($barangayPrices) ?>;
-    // FOR TESTING: Time gate disabled
-    var isWithinTimeGateJS = true; // <?= json_encode($isWithinTimeGate) ?>;
+    // Time gate enabled
+    var isWithinTimeGateJS = <?= json_encode($isWithinTimeGate) ?>;
     var hasPendingBlotterJS = <?= json_encode($hasPendingBlotter) ?>;
     var hasInsufficientResidencyJS = <?= json_encode($hasInsufficientResidency) ?>;
 
     // Enhanced photo upload functions
     function openCamera() {
-        // FOR TESTING: Only check residency and blotter restrictions
-        if (hasInsufficientResidencyJS || hasPendingBlotterJS) {
+        // Check all validation restrictions
+        if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
             Swal.fire('Error', 'Camera function is disabled due to validation restrictions.', 'error');
             return;
         }
@@ -1333,9 +1329,6 @@ require_once '../components/navbar.php';
         if (userPhoto) userPhoto.value = '';
         if (photoPreview) photoPreview.style.display = 'none';
         if (photoUploadContainer) photoUploadContainer.classList.remove('active');
-        
-        // Remove the SweetAlert notification - it was causing popup issues
-        // when switching document types
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -1355,8 +1348,8 @@ require_once '../components/navbar.php';
         // Handle file selection
         if (userPhotoInput) {
             userPhotoInput.addEventListener('change', function(e) {
-                // FOR TESTING: Only check residency and blotter restrictions
-                if (hasInsufficientResidencyJS || hasPendingBlotterJS) {
+                // Check all validation restrictions
+                if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
                     this.value = '';
                     Swal.fire('Error', 'File upload is disabled due to validation restrictions.', 'error');
                     return;
@@ -1433,8 +1426,8 @@ require_once '../components/navbar.php';
         function setFieldsRequired(container, documentCode) {
             if (!container) return;
             
-            // FOR TESTING: Only check residency and blotter restrictions
-            if (hasInsufficientResidencyJS || hasPendingBlotterJS) {
+            // Check all validation restrictions
+            if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
                 return;
             }
 
@@ -1550,8 +1543,7 @@ require_once '../components/navbar.php';
 
                 e.preventDefault(); // Prevent immediate submission
 
-                // FOR TESTING: Time gate check disabled
-                /*
+                // Time gate check enabled
                 if (!isWithinTimeGateJS) {
                     Swal.fire({
                         title: 'Outside Operating Hours',
@@ -1560,7 +1552,6 @@ require_once '../components/navbar.php';
                     });
                     return;
                 }
-                */
 
                 if (hasPendingBlotterJS) {
                     Swal.fire({
@@ -1579,8 +1570,6 @@ require_once '../components/navbar.php';
                     });
                     return;
                 }
-
-            
 
                 <?php if ($hasPendingRequest): ?>
                 Swal.fire({
@@ -1642,11 +1631,13 @@ require_once '../components/navbar.php';
         }
 
         // Initial check for submit button state based on validation conditions
-        // FOR TESTING: Time gate check disabled
-        if (hasPendingBlotterJS || hasInsufficientResidencyJS) {
+        // Time gate check enabled
+        if (hasPendingBlotterJS || hasInsufficientResidencyJS || !isWithinTimeGateJS) {
             if (submitBtn) {
                 submitBtn.disabled = true;
-                if (hasInsufficientResidencyJS) {
+                if (!isWithinTimeGateJS) {
+                    submitBtn.textContent = 'Outside Operating Hours (8AM-5PM)';
+                } else if (hasInsufficientResidencyJS) {
                     submitBtn.textContent = 'Insufficient Residency Period';
                 } else if (hasPendingBlotterJS) {
                     submitBtn.textContent = 'Restricted - Pending Blotter Case';
