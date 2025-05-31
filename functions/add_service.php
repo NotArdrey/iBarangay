@@ -18,6 +18,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $detailed_guide = trim($_POST['detailed_guide'] ?? '');
     $processing_time = trim($_POST['processing_time'] ?? '');
     $fees = trim($_POST['fees'] ?? '');
+    $service_type = trim($_POST['service_type'] ?? 'general');
+    $priority = trim($_POST['priority'] ?? 'normal');
+    $availability = trim($_POST['availability'] ?? 'always');
+    $additional_notes = trim($_POST['additional_notes'] ?? '');
     $barangay_id = $_SESSION['barangay_id'];
 
     // Validate required fields
@@ -29,7 +33,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($processing_time)) $errors[] = 'Processing time is required';
     if (empty($fees)) $errors[] = 'Fees information is required';
 
+    // Handle photo upload
+    $photo_filename = null;
+    if (isset($_FILES['service_photo']) && $_FILES['service_photo']['error'] === UPLOAD_ERR_OK) {
+        $upload_dir = '../uploads/service_photos/';
+        
+        // Create directory if it doesn't exist
+        if (!is_dir($upload_dir)) {
+            mkdir($upload_dir, 0755, true);
+        }
+        
+        $file_tmp = $_FILES['service_photo']['tmp_name'];
+        $file_name = $_FILES['service_photo']['name'];
+        $file_size = $_FILES['service_photo']['size'];
+        $file_type = $_FILES['service_photo']['type'];
+        
+        // Validate file type
+        $allowed_types = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif'];
+        if (!in_array($file_type, $allowed_types)) {
+            $errors[] = 'Invalid file type. Only JPEG, PNG, and GIF are allowed.';
+        }
+        
+        // Validate file size (5MB limit)
+        if ($file_size > 5 * 1024 * 1024) {
+            $errors[] = 'File size must be less than 5MB.';
+        }
+        
+        if (empty($errors)) {
+            // Generate unique filename
+            $file_extension = pathinfo($file_name, PATHINFO_EXTENSION);
+            $photo_filename = 'service_' . uniqid() . '_' . time() . '.' . $file_extension;
+            $upload_path = $upload_dir . $photo_filename;
+            
+            if (!move_uploaded_file($file_tmp, $upload_path)) {
+                $errors[] = 'Failed to upload photo.';
+            }
+        }
+    } else {
+        $errors[] = 'Service photo is required.';
+    }
+
     if (!empty($errors)) {
+        // Clean up uploaded file if there were other errors
+        if ($photo_filename && file_exists($upload_dir . $photo_filename)) {
+            unlink($upload_dir . $photo_filename);
+        }
+        
         echo json_encode([
             'success' => false, 
             'message' => 'Validation failed', 
@@ -73,13 +122,21 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $result = $stmt->fetch();
         $display_order = ($result['max_order'] ?? 0) + 1;
 
-        // Insert new service (using only existing columns)
+        // First, check if the service_photo column exists, if not add it
+        $stmt = $pdo->prepare("SHOW COLUMNS FROM custom_services LIKE 'service_photo'");
+        $stmt->execute();
+        if ($stmt->rowCount() == 0) {
+            $pdo->exec("ALTER TABLE custom_services ADD COLUMN service_photo VARCHAR(255) AFTER additional_notes");
+        }
+
+        // Insert new service with all fields
         $stmt = $pdo->prepare("
             INSERT INTO custom_services (
                 category_id, barangay_id, name, description, icon,
                 requirements, detailed_guide, processing_time, fees, 
-                display_order, is_active
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+                service_type, priority_level, availability_type, additional_notes,
+                service_photo, display_order, is_active
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
         ");
         
         $stmt->execute([
@@ -92,6 +149,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $detailed_guide,
             $processing_time,
             $fees,
+            $service_type,
+            $priority,
+            $availability,
+            $additional_notes,
+            $photo_filename,
             $display_order
         ]);
 
@@ -118,6 +180,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (PDOException $e) {
         // Rollback transaction on error
         $pdo->rollBack();
+        
+        // Clean up uploaded file on error
+        if ($photo_filename && file_exists($upload_dir . $photo_filename)) {
+            unlink($upload_dir . $photo_filename);
+        }
+        
         error_log($e->getMessage());
         echo json_encode([
             'success' => false, 
@@ -126,6 +194,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     } catch (Exception $e) {
         // Rollback transaction on error
         $pdo->rollBack();
+        
+        // Clean up uploaded file on error
+        if ($photo_filename && file_exists($upload_dir . $photo_filename)) {
+            unlink($upload_dir . $photo_filename);
+        }
+        
         error_log($e->getMessage());
         echo json_encode([
             'success' => false, 
