@@ -92,7 +92,8 @@ if (isset($_SESSION['user_id'])) {
 // Handle form submission for document requests - UPDATED VERSION
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        // Time-gated validation
+        // Time-gated validation - COMMENTED OUT FOR TESTING
+        /*
         $currentTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
         $startTime = new DateTime('08:00:00', new DateTimeZone('Asia/Manila'));
         $endTime = new DateTime('17:00:00', new DateTimeZone('Asia/Manila'));
@@ -100,6 +101,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($currentTime < $startTime || $currentTime > $endTime) {
             throw new Exception("Document requests can only be submitted between 8:00 AM and 5:00 PM.");
         }
+        */
 
         // Check if user has pending blotter cases in ANY barangay
         if ($hasPendingBlotter) {
@@ -113,11 +115,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         // NEW: Check residency requirement
         if ($hasInsufficientResidency) {
             if ($residencyDetails['residency_status'] === 'no_record') {
-                throw new Exception("No residency record found. Please ensure your profile and address information are complete in the census system before requesting documents.");
+                throw new Exception("You need to be a resident for at least 6 months to request documents. Please contact the barangay office to update your residency information.");
             } else {
                 $monthsLived = $residencyDetails['computed_months'];
                 $monthsNeeded = 6 - $monthsLived;
-                throw new Exception("Insufficient residency period. You need to be a resident for at least 6 months to request documents. You currently have {$monthsLived} month(s) of recorded residency. Please wait {$monthsNeeded} more month(s) or update your census information if this is incorrect.");
+                throw new Exception("Insufficient residency period. You need to be a resident for at least 6 months to request documents. You currently have {$monthsLived} month(s) of recorded residency. Please wait {$monthsNeeded} more month(s) or contact the barangay office if this is incorrect.");
             }
         }
 
@@ -138,33 +140,55 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $user_id = $_SESSION['user_id'];
 
-        // Get user's person_id and personal information from the persons table
+        // Get user information (no census requirement)
         $stmt = $pdo->prepare("
-            SELECT p.*, u.first_name as user_first_name, u.last_name as user_last_name, u.gender as user_gender 
-            FROM persons p 
-            LEFT JOIN users u ON p.user_id = u.id
-            WHERE p.user_id = ?
+            SELECT u.first_name, u.last_name, u.gender, u.id
+            FROM users u 
+            WHERE u.id = ?
+        ");
+        $stmt->execute([$user_id]);
+        $user_info = $stmt->fetch();
+        
+        if (!$user_info) {
+            throw new Exception("User not found. Please log in again.");
+        }
+
+        // Try to get person from census (optional)
+        $stmt = $pdo->prepare("
+            SELECT p.* FROM persons p WHERE p.user_id = ?
         ");
         $stmt->execute([$user_id]);
         $person = $stmt->fetch();
-        
+
+        // Use user info if no person record exists
         if (!$person) {
-            throw new Exception("User profile not found in census system. Please complete your resident profile first.");
+            $person = [
+                'id' => null,
+                'first_name' => $user_info['first_name'],
+                'last_name' => $user_info['last_name'],
+                'middle_name' => '',
+                'suffix' => '',
+                'gender' => $user_info['gender'],
+                'civil_status' => '',
+                'citizenship' => 'Filipino',
+                'birth_date' => null,
+                'birth_place' => '',
+                'religion' => '',
+                'education_level' => '',
+                'occupation' => '',
+                'monthly_income' => null,
+                'contact_number' => ''
+            ];
         }
 
-        // Get user's address information
-        $stmt = $pdo->prepare("
-            SELECT house_no, street, subdivision, block_lot, phase 
-            FROM addresses 
-            WHERE user_id = ? AND is_primary = TRUE 
-            LIMIT 1
-        ");
-        $stmt->execute([$user_id]);
-        $address = $stmt->fetch();
-
-        if (!$address) {
-            throw new Exception("Address information not found in census system. Please complete your address information first.");
-        }
+        // Set default address (no census requirement)
+        $address = [
+            'house_no' => '',
+            'street' => 'Default Street',
+            'subdivision' => '',
+            'block_lot' => '',
+            'phase' => ''
+        ];
 
         // Get document type info for determining price
         $stmt = $pdo->prepare("
@@ -180,6 +204,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!$documentType) {
             throw new Exception("Invalid document type selected");
         }
+
+      
 
         // Begin transaction for the main request
         $pdo->beginTransaction();
@@ -214,6 +240,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     } else {
                         throw new Exception("Failed to upload photo. Please try again.");
                     }
+                } else {
+                    throw new Exception("Photo is required for Barangay Indigency Certificate.");
                 }
             }
 
@@ -249,18 +277,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Prepare values based on document type
             $values = [
                 $documentTypeId,
-                $person['id'],
+                $person['id'], // Can be null if no census record
                 $user_id,
                 $_SESSION['barangay_id'],
                 $user_id,
                 $documentType['final_price'],
                 
-                // Personal Information from persons table
-                $person['first_name'] ?? $person['user_first_name'] ?? '',
+                // Personal Information (from user or person table)
+                $person['first_name'] ?? '',
                 $person['middle_name'] ?? '',
-                $person['last_name'] ?? $person['user_last_name'] ?? '',
+                $person['last_name'] ?? '',
                 $person['suffix'] ?? '',
-                $person['gender'] ?? $person['user_gender'] ?? '',
+                $person['gender'] ?? '',
                 $person['civil_status'] ?? '',
                 $person['citizenship'] ?? 'Filipino',
                 $person['birth_date'] ?? null,
@@ -271,7 +299,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $person['monthly_income'] ?? null,
                 $person['contact_number'] ?? '',
                 
-                // Address Information
+                // Address Information (defaults)
                 $address['house_no'] ?? '',
                 $address['street'] ?? ''
             ];
@@ -311,6 +339,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         $_POST['businessPurpose'] ?? '', // business_nature
                         $_POST['businessType'] ?? '', // business_type
                         'Business Permit Application', // purpose
+                        $imagePath // proof_image_path
+                    ]);
+                    break;
+
+                case 'first_time_job_seeker':
+                    $values = array_merge($values, [
+                        '', '', '', '', // business fields - empty
+                        $_POST['jobSeekerPurpose'] ?? '', // purpose
                         $imagePath // proof_image_path
                     ]);
                     break;
@@ -405,11 +441,15 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
 $showPending = isset($_GET['show_pending']) || isset($_SESSION['show_pending']);
 unset($_SESSION['show_pending']);
 
-// Time-gated notice
+// Time-gated notice - COMMENTED OUT FOR TESTING
+/*
 $currentTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
 $startTime = new DateTime('08:00:00', new DateTimeZone('Asia/Manila'));
 $endTime = new DateTime('17:00:00', new DateTimeZone('Asia/Manila'));
 $isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
+*/
+// FOR TESTING: Always allow submissions
+$isWithinTimeGate = true;
 
 require_once '../components/navbar.php';
 ?>
@@ -424,8 +464,6 @@ require_once '../components/navbar.php';
     <link rel="stylesheet" href="../styles/services.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-    
-
     /* Footer fix */
     body {
         min-height: 100vh;
@@ -456,14 +494,20 @@ require_once '../components/navbar.php';
         padding-bottom: 2rem;
     }
 
-    /* Photo upload styles */
+    /* Enhanced photo upload styles */
     .photo-upload-container {
         margin: 1rem 0;
-        padding: 1rem;
+        padding: 1.5rem;
         border: 2px dashed #ddd;
         border-radius: 8px;
         text-align: center;
         background: #f9f9f9;
+        transition: all 0.3s ease;
+        min-height: 120px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
     }
 
     .photo-upload-container.active {
@@ -476,54 +520,84 @@ require_once '../components/navbar.php';
         justify-content: center;
         gap: 1rem;
         margin: 1rem 0;
+        flex-wrap: wrap;
     }
 
     .upload-btn {
-        padding: 0.5rem 1rem;
+        padding: 0.7rem 1.2rem;
         background: #0a2240;
         color: white;
         border: none;
         border-radius: 5px;
         cursor: pointer;
-        transition: background 0.3s;
+        transition: all 0.3s ease;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
     }
 
-    .upload-btn:hover {
+    .upload-btn:hover:not(:disabled) {
         background: #1a3350;
+        transform: translateY(-1px);
+    }
+
+    .upload-btn:disabled {
+        background: #ccc;
+        cursor: not-allowed;
     }
 
     .upload-btn i {
-        margin-right: 0.5rem;
+        font-size: 1rem;
     }
 
     .photo-preview {
         margin: 1rem auto;
-        max-width: 200px;
-        max-height: 200px;
-        display: none;
+        text-align: center;
+        animation: fadeIn 0.3s ease;
+    }
+
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
     }
 
     .photo-preview img {
-        width: 100%;
-        height: 100%;
+        max-width: 200px;
+        max-height: 200px;
+        width: auto;
+        height: auto;
         object-fit: cover;
         border-radius: 8px;
         border: 2px solid #0a2240;
+        box-shadow: 0 4px 8px rgba(0,0,0,0.1);
     }
 
     .remove-photo {
         margin-top: 0.5rem;
-        padding: 0.3rem 0.8rem;
+        padding: 0.4rem 0.8rem;
         background: #dc3545;
         color: white;
         border: none;
         border-radius: 5px;
         cursor: pointer;
         font-size: 0.85rem;
+        transition: background 0.3s ease;
+        display: flex;
+        align-items: center;
+        gap: 0.3rem;
+        justify-content: center;
     }
 
     .remove-photo:hover {
         background: #c82333;
+    }
+
+    .upload-hint {
+        color: #666;
+        font-size: 0.9rem;
+        margin: 0.5rem 0;
+        text-align: center;
     }
 
     /* Pending requests section */
@@ -692,6 +766,172 @@ require_once '../components/navbar.php';
         align-items: center;
         gap: 0.5rem;
     }
+
+    .blotter-warning {
+        background: #dc3545;
+        color: white;
+        padding: 1rem;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+    }
+
+    .blotter-warning i {
+        margin-right: 0.5rem;
+    }
+
+    .blotter-warning p {
+        margin: 0.5rem 0;
+    }
+
+    .blotter-warning ul {
+        margin: 0.5rem 0;
+        padding-left: 2rem;
+    }
+
+    .blotter-warning li {
+        margin-bottom: 0.3rem;
+    }
+
+    .blotter-warning small {
+        opacity: 0.9;
+    }
+
+    .cedula-note {
+        margin-top: 10px;
+        padding: 10px;
+        background-color: #f8f9fa;
+        border-radius: 4px;
+        font-size: 0.9rem;
+        color: #666;
+    }
+
+    /* Responsive design */
+    @media (max-width: 768px) {
+        .upload-options {
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .upload-btn {
+            width: 100%;
+            max-width: 200px;
+            justify-content: center;
+        }
+        
+        .photo-preview img {
+            max-width: 150px;
+            max-height: 150px;
+        }
+
+        .pending-requests-header {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+        }
+
+        .new-request-btn {
+            text-align: center;
+        }
+    }
+
+    /* Camera popup styling */
+    .camera-popup {
+        border-radius: 15px !important;
+    }
+
+    .camera-popup .swal2-html-container {
+        margin: 1rem 0 !important;
+    }
+
+    /* Form styling improvements */
+    .form-row {
+        margin-bottom: 1rem;
+    }
+
+    .form-row label {
+        display: block;
+        margin-bottom: 0.5rem;
+        font-weight: 500;
+        color: #333;
+    }
+
+    .form-row input[type="text"],
+    .form-row input[type="number"],
+    .form-row select {
+        width: 100%;
+        padding: 0.75rem;
+        border: 1px solid #ddd;
+        border-radius: 5px;
+        font-size: 1rem;
+        transition: border-color 0.3s ease;
+    }
+
+    .form-row input:focus,
+    .form-row select:focus {
+        outline: none;
+        border-color: #0a2240;
+        box-shadow: 0 0 0 2px rgba(10, 34, 64, 0.1);
+    }
+
+    .form-row input:disabled,
+    .form-row select:disabled {
+        background-color: #f5f5f5;
+        color: #999;
+        cursor: not-allowed;
+    }
+
+    .input-help {
+        font-size: 0.85rem;
+        color: #666;
+        margin-top: 0.3rem;
+        display: block;
+    }
+
+    .document-fields {
+        border: 1px solid #e0e0e0;
+        border-radius: 8px;
+        padding: 1.5rem;
+        margin: 1rem 0;
+        background: #fafafa;
+    }
+
+    .cta-button {
+        background: #0a2240;
+        color: white;
+        padding: 1rem 2rem;
+        border: none;
+        border-radius: 5px;
+        font-size: 1rem;
+        cursor: pointer;
+        transition: all 0.3s ease;
+        width: 100%;
+        margin-top: 1rem;
+    }
+
+    .cta-button:hover:not(:disabled) {
+        background: #1a3350;
+        transform: translateY(-1px);
+    }
+
+    .cta-button:disabled {
+        background: #ccc;
+        cursor: not-allowed;
+        transform: none;
+    }
+
+    .wizard-container {
+        max-width: 800px;
+        margin: 0 auto;
+        padding: 2rem;
+    }
+
+    .form-header {
+        text-align: center;
+        color: #0a2240;
+        margin-bottom: 2rem;
+        font-size: 2rem;
+        font-weight: 600;
+    }
     </style>
 </head>
 <body>
@@ -714,8 +954,6 @@ require_once '../components/navbar.php';
         });
     </script>
     <?php unset($_SESSION['error']); endif; ?>
-
-  
 
     <main>
         <?php if ($showPending && count($pendingRequests) > 0): ?>
@@ -761,19 +999,20 @@ require_once '../components/navbar.php';
             <div class="wizard-container">
                 <h2 class="form-header">Document Request</h2>
                 
-                <?php if (!$isWithinTimeGate): ?>
+                <!-- Time gate notice - COMMENTED OUT FOR TESTING -->
+                <?php /*if (!$isWithinTimeGate): ?>
                 <div class="time-gate-notice">
                     <p><i class="fas fa-clock"></i> Document requests can only be submitted between 8:00 AM and 5:00 PM.</p>
                     <p>Please come back during operating hours.</p>
                 </div>
-                <?php endif; ?>
+                <?php endif;*/ ?>
 
                 <?php if ($hasPendingBlotter): ?>
-                <div class="blotter-warning" style="background: #dc3545; color: white; padding: 1rem; border-radius: 5px; margin-bottom: 1rem;">
+                <div class="blotter-warning">
                     <i class="fas fa-exclamation-triangle"></i>
-                    <p style="margin: 0.5rem 0;"><strong>Document Request Restricted</strong></p>
-                    <p style="margin: 0.5rem 0;">You currently have pending blotter case(s):</p>
-                    <ul style="margin: 0.5rem 0; padding-left: 2rem;">
+                    <p><strong>Document Request Restricted</strong></p>
+                    <p>You currently have pending blotter case(s):</p>
+                    <ul>
                         <?php foreach ($pendingBlotterCases as $case): ?>
                         <li>Case #<?= htmlspecialchars($case['case_number']) ?> in <?= htmlspecialchars($case['barangay_name']) ?>
                             <br>
@@ -781,7 +1020,7 @@ require_once '../components/navbar.php';
                         </li>
                         <?php endforeach; ?>
                     </ul>
-                    <p style="margin: 0.5rem 0;">Document requests are not allowed until your case(s) are resolved.</p>
+                    <p>Document requests are not allowed until your case(s) are resolved.</p>
                 </div>
                 <?php endif; ?>
 
@@ -789,19 +1028,14 @@ require_once '../components/navbar.php';
                 <div class="residency-warning">
                     <h4><i class="fas fa-home"></i> Insufficient Residency Period</h4>
                     <?php if ($residencyDetails['residency_status'] === 'no_record'): ?>
-                        <p><strong>No residency record found.</strong></p>
-                        <p>We could not find your residency information in our census system. To request documents, you need:</p>
-                        <ul>
-                            <li>Complete personal profile in the census system</li>
-                            <li>Complete address information</li>
-                            <li>At least 6 months of recorded residency in this barangay</li>
-                        </ul>
-                        <p>Please visit the barangay office to complete your census registration or update your profile.</p>
+                        <p><strong>6-month residency requirement not met.</strong></p>
+                        <p>You need to be a resident for at least 6 months to request documents.</p>
+                        <p>Please contact the barangay office to update your residency information if you have been a resident for 6+ months.</p>
                     <?php else: ?>
                         <p><strong>You need to be a resident for at least 6 months to request documents.</strong></p>
                         <p>Current residency period: <strong><?= $residencyDetails['computed_months'] ?> month(s)</strong></p>
                         <p>You need <strong><?= (6 - $residencyDetails['computed_months']) ?> more month(s)</strong> before you can request documents.</p>
-                        <p>If you believe this information is incorrect, please visit the barangay office to update your census records.</p>
+                        <p>If you believe this information is incorrect, please contact the barangay office to update your residency records.</p>
                     <?php endif; ?>
                     <p><em>This requirement ensures that documents are only issued to established residents of the barangay.</em></p>
                 </div>
@@ -816,7 +1050,7 @@ require_once '../components/navbar.php';
                 <form method="POST" action="" enctype="multipart/form-data" id="docRequestForm">
                     <div class="form-row">
                         <label for="documentType">Document Type</label>
-                        <select id="documentType" name="document_type_id" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                        <select id="documentType" name="document_type_id" required <?= ($hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
                             <option value="">Select Document</option>
                             <?php
                             // Always show all 6 supported documents in the correct order
@@ -845,9 +1079,8 @@ require_once '../components/navbar.php';
                             }
                             ?>
                         </select>
-                        <div class="cedula-note" style="margin-top: 10px; padding: 10px; background-color: #f8f9fa; border-radius: 4px;">
-                            <strong>Note:</strong> For Community Tax Certificate (Cedula), please visit the Barangay Hall in person. This document cannot be requested online.
-                        </div>
+                        
+                    
                     </div>
 
                     <!-- Document price/fee label -->
@@ -860,7 +1093,7 @@ require_once '../components/navbar.php';
                     <div id="clearanceFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="purposeClearance">Purpose of Clearance</label>
-                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
@@ -883,7 +1116,9 @@ require_once '../components/navbar.php';
                         <div class="form-row">
                             <label>Your Photo <span style="color: red;">*</span></label>
                             <div class="photo-upload-container" id="photoUploadContainer">
-                                <input type="file" id="userPhoto" name="userPhoto" accept="image/*" style="display: none;" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <input type="file" id="userPhoto" name="userPhoto" accept="image/jpeg,image/jpg,image/png" style="display: none;" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                
+                                <!-- Upload options -->
                                 <div class="upload-options">
                                     <button type="button" class="upload-btn" onclick="document.getElementById('userPhoto').click();" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                         <i class="fas fa-upload"></i> Choose Photo
@@ -892,12 +1127,19 @@ require_once '../components/navbar.php';
                                         <i class="fas fa-camera"></i> Take Photo
                                     </button>
                                 </div>
-                                <p class="upload-hint" style="color: #666; font-size: 0.9rem; margin: 0.5rem 0;">
+                                
+                                <!-- Upload hint -->
+                                <p class="upload-hint">
                                     Upload a recent photo of yourself (JPG or PNG, max 5MB)
                                 </p>
-                                <div class="photo-preview" id="photoPreview">
+                                
+                                <!-- Photo preview -->
+                                <div class="photo-preview" id="photoPreview" style="display: none;">
                                     <img id="previewImage" src="" alt="Photo preview">
-                                    <button type="button" class="remove-photo" onclick="removePhoto();">Remove Photo</button>
+                                    <br>
+                                    <button type="button" class="remove-photo" onclick="removePhoto();">
+                                        <i class="fas fa-trash"></i> Remove Photo
+                                    </button>
                                 </div>
                             </div>
                         </div>
@@ -921,41 +1163,27 @@ require_once '../components/navbar.php';
                     <div id="businessPermitFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="businessName">Business Name <span style="color: red;">*</span></label>
-                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessType">Type of Business <span style="color: red;">*</span></label>
-                            <input type="text" id="businessType" name="businessType" placeholder="Enter type of business (e.g., Retail, Restaurant, etc.)" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="businessType" name="businessType" placeholder="Enter type of business (e.g., Retail, Restaurant, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessAddress">Business Location/Address <span style="color: red;">*</span></label>
-                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessPurpose">Nature of Business <span style="color: red;">*</span></label>
-                            <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Describe the nature of business operations" required <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Describe the nature of business operations" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <small class="input-help">Describe what your business does (e.g., Food Service, General Merchandise, etc.)</small>
                         </div>
                     </div>
 
-                    <div id="communityTaxFields" class="document-fields" style="display: none;">
+                    <div id="firstTimeJobSeekerFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="ctcOccupation">Occupation</label>
-                            <input type="text" id="ctcOccupation" name="ctcOccupation" placeholder="Enter your occupation" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                        </div>
-                        <div class="form-row">
-                            <label for="ctcIncome">Annual Income</label>
-                            <input type="number" id="ctcIncome" name="ctcIncome" placeholder="Enter annual income in PHP" min="0" step="0.01" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                            <small class="input-help">This field is required for tax computation</small>
-                        </div>
-                        <div class="form-row">
-                            <label for="ctcPropertyValue">Real Property Value (Optional)</label>
-                            <input type="number" id="ctcPropertyValue" name="ctcPropertyValue" placeholder="Enter total value of real property owned" min="0" step="0.01" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                            <small class="input-help">Enter if you own real property (land, house, etc.)</small>
-                        </div>
-                        <div class="form-row">
-                            <label for="ctcBirthplace">Place of Birth (Optional)</label>
-                            <input type="text" id="ctcBirthplace" name="ctcBirthplace" placeholder="Enter place of birth" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <label for="jobSeekerPurpose">Purpose/Institution</label>
+                            <input type="text" id="jobSeekerPurpose" name="jobSeekerPurpose" placeholder="Enter where you will use this certificate (e.g., Company name, Job application, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
@@ -963,10 +1191,8 @@ require_once '../components/navbar.php';
                     <input type="hidden" name="override_pending" value="1">
                     <?php endif; ?>
 
-                    <button type="submit" class="btn cta-button" id="submitBtn" <?= (!$isWithinTimeGate || $hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
-                        <?php if (!$isWithinTimeGate): ?>
-                            Unavailable (8AM-5PM)
-                        <?php elseif ($hasInsufficientResidency): ?>
+                    <button type="submit" class="btn cta-button" id="submitBtn" <?= ($hasInsufficientResidency || $hasPendingBlotter) ? 'disabled' : '' ?>>
+                        <?php if ($hasInsufficientResidency): ?>
                             Insufficient Residency Period
                         <?php elseif ($hasPendingBlotter): ?>
                             Restricted - Pending Blotter Case
@@ -986,56 +1212,86 @@ require_once '../components/navbar.php';
     <script>
     // Use barangayPrices in JS
     var barangayPrices = <?= json_encode($barangayPrices) ?>;
-    var isWithinTimeGateJS = <?= json_encode($isWithinTimeGate) ?>;
+    // FOR TESTING: Time gate disabled
+    var isWithinTimeGateJS = true; // <?= json_encode($isWithinTimeGate) ?>;
     var hasPendingBlotterJS = <?= json_encode($hasPendingBlotter) ?>;
     var hasInsufficientResidencyJS = <?= json_encode($hasInsufficientResidency) ?>;
 
-    // Photo upload functions
+    // Enhanced photo upload functions
     function openCamera() {
-        if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
+        // FOR TESTING: Only check residency and blotter restrictions
+        if (hasInsufficientResidencyJS || hasPendingBlotterJS) {
             Swal.fire('Error', 'Camera function is disabled due to validation restrictions.', 'error');
             return;
         }
         
         if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-            navigator.mediaDevices.getUserMedia({ video: true })
-                .then(function(stream) {
-                    Swal.fire({
-                        title: 'Take Photo',
-                        html: `
-                            <video id="cameraVideo" style="width: 100%; max-width: 400px;" autoplay></video>
+            navigator.mediaDevices.getUserMedia({ 
+                video: { 
+                    width: { ideal: 640 }, 
+                    height: { ideal: 480 },
+                    facingMode: 'user' // Front camera for selfies
+                } 
+            })
+            .then(function(stream) {
+                Swal.fire({
+                    title: 'Take Your Photo',
+                    html: `
+                        <div style="text-align: center;">
+                            <video id="cameraVideo" style="width: 100%; max-width: 400px; border-radius: 8px;" autoplay playsinline></video>
                             <canvas id="captureCanvas" style="display: none;"></canvas>
-                        `,
-                        showCancelButton: true,
-                        confirmButtonText: 'Capture',
-                        cancelButtonText: 'Cancel',
-                        didOpen: () => {
-                            const video = document.getElementById('cameraVideo');
-                            video.srcObject = stream;
-                        },
-                        preConfirm: () => {
-                            const video = document.getElementById('cameraVideo');
-                            const canvas = document.getElementById('captureCanvas');
-                            canvas.width = video.videoWidth;
-                            canvas.height = video.videoHeight;
-                            const ctx = canvas.getContext('2d');
-                            ctx.drawImage(video, 0, 0);
-                            return canvas.toDataURL('image/jpeg');
-                        },
-                        willClose: () => {
-                            stream.getTracks().forEach(track => track.stop());
+                            <p style="margin: 1rem 0; color: #666; font-size: 0.9rem;">
+                                Position yourself in the frame and click "Capture Photo"
+                            </p>
+                        </div>
+                    `,
+                    showCancelButton: true,
+                    confirmButtonText: '<i class="fas fa-camera"></i> Capture Photo',
+                    cancelButtonText: '<i class="fas fa-times"></i> Cancel',
+                    customClass: {
+                        popup: 'camera-popup'
+                    },
+                    didOpen: () => {
+                        const video = document.getElementById('cameraVideo');
+                        video.srcObject = stream;
+                    },
+                    preConfirm: () => {
+                        const video = document.getElementById('cameraVideo');
+                        const canvas = document.getElementById('captureCanvas');
+                        
+                        if (video.videoWidth === 0 || video.videoHeight === 0) {
+                            Swal.showValidationMessage('Camera not ready. Please wait a moment.');
+                            return false;
                         }
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            displayCapturedPhoto(result.value);
-                        }
-                    });
-                })
-                .catch(function(err) {
-                    Swal.fire('Error', 'Unable to access camera. Please choose a file instead.', 'error');
+                        
+                        canvas.width = video.videoWidth;
+                        canvas.height = video.videoHeight;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(video, 0, 0);
+                        return canvas.toDataURL('image/jpeg', 0.8);
+                    },
+                    willClose: () => {
+                        stream.getTracks().forEach(track => track.stop());
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        displayCapturedPhoto(result.value);
+                        Swal.fire({
+                            title: 'Photo Captured!',
+                            text: 'Your photo has been successfully captured.',
+                            icon: 'success',
+                            timer: 2000,
+                            showConfirmButton: false
+                        });
+                    }
                 });
+            })
+            .catch(function(err) {
+                console.error('Camera error:', err);
+                Swal.fire('Camera Error', 'Unable to access camera. Please choose a file instead or check your camera permissions.', 'error');
+            });
         } else {
-            Swal.fire('Error', 'Camera is not supported on this device. Please choose a file instead.', 'error');
+            Swal.fire('Not Supported', 'Camera is not supported on this device. Please choose a file instead.', 'error');
         }
     }
 
@@ -1045,7 +1301,7 @@ require_once '../components/navbar.php';
             .then(res => res.blob())
             .then(blob => {
                 // Create a file from blob
-                const file = new File([blob], "camera_photo.jpg", { type: "image/jpeg" });
+                const file = new File([blob], "indigency_photo_" + Date.now() + ".jpg", { type: "image/jpeg" });
                 
                 // Create a DataTransfer object to set file input
                 const dataTransfer = new DataTransfer();
@@ -1053,16 +1309,33 @@ require_once '../components/navbar.php';
                 document.getElementById('userPhoto').files = dataTransfer.files;
                 
                 // Display preview
-                document.getElementById('previewImage').src = dataUrl;
-                document.getElementById('photoPreview').style.display = 'block';
-                document.getElementById('photoUploadContainer').classList.add('active');
+                const previewImage = document.getElementById('previewImage');
+                const photoPreview = document.getElementById('photoPreview');
+                const photoUploadContainer = document.getElementById('photoUploadContainer');
+                
+                if (previewImage && photoPreview && photoUploadContainer) {
+                    previewImage.src = dataUrl;
+                    photoPreview.style.display = 'block';
+                    photoUploadContainer.classList.add('active');
+                }
+            })
+            .catch(err => {
+                console.error('Error processing captured photo:', err);
+                Swal.fire('Error', 'Failed to process captured photo. Please try again.', 'error');
             });
     }
 
     function removePhoto() {
-        document.getElementById('userPhoto').value = '';
-        document.getElementById('photoPreview').style.display = 'none';
-        document.getElementById('photoUploadContainer').classList.remove('active');
+        const userPhoto = document.getElementById('userPhoto');
+        const photoPreview = document.getElementById('photoPreview');
+        const photoUploadContainer = document.getElementById('photoUploadContainer');
+        
+        if (userPhoto) userPhoto.value = '';
+        if (photoPreview) photoPreview.style.display = 'none';
+        if (photoUploadContainer) photoUploadContainer.classList.remove('active');
+        
+        // Remove the SweetAlert notification - it was causing popup issues
+        // when switching document types
     }
 
     document.addEventListener('DOMContentLoaded', function() {
@@ -1073,7 +1346,8 @@ require_once '../components/navbar.php';
         const indigencyFields = document.getElementById('indigencyFields');
         const cedulaFields = document.getElementById('cedulaFields');
         const businessPermitFields = document.getElementById('businessPermitFields');
-        const communityTaxFields = document.getElementById('communityTaxFields');
+        const firstTimeJobSeekerFields = document.getElementById('firstTimeJobSeekerFields');
+        const cedulaNote = document.querySelector('.cedula-note');
         const form = document.getElementById('docRequestForm');
         const submitBtn = document.getElementById('submitBtn');
         const userPhotoInput = document.getElementById('userPhoto');
@@ -1081,7 +1355,8 @@ require_once '../components/navbar.php';
         // Handle file selection
         if (userPhotoInput) {
             userPhotoInput.addEventListener('change', function(e) {
-                if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
+                // FOR TESTING: Only check residency and blotter restrictions
+                if (hasInsufficientResidencyJS || hasPendingBlotterJS) {
                     this.value = '';
                     Swal.fire('Error', 'File upload is disabled due to validation restrictions.', 'error');
                     return;
@@ -1089,16 +1364,17 @@ require_once '../components/navbar.php';
                 
                 const file = e.target.files[0];
                 if (file) {
-                    // Validate file size
+                    // Validate file size (5MB max)
                     if (file.size > 5 * 1024 * 1024) {
-                        Swal.fire('Error', 'File size too large. Maximum size is 5MB.', 'error');
+                        Swal.fire('File Too Large', 'File size must be less than 5MB. Please choose a smaller image.', 'error');
                         this.value = '';
                         return;
                     }
                     
                     // Validate file type
-                    if (!file.type.match('image.*')) {
-                        Swal.fire('Error', 'Please select an image file.', 'error');
+                    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+                    if (!allowedTypes.includes(file.type)) {
+                        Swal.fire('Invalid File Type', 'Please select a JPG or PNG image file only.', 'error');
                         this.value = '';
                         return;
                     }
@@ -1106,9 +1382,27 @@ require_once '../components/navbar.php';
                     // Display preview
                     const reader = new FileReader();
                     reader.onload = function(e) {
-                        document.getElementById('previewImage').src = e.target.result;
-                        document.getElementById('photoPreview').style.display = 'block';
-                        document.getElementById('photoUploadContainer').classList.add('active');
+                        const previewImage = document.getElementById('previewImage');
+                        const photoPreview = document.getElementById('photoPreview');
+                        const photoUploadContainer = document.getElementById('photoUploadContainer');
+                        
+                        if (previewImage && photoPreview && photoUploadContainer) {
+                            previewImage.src = e.target.result;
+                            photoPreview.style.display = 'block';
+                            photoUploadContainer.classList.add('active');
+                            
+                            Swal.fire({
+                                title: 'Photo Uploaded!',
+                                text: 'Your photo has been successfully uploaded.',
+                                icon: 'success',
+                                timer: 2000,
+                                showConfirmButton: false
+                            });
+                        }
+                    };
+                    reader.onerror = function() {
+                        Swal.fire('Upload Error', 'Failed to read the selected file. Please try again.', 'error');
+                        userPhotoInput.value = '';
                     };
                     reader.readAsDataURL(file);
                 }
@@ -1120,6 +1414,11 @@ require_once '../components/navbar.php';
             allFields.forEach(field => {
                 field.style.display = 'none';
             });
+            
+            // Hide cedula note
+            if (cedulaNote) {
+                cedulaNote.style.display = 'none';
+            }
             
             // Remove required attribute from ALL form inputs
             const allInputs = document.querySelectorAll('#docRequestForm input[type="text"], #docRequestForm input[type="number"], #docRequestForm input[type="file"]');
@@ -1134,8 +1433,8 @@ require_once '../components/navbar.php';
         function setFieldsRequired(container, documentCode) {
             if (!container) return;
             
-            // Only set required if not disabled
-            if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
+            // FOR TESTING: Only check residency and blotter restrictions
+            if (hasInsufficientResidencyJS || hasPendingBlotterJS) {
                 return;
             }
 
@@ -1191,11 +1490,9 @@ require_once '../components/navbar.php';
                     });
                     break;
 
-                case 'community_tax_certificate':
-                    const ctcOccupation = document.getElementById('ctcOccupation');
-                    const ctcIncome = document.getElementById('ctcIncome');
-                    if (ctcOccupation) ctcOccupation.required = true;
-                    if (ctcIncome) ctcIncome.required = true;
+                case 'first_time_job_seeker':
+                    const jobSeekerPurpose = document.getElementById('jobSeekerPurpose');
+                    if (jobSeekerPurpose) jobSeekerPurpose.required = true;
                     break;
             }
         }
@@ -1229,15 +1526,16 @@ require_once '../components/navbar.php';
                         break;
                     case 'cedula':
                         cedulaFields.style.display = 'block';
+                        if (cedulaNote) cedulaNote.style.display = 'block';
                         setFieldsRequired(cedulaFields, documentCode);
                         break;
                     case 'business_permit_clearance':
                         businessPermitFields.style.display = 'block';
                         setFieldsRequired(businessPermitFields, documentCode);
                         break;
-                    case 'community_tax_certificate':
-                        communityTaxFields.style.display = 'block';
-                        setFieldsRequired(communityTaxFields, documentCode);
+                    case 'first_time_job_seeker':
+                        firstTimeJobSeekerFields.style.display = 'block';
+                        setFieldsRequired(firstTimeJobSeekerFields, documentCode);
                         break;
                 }
             });
@@ -1252,6 +1550,8 @@ require_once '../components/navbar.php';
 
                 e.preventDefault(); // Prevent immediate submission
 
+                // FOR TESTING: Time gate check disabled
+                /*
                 if (!isWithinTimeGateJS) {
                     Swal.fire({
                         title: 'Outside Operating Hours',
@@ -1260,6 +1560,7 @@ require_once '../components/navbar.php';
                     });
                     return;
                 }
+                */
 
                 if (hasPendingBlotterJS) {
                     Swal.fire({
@@ -1278,6 +1579,8 @@ require_once '../components/navbar.php';
                     });
                     return;
                 }
+
+            
 
                 <?php if ($hasPendingRequest): ?>
                 Swal.fire({
@@ -1338,13 +1641,12 @@ require_once '../components/navbar.php';
             }
         }
 
-        // Initial check for submit button state based on all validation conditions
-        if (!isWithinTimeGateJS || hasPendingBlotterJS || hasInsufficientResidencyJS) {
+        // Initial check for submit button state based on validation conditions
+        // FOR TESTING: Time gate check disabled
+        if (hasPendingBlotterJS || hasInsufficientResidencyJS) {
             if (submitBtn) {
                 submitBtn.disabled = true;
-                if (!isWithinTimeGateJS) {
-                    submitBtn.textContent = 'Unavailable (8AM-5PM)';
-                } else if (hasInsufficientResidencyJS) {
+                if (hasInsufficientResidencyJS) {
                     submitBtn.textContent = 'Insufficient Residency Period';
                 } else if (hasPendingBlotterJS) {
                     submitBtn.textContent = 'Restricted - Pending Blotter Case';
@@ -1353,6 +1655,7 @@ require_once '../components/navbar.php';
         }
     });
     </script>
+    
     <footer class="footer">
         <p>&copy; 2025 iBarangay. All rights reserved.</p>
     </footer>
