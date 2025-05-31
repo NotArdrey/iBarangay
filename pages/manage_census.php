@@ -116,6 +116,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'present_region' => trim($_POST['present_region'] ?? 'III'),
             'permanent_house_no' => trim($_POST['permanent_house_no'] ?? ''),
             'permanent_street' => trim($_POST['permanent_street'] ?? ''),
+            'permanent_barangay' => trim($_POST['permanent_barangay'] ?? ''),
             'permanent_municipality' => trim($_POST['permanent_municipality'] ?? ''),
             'permanent_province' => trim($_POST['permanent_province'] ?? ''),
             'permanent_region' => trim($_POST['permanent_region'] ?? ''),

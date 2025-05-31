@@ -56,7 +56,12 @@ try {
 
     // Fetch addresses with barangay information
     $stmt = $pdo->prepare("
-        SELECT a.*, b.name as barangay_name
+        SELECT 
+            a.*,
+            CASE 
+                WHEN a.barangay_id IS NOT NULL THEN b.name
+                ELSE a.barangay_name
+            END as barangay_name
         FROM addresses a
         LEFT JOIN barangay b ON a.barangay_id = b.id
         WHERE a.person_id = ? 
@@ -662,12 +667,10 @@ function displayCurrency($amount) {
                                 </div>
                                 <?php endif; ?>
                                 
-                                <?php if (!empty($address['barangay_name'])): ?>
                                 <div>
                                     <span class="text-gray-600 font-medium">Barangay:</span> 
-                                    <?= htmlspecialchars($address['barangay_name']) ?>
+                                    <?= htmlspecialchars($address['barangay_name'] ?? 'Not specified') ?>
                                 </div>
-                                <?php endif; ?>
                                 
                                 <div>
                                     <span class="text-gray-600 font-medium">Municipality:</span> 

@@ -105,10 +105,10 @@ function saveResident($pdo, $data, $barangay_id) {
         // Insert present address
         $stmt_address = $pdo->prepare("
                 INSERT INTO addresses (
-                person_id, barangay_id, house_no, street,
+                person_id, barangay_id, barangay_name, house_no, street,
                 municipality, province, region, is_primary, is_permanent
                 ) VALUES (
-                :person_id, :barangay_id, :house_no, :street,
+                :person_id, :barangay_id, :barangay_name, :house_no, :street,
                 :municipality, :province, :region, :is_primary, :is_permanent
                 )
             ");
@@ -117,13 +117,14 @@ function saveResident($pdo, $data, $barangay_id) {
         $stmt_address->execute([
                 ':person_id' => $person_id,
                 ':barangay_id' => $barangay_id,
-            ':house_no' => trim($data['present_house_no'] ?? ''),
-            ':street' => trim($data['present_street'] ?? ''),
-            ':municipality' => trim($data['present_municipality'] ?? ''),
-            ':province' => trim($data['present_province'] ?? ''),
-            ':region' => trim($data['present_region'] ?? ''),
-            ':is_primary' => 1,
-            ':is_permanent' => 0
+                ':barangay_name' => null, // Use barangay_id for present address
+                ':house_no' => trim($data['present_house_no'] ?? ''),
+                ':street' => trim($data['present_street'] ?? ''),
+                ':municipality' => trim($data['present_municipality'] ?? ''),
+                ':province' => trim($data['present_province'] ?? ''),
+                ':region' => trim($data['present_region'] ?? ''),
+                ':is_primary' => 1,
+                ':is_permanent' => 0
         ]);
         
         // Add person to household if household_id is provided
@@ -228,7 +229,8 @@ function saveResident($pdo, $data, $barangay_id) {
         if (empty($data['same_as_present'])) {
             $stmt_address->execute([
                 ':person_id' => $person_id,
-                ':barangay_id' => $barangay_id,
+                ':barangay_id' => null, // No barangay_id for permanent address
+                ':barangay_name' => trim($data['permanent_barangay'] ?? ''), // Use the barangay name from input
                 ':house_no' => trim($data['permanent_house_no'] ?? ''),
                 ':street' => trim($data['permanent_street'] ?? ''),
                 ':municipality' => trim($data['permanent_municipality'] ?? ''),

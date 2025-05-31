@@ -393,7 +393,7 @@ CREATE TABLE addresses (
     id INT AUTO_INCREMENT PRIMARY KEY,
     person_id INT NOT NULL,
     user_id INT,
-    barangay_id INT NOT NULL,
+    barangay_id INT,
     barangay_name VARCHAR(60),
     house_no VARCHAR(50),
     street VARCHAR(100),
@@ -1666,12 +1666,6 @@ WHERE bp.blotter_case_id IN (
     AND scheduling_status IN ('none', 'pending_schedule', 'schedule_proposed')
 )
 ON DUPLICATE KEY UPDATE confirmed = VALUES(confirmed);
-
--- Update confirmed_at timestamp for confirmed notifications
-UPDATE participant_notifications 
-SET confirmed_at = DATE_SUB(NOW(), INTERVAL FLOOR(RAND() * 7) DAY)
-WHERE confirmed = TRUE AND confirmed_at IS NULL;
-
 
 -- Add missing columns to custom_services table
 ALTER TABLE custom_services 
