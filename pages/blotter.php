@@ -1458,10 +1458,27 @@ if (!empty($_GET['action'])) {
                 }
                 break;
 
-            // ...existing cases...
-            
-            default:
-                echo json_encode(['success'=>false,'message'=>'Unknown action']);
+            case 'get_available_slots':
+                header('Content-Type: application/json');
+                $date = $_GET['date'] ?? '';
+                if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) {
+                    echo json_encode(['success'=>false,'message'=>'Invalid date']);
+                    exit;
+                }
+                // fetch booked times for this barangay on that date
+                $slotStmt = $pdo->prepare("
+                    SELECT TIME(hearing_date) AS slot
+                    FROM case_hearings ch
+                    JOIN blotter_cases bc ON ch.blotter_case_id = bc.id
+                    WHERE DATE(ch.hearing_date)=? AND bc.barangay_id=?
+                ");
+                $slotStmt->execute([$date, $bid]);
+                $booked = array_column($slotStmt->fetchAll(PDO::FETCH_ASSOC),'slot');
+                echo json_encode(['success'=>true,'booked'=>$booked]);
+                exit;
+
+  
+
         }
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
@@ -2413,114 +2430,75 @@ async function handleDeleteCase(caseId) {
   }
 }
 
-async function handleScheduleHearing(caseId) {
-  try {
-    // Create today's date and max date (5 days from now)
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0]; // Format as YYYY-MM-DD
-    
-    // Calculate max date (5 days from today)
-    const maxDate = new Date();
-    maxDate.setDate(today.getDate() + 5);
-    const maxDateStr = maxDate.toISOString().split('T')[0];
-    
-    // Get available dates/times from the server or create date picker
-    const { value: formValues } = await Swal.fire({
-      title: 'Schedule Hearing',
-      html: `
-        <div class="mb-3">
-          <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-date">
-            Hearing Date (within 5 days)
-          </label>
-          <input id="hearing-date" type="date" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" 
-            min="${todayStr}" max="${maxDateStr}" required>
-          <small class="text-gray-500">Hearings must be scheduled within 5 days from today</small>
-        </div>
-        <div class="mb-3">
-          <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-time">
-            Hearing Time (8:00 AM - 5:00 PM)
-          </label>
-          <input id="hearing-time" type="time" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" 
-            min="08:00" max="17:00" required>
-          <small class="text-gray-500">Barangay office hours: 8:00 AM to 5:00 PM</small>
-        </div>
-        <div class="mb-3">
-          <label class="block text-gray-700 text-sm font-bold mb-2" for="hearing-location">
-            Location
-          </label>
-          <input id="hearing-location" type="text" class="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight" value="Barangay Hall" required>
-        </div>
-      `,
-      focusConfirm: false,
-      showCancelButton: true,
-      confirmButtonText: 'Schedule',
-      preConfirm: () => {
-        const hearingDate = document.getElementById('hearing-date').value;
-        const hearingTime = document.getElementById('hearing-time').value;
-        const hearingLocation = document.getElementById('hearing-location').value;
-        
-        if (!hearingDate || !hearingTime) {
-          Swal.showValidationMessage('Please fill in all required fields');
-          return false;
-        }
-        
-        // Additional validation for date range
-        if (hearingDate < todayStr || hearingDate > maxDateStr) {
-          Swal.showValidationMessage('Hearing date must be within the next 5 days (including today)');
-          return false;
-        }
-        
-        // Validate time is within barangay hours (8:00 AM - 5:00 PM)
-        if (hearingTime < '08:00' || hearingTime > '17:00') {
-          Swal.showValidationMessage('Hearing time must be between 8:00 AM and 5:00 PM (barangay office hours)');
-          return false;
-        }
-        return {
-          hearing_date: hearingDate,
-          hearing_time: hearingTime,
-          hearing_location: hearingLocation
-        };
-      }
-    });
-    
-    if (formValues) {
-      // Show loading state
-      Swal.fire({
-        title: 'Scheduling...',
-        text: 'Please wait',
-        allowOutsideClick: false,
-        didOpen: () => {
-          Swal.showLoading();
-        }
-      });
-      
-      // Send the scheduling request to the server
-      const response = await fetch(`?action=schedule_hearing&id=${caseId}`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(formValues)
-      });
-      
-      const data = await response.json();
-      
-      if (data.success) {
-        Swal.fire({
-          icon: 'success',
-          title: 'Success!',
-          text: data.message || 'Hearing has been scheduled successfully.',
-          timer: 2000,
-          showConfirmButton: false
-        }).then(() => location.reload());
-      } else {
-        Swal.fire('Error', data.message || 'Failed to schedule hearing', 'error');
-      }
+// Populate time slots excluding already booked
+async function populateTimes(date, selectEl) {
+    selectEl.innerHTML = '<option>Loading...</option>';
+    const res = await fetch(`?action=get_available_slots&date=${date}`);
+    const data = await res.json();
+    const slots = [];
+    for (let h = 8; h <= 17; h++) {
+        const hh = String(h).padStart(2,'0');
+        const val = `${hh}:00`;
+        const txt = new Date(`${date}T${val}:00`)
+                      .toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+        slots.push({val,txt});
     }
-  } catch (error) {
-    console.error('Error scheduling hearing:', error);
-    Swal.fire('Error', 'An unexpected error occurred.', 'error');
-  }
+    selectEl.innerHTML = '';
+    const available = slots.filter(s => !data.booked.includes(s.val+':00'));
+    if (available.length) {
+        available.forEach(s => selectEl.add(new Option(s.txt, s.val)));
+    } else {
+        selectEl.add(new Option('No available times',''));
+    }
+}
+
+async function handleScheduleHearing(caseId) {
+    const today = new Date().toISOString().split('T')[0];
+    const maxDate = new Date(Date.now()+5*86400000).toISOString().split('T')[0];
+
+    const { value: formValues } = await Swal.fire({
+        title: 'Schedule Hearing',
+        html: `
+          <label>Date</label>
+          <input id="hearing-date" type="date" min="${today}" max="${maxDate}" class="swal2-input">
+          <label>Time</label>
+          <select id="hearing-time" class="swal2-input"></select>
+          <label>Location</label>
+          <input id="hearing-location" type="text" value="Barangay Hall" class="swal2-input">
+        `,
+        showCancelButton: true,
+        confirmButtonText: 'Schedule',
+        focusConfirm: false,
+        didOpen: () => {
+            const dateEl = Swal.getPopup().querySelector('#hearing-date');
+            const timeEl = Swal.getPopup().querySelector('#hearing-time');
+            dateEl.value = today;
+            dateEl.addEventListener('change', () => populateTimes(dateEl.value, timeEl));
+            populateTimes(today, timeEl);
+        },
+        preConfirm: () => {
+            const d = document.getElementById('hearing-date').value;
+            const t = document.getElementById('hearing-time').value;
+            const loc = document.getElementById('hearing-location').value;
+            if (!d || !t) {
+                Swal.showValidationMessage('Please select date and time');
+                return false;
+            }
+            return { hearing_date: d, hearing_time: t, hearing_location: loc };
+        }
+    });
+
+    if (formValues) {
+        Swal.fire({ title:'Scheduling...', didOpen:()=>Swal.showLoading() });
+        const res = await fetch(`?action=schedule_hearing&id=${caseId}`, {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body: JSON.stringify(formValues)
+        });
+        const data = await res.json();
+        Swal.close();
+        if (data.success) Swal.fire({ icon:'success', title:'Scheduled', timer:1500 }).then(()=>location.reload());
+        else Swal.fire('Error', data.message,'error');
+    }
 }
 
 async function handleIssueCFA(caseId) {
