@@ -293,20 +293,6 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
 </li>
 <?php endif; ?>
 
-<?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7])): ?>
-<!-- Edit Document Prices (Officials Only) -->
-<li>
-  <a href="../functions/edit_document_prices.php" class="nav-link">
-    <span class="icon-container">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2" />
-        <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="1.5" fill="none" />
-      </svg>
-    </span>
-    <span class="font-medium text-gray-700">Edit Document Prices</span>
-  </a>
-</li>
-<?php endif; ?>
 
 <!-- Blotter -->
 <li>

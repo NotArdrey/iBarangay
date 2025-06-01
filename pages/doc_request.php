@@ -35,6 +35,34 @@ function logAuditTrail($pdo, $adminId, $action, $tableName, $recordId, $descript
     ]);
 }
 
+// Handle form submission for price updates
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_prices'])) {
+    try {
+        foreach ($_POST['prices'] as $doc_type_id => $price) {
+            // Check if entry exists
+            $stmt = $pdo->prepare("SELECT id FROM barangay_document_prices WHERE barangay_id = ? AND document_type_id = ?");
+            $stmt->execute([$bid, $doc_type_id]);
+            if ($stmt->fetch()) {
+                // Update
+                $update = $pdo->prepare("UPDATE barangay_document_prices SET price = ? WHERE barangay_id = ? AND document_type_id = ?");
+                $update->execute([$price, $bid, $doc_type_id]);
+            } else {
+                // Insert
+                $insert = $pdo->prepare("INSERT INTO barangay_document_prices (barangay_id, document_type_id, price) VALUES (?, ?, ?)");
+                $insert->execute([$bid, $doc_type_id, $price]);
+            }
+        }
+        
+        logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'barangay_document_prices', $bid, 'Updated document prices');
+        
+        echo json_encode(['success' => true, 'message' => 'Prices updated successfully!']);
+        exit;
+    } catch (Exception $e) {
+        echo json_encode(['success' => false, 'message' => 'Error updating prices: ' . $e->getMessage()]);
+        exit;
+    }
+}
+
 // Handle AJAX actions
 if (isset($_GET['action'])) {
     header('Content-Type: application/json');
@@ -43,7 +71,22 @@ if (isset($_GET['action'])) {
     $response = ['success' => false, 'message' => ''];
 
     try {
-        if ($action === 'view_doc_request') {
+        if ($action === 'get_document_prices') {
+            // Get all document types
+            $docs = $pdo->query("SELECT id, name, default_fee FROM document_types WHERE is_active = 1")->fetchAll(PDO::FETCH_ASSOC);
+
+            // Get current prices for this barangay
+            $prices = [];
+            $stmt = $pdo->prepare("SELECT document_type_id, price FROM barangay_document_prices WHERE barangay_id = ?");
+            $stmt->execute([$bid]);
+            foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $row) {
+                $prices[$row['document_type_id']] = $row['price'];
+            }
+
+            echo json_encode(['success' => true, 'documents' => $docs, 'prices' => $prices]);
+            exit;
+
+        } elseif ($action === 'view_doc_request') {
             $stmt = $pdo->prepare("
                 SELECT 
                     dr.id AS document_request_id, 
@@ -550,10 +593,39 @@ $completedRequests = $stmtHist->fetchAll();
       from { opacity: 0; }
       to { opacity: 1; }
     }
+
+    .price-input {
+      transition: all 0.3s ease;
+    }
+    .price-input:focus {
+      transform: scale(1.02);
+      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+    }
+    .table-row {
+      transition: all 0.2s ease;
+    }
+    .table-row:hover {
+      transform: translateX(5px);
+    }
+    .fade-in {
+      animation: fadeIn 0.5s ease-out;
+    }
   </style>
 </head>
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
+    <!-- Header with Manage Prices Button -->
+    <div class="flex justify-between items-center mb-6">
+      <div>
+        <h1 class="text-3xl font-bold text-blue-800">Document Request Management</h1>
+        <p class="text-gray-600 mt-2">Manage document requests and pricing</p>
+      </div>
+      <button id="managePricesBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center">
+        <i class="fas fa-dollar-sign mr-2"></i>
+        Manage Document Prices
+      </button>
+    </div>
+
     <!-- Tabs Navigation -->
     <div class="tabs-navigation mb-4">
       <button class="tab-button active" data-tab="pending">Pending Requests</button>
@@ -730,7 +802,49 @@ $completedRequests = $stmtHist->fetchAll();
     </section>
   </div>
 
-  <!-- Include the JavaScript and modal code here -->
+  <!-- Document Prices Modal -->
+  <div id="pricesModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); overflow-y: auto;">
+    <div class="flex items-center justify-center min-h-screen px-4 py-8">
+      <div class="relative w-full max-w-4xl bg-white rounded-lg shadow-xl">
+        <div class="p-6">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold text-gray-900">Manage Document Prices</h3>
+            <button id="closePricesModal" class="text-gray-400 hover:text-gray-600">
+              <i class="fas fa-times text-xl"></i>
+            </button>
+          </div>
+          
+          <form id="pricesForm">
+            <div class="max-h-96 overflow-y-auto">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50 sticky top-0">
+                  <tr>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document Type</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Default Price</th>
+                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Custom Price</th>
+                  </tr>
+                </thead>
+                <tbody id="pricesTableBody" class="bg-white divide-y divide-gray-200">
+                  <!-- Table content will be populated by JavaScript -->
+                </tbody>
+              </table>
+            </div>
+            
+            <div class="flex justify-end mt-6 space-x-3">
+              <button type="button" id="cancelPricesBtn" class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400 transition-colors">
+                Cancel
+              </button>
+              <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition-colors flex items-center">
+                <i class="fas fa-save mr-2"></i>
+                Save Changes
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       // Tabs functionality
@@ -813,6 +927,126 @@ $completedRequests = $stmtHist->fetchAll();
       docRequestsHistoryTable.querySelectorAll('thead th.sortable').forEach((th, idx) => {
         th.addEventListener('click', () => {
           sortTableByColumn(docRequestsHistoryTable, idx);
+        });
+      });
+
+      // Document Prices Modal functionality
+      const pricesModal = document.getElementById('pricesModal');
+      const managePricesBtn = document.getElementById('managePricesBtn');
+      const closePricesModal = document.getElementById('closePricesModal');
+      const cancelPricesBtn = document.getElementById('cancelPricesBtn');
+      const pricesForm = document.getElementById('pricesForm');
+      const pricesTableBody = document.getElementById('pricesTableBody');
+
+      // Open prices modal
+      managePricesBtn.addEventListener('click', function() {
+        fetch('?action=get_document_prices')
+          .then(response => response.json())
+          .then(data => {
+            if (data.success) {
+              populatePricesTable(data.documents, data.prices);
+              pricesModal.classList.remove('hidden');
+            } else {
+              Swal.fire('Error', 'Failed to load document prices', 'error');
+            }
+          })
+          .catch(error => {
+            Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
+          });
+      });
+
+      // Close prices modal
+      function closePricesModalFunc() {
+        pricesModal.classList.add('hidden');
+      }
+
+      closePricesModal.addEventListener('click', closePricesModalFunc);
+      cancelPricesBtn.addEventListener('click', closePricesModalFunc);
+
+      // Close modal when clicking outside
+      pricesModal.addEventListener('click', function(e) {
+        if (e.target === pricesModal) {
+          closePricesModalFunc();
+        }
+      });
+
+      // Populate prices table
+      function populatePricesTable(documents, prices) {
+        pricesTableBody.innerHTML = '';
+        documents.forEach(doc => {
+          const currentPrice = prices[doc.id] || doc.default_fee;
+          const row = document.createElement('tr');
+          row.className = 'table-row';
+          row.innerHTML = `
+            <td class="px-6 py-4 text-sm text-gray-900">${doc.name}</td>
+            <td class="px-6 py-4 text-sm text-gray-600">
+              <span class="bg-gray-100 px-3 py-1 rounded-full">
+                ₱${parseFloat(doc.default_fee).toFixed(2)}
+              </span>
+            </td>
+            <td class="px-6 py-4 text-sm text-gray-900">
+              <div class="flex items-center space-x-2">
+                <span class="text-gray-500">₱</span>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  min="0" 
+                  name="prices[${doc.id}]" 
+                  value="${currentPrice}" 
+                  class="price-input border border-gray-300 rounded px-3 py-2 w-32 focus:border-blue-500 focus:outline-none"
+                >
+              </div>
+            </td>
+          `;
+          pricesTableBody.appendChild(row);
+        });
+
+        // Add input animation effects
+        document.querySelectorAll('.price-input').forEach(input => {
+          input.addEventListener('change', function() {
+            this.classList.add('scale-110');
+            setTimeout(() => this.classList.remove('scale-110'), 200);
+          });
+        });
+      }
+
+      // Handle prices form submission
+      pricesForm.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        Swal.fire({
+          title: 'Save Changes?',
+          text: 'Are you sure you want to update the document prices?',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonColor: '#3B82F6',
+          cancelButtonColor: '#6B7280',
+          confirmButtonText: 'Yes, save changes',
+          cancelButtonText: 'Cancel'
+        }).then((result) => {
+          if (result.isConfirmed) {
+            const formData = new FormData(pricesForm);
+            formData.append('update_prices', '1');
+
+            fetch('', {
+              method: 'POST',
+              body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                Swal.fire('Success', data.message, 'success').then(() => {
+                  closePricesModalFunc();
+                  location.reload(); // Refresh to show updated prices
+                });
+              } else {
+                Swal.fire('Error', data.message, 'error');
+              }
+            })
+            .catch(error => {
+              Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
+            });
+          }
         });
       });
 
