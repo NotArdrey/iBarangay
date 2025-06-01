@@ -565,6 +565,9 @@ function isCheckboxChecked($form_data, $key)
                 </a>
                 <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+                <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    Temporary Records
+                </a>
             </div>
         </div>
 
