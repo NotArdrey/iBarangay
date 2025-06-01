@@ -140,6 +140,13 @@ function generateSummonsForm($pdo, $caseId) {
     $case = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$case) throw new Exception("Case not found");
 
+    // Get barangay info based on case's barangay_id
+    $barangayStmt = $pdo->prepare("
+        SELECT name FROM barangay WHERE id = ?
+    ");
+    $barangayStmt->execute([$case['barangay_id']]);
+    $barangayName = $barangayStmt->fetchColumn() ?: 'Tambubong';
+
     // Get appropriate signature based on availability
     $esignaturePath = null;
     $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
@@ -240,7 +247,7 @@ function generateSummonsForm($pdo, $caseId) {
                     Republika ng Pilipinas<br>
                     Lalawigan ng Bulacan<br>
                     Bayan ng San Rafael<br>
-                    Barangay Tambubong
+                    Barangay <?= htmlspecialchars($barangayName) ?>
                 </td>
                 <td class="logo-cell"><div class="logo-placeholder"></div></td>
             </tr>
@@ -342,6 +349,13 @@ function generateReportForm($pdo, $caseId) {
         throw new Exception("Case not found");
     }
     
+    // Get barangay info based on case's barangay_id
+    $barangayStmt = $pdo->prepare("
+        SELECT name FROM barangay WHERE id = ?
+    ");
+    $barangayStmt->execute([$case['barangay_id']]);
+    $barangayName = $barangayStmt->fetchColumn() ?: 'Tambubong';
+    
     // Get appropriate signature based on availability
     $esignaturePath = null;
     $captainEsignaturePath = getCaptainEsignature($pdo, $case['barangay_id']);
@@ -430,7 +444,7 @@ function generateReportForm($pdo, $caseId) {
                     Republika ng Pilipinas<br>
                     Lalawigan ng Bulacan<br>
                     Bayan ng San Rafael<br>
-                    Barangay Tambubong
+                    Barangay <?= htmlspecialchars($barangayName) ?>
                 </td>
                 <td class="logo-cell"><div class="logo-placeholder"></div></td>
             </tr>
@@ -1824,7 +1838,7 @@ require_once "../components/header.php";
           </div>
           <!-- Categories -->
           <div>
-            <label class="block text-sm font-medium text-gray-700">Categories <span class="text-red-500">*</span></label>
+          <label class="block text-sm font-medium text-gray-700">Categories <span class="text-red-500">*</span></label>
             <div id="editCategoryContainer" class="grid grid-cols-2 gap-2">
               <?php foreach ($categories as $i => $cat): ?>
                 <label class="flex items-center gap-2">
