@@ -727,7 +727,7 @@ if (!empty($_GET['action'])) {
     // ...existing code for AJAX actions...
     
     try {
-        switch ($action) {
+        switch($action) {
             
             // Add new action handler for signature uploads
             case 'upload_signature':
@@ -1201,21 +1201,48 @@ if (!empty($_GET['action'])) {
                       exit;
                   }
                   
+                  // Check if the new columns exist
+                  $columnCheck = $pdo->query("SHOW COLUMNS FROM blotter_cases LIKE 'hearing_attempts'");
+                  $hasNewColumns = $columnCheck->rowCount() > 0;
+                  
                   // Check if case is within 5-day deadline and hearing limits
-                  $stmt = $pdo->prepare("
+                  $sql = "
                       SELECT bc.*, 
                              DATE_ADD(bc.filing_date, INTERVAL 5 DAY) as deadline,
-                             COUNT(ch.id) as hearing_count
+                             COUNT(ch.id) as hearing_count";
+                  
+                  if ($hasNewColumns) {
+                      $sql .= ",
+                             bc.hearing_attempts,
+                             bc.max_hearing_attempts";
+                  } else {
+                      $sql .= ",
+                             0 as hearing_attempts,
+                             3 as max_hearing_attempts";
+                  }
+                  
+                  $sql .= "
                       FROM blotter_cases bc
                       LEFT JOIN case_hearings ch ON bc.id = ch.blotter_case_id
                       WHERE bc.id = ? AND bc.barangay_id = ?
                       GROUP BY bc.id
-                  ");
+                  ";
+                  
+                  $stmt = $pdo->prepare($sql);
                   $stmt->execute([$id, $bid]);
                   $case = $stmt->fetch(PDO::FETCH_ASSOC);
                   
                   if (!$case) {
                       echo json_encode(['success'=>false,'message'=>'Case not found']);
+                      exit;
+                  }
+                  
+                  // Check if max hearing attempts reached (only if new columns exist)
+                  if ($hasNewColumns && $case['hearing_attempts'] >= $case['max_hearing_attempts']) {
+                      // Automatically mark as CFA eligible
+                      $pdo->prepare("UPDATE blotter_cases SET is_cfa_eligible = TRUE, status = 'cfa_eligible', cfa_reason = 'Maximum hearing attempts reached' WHERE id = ?")
+                          ->execute([$id]);
+                      echo json_encode(['success'=>false,'message'=>'Maximum hearing attempts reached. Case is now eligible for CFA issuance.']);
                       exit;
                   }
                   
@@ -1247,11 +1274,11 @@ if (!empty($_GET['action'])) {
                   }
               
                   // Hearing date must be within 5 days from today (inclusive)
-                  $hearingDate = $data['hearing_date'];
                   $today = new DateTime();
                   $minDate = $today->format('Y-m-d');
-                  $maxDate = (clone $today)->modify('+5 days')->format('Y-m-d');
-                  if ($hearingDate < $minDate || $hearingDate > $maxDate) {
+                  $maxDate = $today->modify('+5 days')->format('Y-m-d');
+                  
+                  if ($data['hearing_date'] < $minDate || $data['hearing_date'] > $maxDate) {
                       echo json_encode(['success'=>false,'message'=>'Hearing date must be within the next 5 days (including today).']);
                       exit;
                   }
@@ -1287,6 +1314,12 @@ if (!empty($_GET['action'])) {
                       $proposalStatus
                   ]);
                   $proposalId = $pdo->lastInsertId();
+
+                  // Increment hearing attempts if new columns exist
+                  if ($hasNewColumns) {
+                      $pdo->prepare("UPDATE blotter_cases SET hearing_attempts = COALESCE(hearing_attempts, 0) + 1 WHERE id = ?")
+                          ->execute([$id]);
+                  }
 
                   // set scheduling_status to match UI condition (schedule_proposed)
                   $pdo->prepare("UPDATE blotter_cases SET scheduling_status='schedule_proposed' WHERE id=?")
@@ -1477,7 +1510,83 @@ if (!empty($_GET['action'])) {
                 echo json_encode(['success'=>true,'booked'=>$booked]);
                 exit;
 
-  
+            case 'confirm_proposal':
+                header('Content-Type: application/json');
+                $proposalId = intval($_REQUEST['proposal_id'] ?? 0);
+                $decision   = $_REQUEST['decision'] ?? ''; // 'confirm' or 'reject'
+                if (!$proposalId || !in_array($decision, ['confirm','reject'], true)) {
+                    echo json_encode(['success'=>false,'message'=>'Invalid request']); exit;
+                }
+                // fetch proposal & case participants
+                $sp = $pdo->prepare("
+                  SELECT sp.*, bp.person_id AS complainant_pid, 
+                         (SELECT person_id FROM blotter_participants 
+                            WHERE blotter_case_id=sp.blotter_case_id AND role='respondent' LIMIT 1
+                         ) AS respondent_pid
+                  FROM schedule_proposals sp
+                  WHERE sp.id = ?
+                ");
+                $sp->execute([$proposalId]);
+                $proposal = $sp->fetch(PDO::FETCH_ASSOC);
+                if (!$proposal) {
+                    echo json_encode(['success'=>false,'message'=>'Not found']); exit;
+                }
+                // determine which flag to flip
+                $personId = // fetch current user’s person_id
+                  $pdo->prepare("SELECT id FROM persons WHERE user_id=?")
+                      ->execute([$_SESSION['user_id']]) 
+                  && ($pid = $pdo->lastInsertId()) ? $pid : null;
+                $isComplainant = $personId && $personId == $proposal['complainant_pid'];
+                $isRespondent = $personId && $personId == $proposal['respondent_pid'];
+                if (!$isComplainant && !$isRespondent) {
+                    echo json_encode(['success'=>false,'message'=>'Not a party']); exit;
+                }
+                // on reject → immediate conflict
+                if ($decision === 'reject') {
+                    $pdo->prepare("UPDATE schedule_proposals SET status='conflict', conflict_reason=? WHERE id=?")
+                        ->execute([$_REQUEST['reason'] ?? 'Declined', $proposalId]);
+                    // reset blotter_cases to allow new proposals
+                    $pdo->prepare("UPDATE blotter_cases SET scheduling_status='pending_schedule' WHERE id=?")
+                        ->execute([$proposal['blotter_case_id']]);
+                    echo json_encode(['success'=>true,'message'=>'You have declined this schedule']); exit;
+                }
+                // on confirm → flip correct column
+                $col = $isComplainant ? 'complainant_confirmed' : 'respondent_confirmed';
+                $pdo->prepare("UPDATE schedule_proposals SET {$col}=TRUE WHERE id=?")
+                    ->execute([$proposalId]);
+                // re‐fetch to see if both True
+                $sp2 = $pdo->prepare("SELECT complainant_confirmed,respondent_confirmed FROM schedule_proposals WHERE id=?");
+                $sp2->execute([$proposalId]);
+                $flags = $sp2->fetch(PDO::FETCH_ASSOC);
+                if ($flags['complainant_confirmed'] && $flags['respondent_confirmed']) {
+                    // finalize hearing
+                    $pdo->beginTransaction();
+                    // insert hearing
+                    $pdo->prepare("
+                      INSERT INTO case_hearings 
+                        (blotter_case_id, hearing_date, hearing_type, hearing_outcome,
+                         presiding_officer_name, presiding_officer_position, hearing_number)
+                      VALUES(?,CONCAT(?, ' ',?), 'mediation','scheduled',?,?,?)
+                    ")->execute([
+                      $proposal['blotter_case_id'],
+                                           $proposal['proposed_date'],
+                      $proposal['proposed_time'],
+                      $proposal['presiding_officer'],
+                      $proposal['presiding_officer_position'],
+                      ($proposal['hearing_number'] ?? 0) + 1
+                    ]);
+                    // update case
+                    $pdo->prepare("
+                      UPDATE blotter_cases
+                      SET scheduling_status='scheduled', status='open'
+                      WHERE id=?
+                    ")->execute([$proposal['blotter_case_id']]);
+                    $pdo->commit();
+                    echo json_encode(['success'=>true,'message'=>'Hearing confirmed by both parties']);
+                } else {
+                    echo json_encode(['success'=>true,'message'=>'Your confirmation is recorded. Waiting on other party']);
+                }
+                exit;
 
         }
     } catch (PDOException $e) {
@@ -2945,27 +3054,27 @@ document.addEventListener('DOMContentLoaded', function() {
           confirmButtonColor: '#3b82f6',
           cancelButtonColor: '#6b7280',
           confirmButtonText: 'Yes, change it'
-        }).then(async (result) => {
+        }).then((result) => {
           if (result.isConfirmed) {
-            try {
-              const response = await fetch(`?action=set_status&id=${caseId}&new_status=${newStatus}`);
-              const data = await response.json();
-              
-              if (data.success) {
-                Swal.fire({
-                  icon: 'success',
-                  title: 'Success!',
-                  text: `Status changed to ${newStatus}.`,
-                  timer: 1500,
-                  showConfirmButton: false
-                }).then(() => location.reload());
-              } else {
-                Swal.fire('Error', data.message || 'Failed to change status', 'error');
-              }
-            } catch (error) {
-              console.error('Error changing status:', error);
-              Swal.fire('Error', 'An unexpected error occurred.', 'error');
-            }
+            fetch(`?action=set_status&id=${caseId}&new_status=${newStatus}`)
+              .then(response => response.json())
+              .then(data => {
+                if (data.success) {
+                  Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: `Status changed to ${newStatus}.`,
+                    timer: 1500,
+                    showConfirmButton: false
+                  }).then(() => location.reload());
+                } else {
+                  Swal.fire('Error', data.message || 'Failed to change status', 'error');
+                }
+              })
+              .catch(error => {
+                console.error('Error changing status:', error);
+                Swal.fire('Error', 'An unexpected error occurred.', 'error');
+              });
           } else {
             // Revert the select to the previous value if change was not confirmed
             const currentStatus = this.getAttribute('data-current-status');
