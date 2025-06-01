@@ -79,7 +79,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
           <i class="fas fa-cloud-upload-alt"></i>
           <p>Drag and drop your ID document here or click to browse</p>
           <p class="small-text">Supported formats: JPG, PNG</p>
-          <input type="file" id="govt_id" name="govt_id" accept="image/*" hidden required>
+          <input type="file" id="govt_id" name="govt_id" accept="image/*" hidden>
         </div>
         <img id="id_preview" alt="ID Preview">
       </div>
@@ -231,6 +231,18 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       const confirmPassword = document.getElementById('confirmPassword').value;
       const phone = document.getElementById('phone').value.trim();
       
+      // Check if government ID has been uploaded
+      const fileInput = document.getElementById('govt_id');
+      if (!fileInput.files || fileInput.files.length === 0) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Missing Government ID',
+          text: 'Please upload a valid government ID document to proceed with registration.',
+          confirmButtonText: 'OK'
+        });
+        return false;
+      }
+      
       // Phone number validation for Philippine mobile numbers
       const phoneRegex = /^09\d{9}$/;
       if (!phoneRegex.test(phone)) {
@@ -289,7 +301,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
         });
         return;
       }
-      
+
       // Show loading indicator
       Swal.fire({
         title: 'Verifying...',
