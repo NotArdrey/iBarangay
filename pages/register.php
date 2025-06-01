@@ -268,7 +268,17 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
         
         if (data.status === 'success') {
           if (data.exists) {
-            document.getElementById('person_id').value = data.person_id;
+            // Check if person has an account in any barangay
+            if (data.has_account) {
+              Swal.fire({
+                icon: 'error',
+                title: 'Account Already Exists',
+                text: 'You already have an account in another barangay. Please contact your barangay office for assistance.',
+                confirmButtonText: 'OK'
+              });
+              return;
+            }
+
             // Check if person has multiple barangay records
             if (data.barangay_records && data.barangay_records.length > 1) {
               // Only allow selection for the correct source (census or temporary)
