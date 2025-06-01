@@ -62,22 +62,14 @@ global $pdo, $role, $current_admin_id;
             method="POST"
             action="../pages/blotter.php?action=upload_signature"
             enctype="multipart/form-data" class="p-6 space-y-4">
-        <input type="hidden" name="role" value="<?= htmlspecialchars($role) ?>">
+        
+        <!-- Use specific signature type field instead of role -->
+        <input type="hidden" name="signature_type" value="<?= in_array($role, [ROLE_CAPTAIN]) ? 'captain' : 'chief' ?>">
         
         <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Signature Type</label>
-          <select name="signature_type" class="w-full p-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" required>
-            <?php if (in_array($role, [ROLE_CAPTAIN])): ?>
-            <option value="esignature">Captain E-Signature</option>
-            <?php endif; ?>
-            <?php if (in_array($role, [ROLE_CHIEF])): ?>
-            <option value="chief_officer">Chief Officer E-Signature</option>
-            <?php endif; ?>
-          </select>
-        </div>
-        
-        <div>
-          <label class="block text-sm font-medium text-gray-700 mb-2">Signature Image</label>
+          <label class="block text-sm font-medium text-gray-700 mb-2">
+            <?= in_array($role, [ROLE_CAPTAIN]) ? 'Captain E-Signature' : 'Chief Officer E-Signature' ?>
+          </label>
           <input type="file" name="signature_file" accept="image/*" required
                  class="w-full p-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500">
           <p class="text-xs text-gray-500 mt-1">Supported formats: JPG, PNG, GIF. Max size: 2MB</p>

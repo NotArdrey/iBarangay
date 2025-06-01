@@ -714,6 +714,72 @@ if (!empty($_GET['action'])) {
     
     try {
         switch ($action) {
+            
+            // Add new action handler for signature uploads
+            case 'upload_signature':
+                header('Content-Type: text/html'); // Change content type for redirect
+                
+                // Validate that user has appropriate role
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                    $_SESSION['error_message'] = "You don't have permission to upload signatures";
+                    header("Location: dashboard.php");
+                    exit;
+                }
+
+                if (!isset($_FILES['signature_file']) || $_FILES['signature_file']['error'] !== UPLOAD_ERR_OK) {
+                    $_SESSION['error_message'] = 'Error uploading file: ' . ($_FILES['signature_file']['error'] ?? 'No file uploaded');
+                    header("Location: blotter.php");
+                    exit;
+                }
+
+                // Validate file type and size
+                $allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+                $maxSize = 2 * 1024 * 1024; // 2MB
+
+                if (!in_array($_FILES['signature_file']['type'], $allowedTypes)) {
+                    $_SESSION['error_message'] = 'Invalid file type. Only JPG, PNG, and GIF are allowed.';
+                    header("Location: blotter.php");
+                    exit;
+                }
+
+                if ($_FILES['signature_file']['size'] > $maxSize) {
+                    $_SESSION['error_message'] = 'File is too large. Maximum size is 2MB.';
+                    header("Location: blotter.php");
+                    exit;
+                }
+
+                // Create signature directory if it doesn't exist
+                $uploadDir = '../uploads/signatures/';
+                if (!is_dir($uploadDir)) {
+                    mkdir($uploadDir, 0755, true);
+                }
+
+                // Generate unique filename
+                $filename = 'signature_' . $role . '_' . $current_admin_id . '_' . time() . '_' . 
+                           pathinfo($_FILES['signature_file']['name'], PATHINFO_EXTENSION);
+                $filepath = $uploadDir . $filename;
+
+                if (!move_uploaded_file($_FILES['signature_file']['tmp_name'], $filepath)) {
+                    $_SESSION['error_message'] = 'Failed to move uploaded file';
+                    header("Location: blotter.php");
+                    exit;
+                }
+
+                // Update the correct signature field based on role
+                $dbPath = 'uploads/signatures/' . $filename;
+                $signatureColumn = ($role === ROLE_CAPTAIN) ? 'esignature_path' : 'chief_officer_esignature_path';
+                
+                $stmt = $pdo->prepare("UPDATE users SET $signatureColumn = ? WHERE id = ?");
+                if ($stmt->execute([$dbPath, $current_admin_id])) {
+                    $_SESSION['success_message'] = 'E-signature uploaded successfully';
+                    logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'users', $current_admin_id, 
+                                  "Updated $signatureColumn");
+                } else {
+                    $_SESSION['error_message'] = 'Failed to update signature in database';
+                }
+                
+                header("Location: blotter.php");
+                exit;
 
             case 'generate_summons':
                 if (!$id) {
@@ -1290,10 +1356,10 @@ if (!empty($_GET['action'])) {
                         UPDATE blotter_cases
                         SET status = 'open', 
                             scheduling_status = 'scheduled',
-                            scheduled_hearing = CONCAT(?, ' ', ?),
+                            scheduled_hearing = CONCAT(?, ' '),
                             hearing_count = COALESCE(hearing_count, 0) + 1
                         WHERE id = ?
-                    ")->execute([$proposal['proposed_date'], $proposal['proposed_time'], $id]);
+                    ")->execute([$proposal['proposed_date'], $id]);
                     
                     // Notify all participants
                     $notifyStmt = $pdo->prepare("
