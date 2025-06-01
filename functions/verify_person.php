@@ -21,6 +21,42 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     }
     
     try {
+        // First check if person has an account in any barangay
+        $accountCheckSql = "
+            SELECT u.id, u.email, b.name as barangay_name
+            FROM persons p
+            JOIN users u ON p.user_id = u.id
+            JOIN barangay b ON u.barangay_id = b.id
+            WHERE LOWER(TRIM(p.last_name)) = LOWER(TRIM(:last_name))
+            AND LOWER(TRIM(p.first_name)) = LOWER(TRIM(:first_name))
+            AND p.birth_date = :birth_date
+        ";
+        
+        $accountParams = [
+            ':first_name' => $first_name,
+            ':last_name' => $last_name,
+            ':birth_date' => $birth_date
+        ];
+        
+        if (!empty($middle_name)) {
+            $accountCheckSql .= " AND (p.middle_name = :middle_name OR p.middle_name IS NULL)";
+            $accountParams[':middle_name'] = $middle_name;
+        }
+        
+        $accountStmt = $pdo->prepare($accountCheckSql);
+        $accountStmt->execute($accountParams);
+        $existingAccount = $accountStmt->fetch(PDO::FETCH_ASSOC);
+        
+        if ($existingAccount) {
+            echo json_encode([
+                'status' => 'success',
+                'exists' => true,
+                'has_account' => true,
+                'message' => 'You already have an account in ' . $existingAccount['barangay_name'] . '. Please contact the barangay office for assistance.'
+            ]);
+            exit;
+        }
+
         // Fetch all census records
         $censusSql = "
             SELECT 'census' as source, p.id, p.first_name, p.middle_name, p.last_name, p.birth_date, pi.other_id_number as id_number, a.barangay_id

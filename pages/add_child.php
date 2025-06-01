@@ -102,7 +102,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $birth_date_obj = new DateTime($birth_date);
         $today = new DateTime();
         $age = $today->diff($birth_date_obj)->y;
-        
+
         if ($age < 0 || $age > 17) {
             $add_error .= "Only children aged 0-17 years old are allowed.<br>";
         }
@@ -160,7 +160,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare("SELECT id FROM relationship_types WHERE name = ?");
                 $stmt->execute([$relationship]);
                 $relationship_type = $stmt->fetch(PDO::FETCH_ASSOC);
-                
+
                 if ($relationship_type) {
                     $stmt = $pdo->prepare("INSERT INTO household_members 
                         (household_id, person_id, relationship_type_id, is_household_head)
@@ -316,6 +316,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </a>
             <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+            <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Temporary Records
+            </a>
         </div>
         <section id="add-child" class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800">CHILDREN 0-17 YEARS OLD</h2>
@@ -342,8 +345,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <select name="household_id" id="household_select" class="mt-1 block w-full border rounded p-2">
                             <option value="">-- SELECT HOUSEHOLD --</option>
                             <?php foreach ($households as $household): ?>
-                                <option value="<?= htmlspecialchars($household['household_id']) ?>" 
-                                        data-purok="<?= htmlspecialchars($household['purok_id']) ?>">
+                                <option value="<?= htmlspecialchars($household['household_id']) ?>"
+                                    data-purok="<?= htmlspecialchars($household['purok_id']) ?>">
                                     <?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>
                                 </option>
                             <?php endforeach; ?>
@@ -482,7 +485,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="ALS" class="form-radio">
-                                    <span class="ml-2">ALS</span>
+                                    <span class="ml-2">ALS (Alternative Learning System)</span>
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="Day Care" class="form-radio">
@@ -490,11 +493,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="SNP" class="form-radio">
-                                    <span class="ml-2">SNP</span>
-                                </label>
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="school_type" value="Not Attending" class="form-radio">
-                                    <span class="ml-2">Not Attending</span>
+                                    <span class="ml-2">SNP (Special Needs Program)</span>
                                 </label>
                             </div>
                         </div>
@@ -904,7 +903,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             function updateHouseholdOptions() {
                 const selectedPurokId = purokSelect.value;
-                
+
                 // Clear current options except the first one
                 householdSelect.innerHTML = '';
                 householdSelect.appendChild(originalHouseholdOption.cloneNode(true));
@@ -958,11 +957,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const today = new Date();
                 const minDate = new Date(today.getFullYear() - 17, today.getMonth(), today.getDate());
                 const maxDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                return { minDate, maxDate };
+                return {
+                    minDate,
+                    maxDate
+                };
             }
 
             // Set date input constraints
-            const { minDate, maxDate } = getDateRange();
+            const {
+                minDate,
+                maxDate
+            } = getDateRange();
             birthDateInput.min = minDate.toISOString().split('T')[0];
             birthDateInput.max = maxDate.toISOString().split('T')[0];
 
@@ -1010,7 +1015,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             Swal.showLoading();
                         }
                     });
-                    
+
                     // Submit the form after showing the loading message
                     setTimeout(() => {
                         form.submit();
@@ -1020,22 +1025,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Show success message if PHP indicates success
             <?php if ($add_success): ?>
-            Swal.fire({
-                icon: 'success',
-                title: 'Success!',
-                text: '<?php echo $add_success; ?>',
-                confirmButtonColor: '#3085d6'
-            });
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: '<?php echo $add_success; ?>',
+                    confirmButtonColor: '#3085d6'
+                });
             <?php endif; ?>
 
             // Show error message if PHP indicates error
             <?php if ($add_error): ?>
-            Swal.fire({
-                icon: 'error',
-                title: 'Error!',
-                text: '<?php echo $add_error; ?>',
-                confirmButtonColor: '#3085d6'
-            });
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error!',
+                    text: '<?php echo $add_error; ?>',
+                    confirmButtonColor: '#3085d6'
+                });
             <?php endif; ?>
 
             // Make all text inputs uppercase while typing
