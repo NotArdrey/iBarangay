@@ -61,10 +61,7 @@ $services = $stmt->fetchAll();
                             </div>
                         </div>
                         <div class="flex space-x-2">
-                            <button onclick="toggleServiceStatus(<?php echo $service['id']; ?>)" 
-                                    class="text-sm <?php echo $service['is_active'] ? 'text-red-500' : 'text-green-500'; ?>">
-                                <i class="fas <?php echo $service['is_active'] ? 'fa-toggle-on' : 'fa-toggle-off'; ?>"></i>
-                            </button>
+                       
                             <button onclick="viewService(<?php echo $service['id']; ?>)" class="text-blue-500">
                                 <i class="fas fa-eye"></i>
                             </button>
@@ -436,7 +433,7 @@ $services = $stmt->fetchAll();
                 </div>
 
                 <div class="flex justify-end mt-6">
-                    <button type="submit" class="bg-yellow-500 hover:bg-yellow-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                    <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
                         Update Service
                     </button>
                 </div>

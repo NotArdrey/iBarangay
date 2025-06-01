@@ -39,9 +39,10 @@ if (!$docBarangayCheck || ($currentAdminBarangayId && $docBarangayCheck['baranga
 }
 
 // ======================================
-// DATABASE QUERIES
+// ENHANCED DATABASE QUERIES WITH ADDRESS DATA
 // ======================================
-// Enhanced query to fetch document request and related information
+
+// Enhanced query to fetch document request and related information INCLUDING ADDRESS
 $sql = "
     SELECT 
         dr.*,
@@ -59,6 +60,20 @@ $sql = "
         p.gender AS person_gender,
         p.civil_status AS person_civil_status,
         p.contact_number AS person_contact,
+        p.years_of_residency AS person_years_of_residency,
+        p.occupation AS person_occupation,
+        p.monthly_income AS person_monthly_income,
+        -- Address information from addresses table
+        a.house_no AS address_house_no,
+        a.street AS address_street,
+        a.phase AS address_phase,
+        a.subdivision AS address_subdivision,
+        a.block_lot AS address_block_lot,
+        a.municipality AS address_municipality,
+        a.province AS address_province,
+        a.region AS address_region,
+        a.residency_type AS address_residency_type,
+        a.years_in_san_rafael AS address_years_in_san_rafael,
         -- Emergency contact information
         ec.contact_name AS emergency_contact_name,
         ec.contact_number AS emergency_contact_number,
@@ -67,6 +82,7 @@ $sql = "
     JOIN document_types dt ON dr.document_type_id = dt.id
     JOIN barangay b ON dr.barangay_id = b.id
     LEFT JOIN persons p ON dr.person_id = p.id
+    LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
     LEFT JOIN emergency_contacts ec ON p.id = ec.person_id
     WHERE dr.id = :docRequestId
 ";
@@ -89,6 +105,89 @@ if ($docRequest['document_code'] === 'cedula' || $docRequest['document_code'] ==
     echo "<p>Please visit your Barangay Hall during office hours to process this document.</p>";
     exit();
 }
+
+// ======================================
+// ADDRESS CONSTRUCTION FUNCTION
+// ======================================
+
+function constructAddress($docRequest) {
+    $addressParts = [];
+    
+    // Priority 1: Use address from document request form if available
+    if (!empty($docRequest['address_no']) || !empty($docRequest['street'])) {
+        if (!empty($docRequest['address_no'])) {
+            $addressParts[] = $docRequest['address_no'];
+        }
+        if (!empty($docRequest['street'])) {
+            $addressParts[] = $docRequest['street'];
+        }
+    }
+    // Priority 2: Use address from census/addresses table
+    else {
+        // Build address from census data
+        if (!empty($docRequest['address_house_no'])) {
+            $addressParts[] = $docRequest['address_house_no'];
+        }
+        
+        if (!empty($docRequest['address_street'])) {
+            $addressParts[] = $docRequest['address_street'];
+        }
+        
+        // Add subdivision if available
+        if (!empty($docRequest['address_subdivision'])) {
+            $addressParts[] = $docRequest['address_subdivision'];
+        }
+        
+        // Add phase if available
+        if (!empty($docRequest['address_phase'])) {
+            $addressParts[] = 'PHASE ' . $docRequest['address_phase'];
+        }
+        
+        // Add block/lot if available
+        if (!empty($docRequest['address_block_lot'])) {
+            $addressParts[] = 'BLK ' . $docRequest['address_block_lot'];
+        }
+    }
+    
+    // If no specific address found, use a generic placeholder
+    if (empty($addressParts)) {
+        $addressParts[] = 'RESIDENTIAL ADDRESS';
+    }
+    
+    // Add barangay, municipality, province
+    $addressParts[] = strtoupper($docRequest['barangay_name']);
+    
+    // Use municipality and province from census if available, otherwise use defaults
+    $municipality = !empty($docRequest['address_municipality']) ? 
+                   strtoupper($docRequest['address_municipality']) : 'SAN RAFAEL';
+    $province = !empty($docRequest['address_province']) ? 
+               strtoupper($docRequest['address_province']) : 'BULACAN';
+    
+    $addressParts[] = $municipality;
+    $addressParts[] = $province;
+    
+    return implode(', ', $addressParts);
+}
+
+// ======================================
+// GET HOUSEHOLD AND PUROK INFORMATION
+// ======================================
+$householdSql = "
+    SELECT 
+        h.household_number,
+        h.household_size,
+        hm.relationship_to_head,
+        pur.name AS purok_name
+    FROM household_members hm
+    JOIN households h ON hm.household_id = h.id
+    LEFT JOIN purok pur ON h.purok_id = pur.id
+    WHERE hm.person_id = :person_id
+    LIMIT 1
+";
+
+$householdStmt = $pdo->prepare($householdSql);
+$householdStmt->execute([':person_id' => $docRequest['person_id']]);
+$householdInfo = $householdStmt->fetch(PDO::FETCH_ASSOC);
 
 // ======================================
 // FETCH BARANGAY OFFICIALS (DYNAMIC)
@@ -144,8 +243,9 @@ foreach ($barangayOfficials as $official) {
 }
 
 // ======================================
-// PREPARE DOCUMENT DATA
+// PREPARE DOCUMENT DATA WITH ENHANCED ADDRESS
 // ======================================
+
 // Personal Information
 $firstName = $docRequest['first_name'] ?? $docRequest['person_first_name'] ?? '';
 $middleName = $docRequest['middle_name'] ?? $docRequest['person_middle_name'] ?? '';
@@ -156,17 +256,27 @@ $gender = $docRequest['sex'] ?? $docRequest['person_gender'] ?? '';
 $civilStatus = $docRequest['civil_status'] ?? $docRequest['person_civil_status'] ?? '';
 $contactNumber = $docRequest['cp_number'] ?? $docRequest['person_contact'] ?? '';
 $purpose = $docRequest['purpose'] ?? 'FOR GENERAL PURPOSES';
-$yearsOfResidence = $docRequest['years_of_residence'] ?? '0';
 
-// Format address with dynamic barangay name
-$address = '';
-if (!empty($docRequest['address_no'])) {
-    $address .= $docRequest['address_no'] . ' ';
+// Years of residence - prioritize census data
+$yearsOfResidence = $docRequest['years_of_residence'] ?? 
+                   $docRequest['address_years_in_san_rafael'] ?? 
+                   $docRequest['person_years_of_residency'] ?? '0';
+
+// Occupation and income from census
+$occupation = $docRequest['occupation'] ?? $docRequest['person_occupation'] ?? '';
+$monthlyIncome = $docRequest['monthly_income'] ?? $docRequest['person_monthly_income'] ?? 0;
+
+// CONSTRUCT PROPER ADDRESS using the enhanced function
+$address = constructAddress($docRequest);
+
+// Add purok to address if available
+if ($householdInfo && !empty($householdInfo['purok_name'])) {
+    $address = str_replace(
+        strtoupper($docRequest['barangay_name']), 
+        'PUROK ' . strtoupper($householdInfo['purok_name']) . ', ' . strtoupper($docRequest['barangay_name']), 
+        $address
+    );
 }
-if (!empty($docRequest['street'])) {
-    $address .= $docRequest['street'] . ', ';
-}
-$address .= strtoupper($docRequest['barangay_name'] . ', SAN RAFAEL, BULACAN');
 
 // Business specific information
 $businessName = $docRequest['business_name'] ?? '';
@@ -954,11 +1064,17 @@ $barangaySettings = $barangaySettingsStmt->fetch(PDO::FETCH_ASSOC);
             
             // Add barangay-specific adjustments here if needed
             switch(barangayName) {
-                case 'BAGBAGUIN':
-                    // Specific adjustments for Bagbaguin
+                case 'TAMBUBONG':
+                    // Specific adjustments for Tambubong
                     break;
-                case 'BALIUAG':
-                    // Specific adjustments for Baliuag
+                case 'PANTUBIG':
+                    // Specific adjustments for Pantubig
+                    break;
+                case 'CAINGIN':
+                    // Specific adjustments for Caingin
+                    break;
+                case 'BMA-BALAGTAS':
+                    // Specific adjustments for BMA-Balagtas
                     break;
                 default:
                     // Default behavior
@@ -968,6 +1084,28 @@ $barangaySettings = $barangaySettingsStmt->fetch(PDO::FETCH_ASSOC);
         
         // Call the adjustment function
         adjustContentForBarangay();
+
+        // Debug function to show address construction details
+        function showAddressDebug() {
+            const debugInfo = {
+                'Document Request Address No': '<?= $docRequest['address_no'] ?? 'NULL' ?>',
+                'Document Request Street': '<?= $docRequest['street'] ?? 'NULL' ?>',
+                'Census House No': '<?= $docRequest['address_house_no'] ?? 'NULL' ?>',
+                'Census Street': '<?= $docRequest['address_street'] ?? 'NULL' ?>',
+                'Census Subdivision': '<?= $docRequest['address_subdivision'] ?? 'NULL' ?>',
+                'Census Phase': '<?= $docRequest['address_phase'] ?? 'NULL' ?>',
+                'Census Block/Lot': '<?= $docRequest['address_block_lot'] ?? 'NULL' ?>',
+                'Purok': '<?= $householdInfo['purok_name'] ?? 'NULL' ?>',
+                'Final Address': '<?= $address ?>',
+                'Years of Residency': '<?= $yearsOfResidence ?>',
+                'Residency Type': '<?= $docRequest['address_residency_type'] ?? 'NULL' ?>'
+            };
+            
+            console.table(debugInfo);
+        }
+        
+        // Call debug function if needed (uncomment for debugging)
+        // showAddressDebug();
     </script>
 </body>
 </html>
