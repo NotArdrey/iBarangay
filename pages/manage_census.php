@@ -130,7 +130,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'permanent_municipality' => trim($_POST['permanent_municipality'] ?? ''),
             'permanent_province' => trim($_POST['permanent_province'] ?? ''),
             'permanent_region' => trim($_POST['permanent_region'] ?? ''),
-            'household_id' => $_POST['household_id'] ?? '',
+            'household_id' => isset($_POST['household_id']) && $_POST['household_id'] !== '' ? (int)$_POST['household_id'] : null,
             'relationship' => $_POST['relationship'] ?? '',
             'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0,
             'resident_type' => $_POST['resident_type'] ?? 'regular',
@@ -427,8 +427,9 @@ function isCheckboxChecked($form_data, $key)
             const birthDateInput = document.getElementById('birth_date');
             const ageInput = document.getElementById('age');
             const residentTypeSelect = document.getElementById('residentTypeSelect');
-            const validationMsg = document.getElementById('residency_age_validation');
+            const ageValidationMsg = document.getElementById('age_validation');
             const yearsOfResidencyInput = document.getElementById('years_of_residency');
+            const residencyValidationMsg = document.getElementById('residency_age_validation');
 
             if (!birthDateInput || !ageInput) return;
 
@@ -463,12 +464,12 @@ function isCheckboxChecked($form_data, $key)
                 }
 
                 if (!isValid) {
-                    validationMsg.textContent = errorMessage;
-                    validationMsg.style.color = 'red';
+                    ageValidationMsg.textContent = errorMessage;
+                    ageValidationMsg.style.color = 'red';
                     // Clear the age input if invalid
                     ageInput.value = '';
                 } else {
-                    validationMsg.textContent = '';
+                    ageValidationMsg.textContent = '';
                 }
 
                 // Validate years of residency
@@ -476,13 +477,16 @@ function isCheckboxChecked($form_data, $key)
                     const yearsOfResidency = parseInt(yearsOfResidencyInput.value);
                     if (!isNaN(yearsOfResidency) && yearsOfResidency > age) {
                         yearsOfResidencyInput.value = age;
-                        validationMsg.textContent = `Years of residency cannot exceed age (${age} years)`;
-                        validationMsg.style.color = 'red';
+                        residencyValidationMsg.textContent = `Years of residency cannot exceed age (${age} years)`;
+                        residencyValidationMsg.style.color = 'red';
+                    } else {
+                        residencyValidationMsg.textContent = '';
                     }
                 }
             } else {
                 ageInput.value = '';
-                validationMsg.textContent = '';
+                ageValidationMsg.textContent = '';
+                residencyValidationMsg.textContent = '';
             }
         }
 
@@ -491,6 +495,10 @@ function isCheckboxChecked($form_data, $key)
             const birthDateInput = document.getElementById('birth_date');
             const residentTypeSelect = document.getElementById('residentTypeSelect');
             const yearsOfResidencyInput = document.getElementById('years_of_residency');
+            const purokSelect = document.querySelector('select[name="purok_id"]');
+            const householdSelect = document.getElementById('household_id_select');
+            const relationshipSelect = document.querySelector('select[name="relationship"]');
+            const isHouseholdHeadCheckbox = document.querySelector('input[name="is_household_head"]');
             
             if (birthDateInput) {
                 // Add event listener for input change
@@ -512,6 +520,80 @@ function isCheckboxChecked($form_data, $key)
             if (yearsOfResidencyInput) {
                 yearsOfResidencyInput.addEventListener('input', calculateAge);
                 yearsOfResidencyInput.addEventListener('change', calculateAge);
+            }
+
+            // Add validation for household-related fields
+            function validateHouseholdFields() {
+                let isValid = true;
+                let errorMessage = '';
+
+                // Check if purok is selected
+                if (!purokSelect.value) {
+                    isValid = false;
+                    errorMessage = 'Please select a purok';
+                    purokSelect.classList.add('border-red-500');
+                } else {
+                    purokSelect.classList.remove('border-red-500');
+                }
+
+                // Check if household is selected
+                if (!householdSelect.value) {
+                    isValid = false;
+                    errorMessage = 'Please select a household number';
+                    householdSelect.classList.add('border-red-500');
+                } else {
+                    householdSelect.classList.remove('border-red-500');
+                }
+
+                // Check if relationship is selected
+                if (!relationshipSelect.value) {
+                    isValid = false;
+                    errorMessage = 'Please select relationship to household head';
+                    relationshipSelect.classList.add('border-red-500');
+                } else {
+                    relationshipSelect.classList.remove('border-red-500');
+                }
+
+                // If not valid, show error message
+                if (!isValid) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Missing Information',
+                        text: errorMessage,
+                        confirmButtonColor: '#3085d6'
+                    });
+                }
+
+                return isValid;
+            }
+
+            // Add event listeners for household-related fields
+            if (purokSelect) {
+                purokSelect.addEventListener('change', function() {
+                    this.classList.remove('border-red-500');
+                });
+            }
+
+            if (householdSelect) {
+                householdSelect.addEventListener('change', function() {
+                    this.classList.remove('border-red-500');
+                });
+            }
+
+            if (relationshipSelect) {
+                relationshipSelect.addEventListener('change', function() {
+                    this.classList.remove('border-red-500');
+                });
+            }
+
+            // Add form submission validation
+            const form = document.getElementById('residentForm');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    if (!validateHouseholdFields()) {
+                        e.preventDefault();
+                    }
+                });
             }
         });
     </script>
@@ -647,6 +729,7 @@ function isCheckboxChecked($form_data, $key)
                         <label class="block text-sm font-medium">Age</label>
                         <input type="number" name="age" id="age" readonly value="<?= getFormValue('age', $form_data) ?>"
                             class="mt-1 block w-full border rounded p-2 bg-gray-100">
+                        <small class="text-gray-500" id="age_validation"></small>
                     </div>
 
                     <div>
@@ -1777,7 +1860,7 @@ function isCheckboxChecked($form_data, $key)
                     // Check if current value exceeds age
                     if (parseInt(residencyInput.value) > age) {
                         residencyInput.value = age;
-                        validationMsg.textContent = `Maximum years of residency is ${age} (cannot exceed age)`;
+                        validationMsg.textContent = `Years of residency cannot exceed age (${age} years)`;
                     } else {
                         validationMsg.textContent = ``;
                     }
