@@ -8,54 +8,51 @@ USE barangay;
   -------------------------------------------------------------*/
 
 -- Barangay lookup table
-CREATE TABLE IF NOT EXISTS `barangay` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL,
-  `municipality` varchar(255) NOT NULL,
-  `province` varchar(255) NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE barangay (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE
+);
 
 -- Insert barangays of San Rafael
-INSERT INTO barangay (name, municipality, province) VALUES
-    ('BMA-Balagtas', 'San Rafael', 'Bulacan'), ('Banca‐Banca', 'San Rafael', 'Bulacan'), ('Caingin', 'San Rafael', 'Bulacan'), ('Capihan', 'San Rafael', 'Bulacan'),
-    ('Coral na Bato', 'San Rafael', 'Bulacan'), ('Cruz na Daan', 'San Rafael', 'Bulacan'), ('Dagat‐Dagatan', 'San Rafael', 'Bulacan'), ('Diliman I', 'San Rafael', 'Bulacan'),
-    ('Diliman II', 'San Rafael', 'Bulacan'), ('Libis', 'San Rafael', 'Bulacan'), ('Lico', 'San Rafael', 'Bulacan'), ('Maasim', 'San Rafael', 'Bulacan'), ('Mabalas‐Balas', 'San Rafael', 'Bulacan'),
-    ('Maguinao', 'San Rafael', 'Bulacan'), ('Maronquillo', 'San Rafael', 'Bulacan'), ('Paco', 'San Rafael', 'Bulacan'), ('Pansumaloc', 'San Rafael', 'Bulacan'), ('Pantubig', 'San Rafael', 'Bulacan'),
-    ('Pasong Bangkal', 'San Rafael', 'Bulacan'), ('Pasong Callos', 'San Rafael', 'Bulacan'), ('Pasong Intsik', 'San Rafael', 'Bulacan'), ('Pinacpinacan', 'San Rafael', 'Bulacan'),
-    ('Poblacion', 'San Rafael', 'Bulacan'), ('Pulo', 'San Rafael', 'Bulacan'), ('Pulong Bayabas', 'San Rafael', 'Bulacan'), ('Salapungan', 'San Rafael', 'Bulacan'),
-    ('Sampaloc', 'San Rafael', 'Bulacan'), ('San Agustin', 'San Rafael', 'Bulacan'), ('San Roque', 'San Rafael', 'Bulacan'), ('Sapang Pahalang', 'San Rafael', 'Bulacan'),
-    ('Talacsan', 'San Rafael', 'Bulacan'), ('Tambubong', 'San Rafael', 'Bulacan'), ('Tukod', 'San Rafael', 'Bulacan'), ('Ulingao', 'San Rafael', 'Bulacan');
+INSERT INTO barangay (name) VALUES
+    ('BMA-Balagtas'), ('Banca‐Banca'), ('Caingin'), ('Capihan'),
+    ('Coral na Bato'), ('Cruz na Daan'), ('Dagat‐Dagatan'), ('Diliman I'),
+    ('Diliman II'), ('Libis'), ('Lico'), ('Maasim'), ('Mabalas‐Balas'),
+    ('Maguinao'), ('Maronquillo'), ('Paco'), ('Pansumaloc'), ('Pantubig'),
+    ('Pasong Bangkal'), ('Pasong Callos'), ('Pasong Intsik'), ('Pinacpinacan'),
+    ('Poblacion'), ('Pulo'), ('Pulong Bayabas'), ('Salapungan'),
+    ('Sampaloc'), ('San Agustin'), ('San Roque'), ('Sapang Pahalang'),
+    ('Talacsan'), ('Tambubong'), ('Tukod'), ('Ulingao');
 
 -- Role definitions
-CREATE TABLE IF NOT EXISTS `roles` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(50) NOT NULL,
-  `description` text,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 
-INSERT IGNORE INTO `roles` (`id`, `name`, `description`) VALUES
-(1, 'Programmer', 'System programmer'),
-(2, 'Super Admin', 'System administrator'),
-(3, 'Captain', 'Barangay Captain'),
-(4, 'Secretary', 'Barangay Secretary'),
-(5, 'Treasurer', 'Barangay Treasurer'),
-(6, 'Councilor', 'Barangay Councilor'),
-(7, 'Chief', 'Chief Officer'),
-(8, 'Resident', 'Barangay Resident');
+INSERT INTO roles (name, description) VALUES 
+    ('programmer', 'System developer with full access'),
+    ('super_admin', 'Administrative account with system-wide access'),
+    ('barangay_captain', 'Lead barangay official'),
+    ('barangay_secretary', 'Administrative official for barangay operations'),
+    ('barangay_treasurer', 'Financial official for barangay funds'),
+    ('barangay_councilor', 'Elected barangay council member'),
+    ('chief_officer', 'Leads specific barangay services'),
+    ('resident', 'Regular barangay resident');
 
 -- Document types
-CREATE TABLE IF NOT EXISTS `document_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL,
-    `code` VARCHAR(50) UNIQUE NOT NULL,
-    `description` TEXT,
-    `default_fee` DECIMAL(10,2) DEFAULT 0.00,
-    `is_active` BOOLEAN DEFAULT TRUE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+CREATE TABLE document_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    code VARCHAR(50) UNIQUE NOT NULL,
+    description TEXT,
+    default_fee DECIMAL(10,2) DEFAULT 0.00,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
 INSERT INTO document_types (name, code, description, default_fee) VALUES
@@ -70,48 +67,47 @@ INSERT INTO document_types (name, code, description, default_fee) VALUES
     ('No Income Certification', 'no_income_certification', 'Certification for individuals with no regular income.', 0.00);
 
 -- Case categories for blotter management
-CREATE TABLE IF NOT EXISTS `case_categories` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL,
-  `description` text,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE case_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 
-INSERT IGNORE INTO `case_categories` (`name`, `description`) VALUES
-('Physical Injury', 'Cases involving physical harm'),
-('Verbal Dispute', 'Arguments and verbal conflicts'),
-('Property Dispute', 'Conflicts over property ownership or boundaries'),
-('Noise Complaint', 'Complaints about excessive noise'),
-('Theft', 'Cases involving stealing'),
-('Family Dispute', 'Family-related conflicts'),
-('Neighbor Dispute', 'Conflicts between neighbors'),
-('Other', 'Other types of cases');
+INSERT INTO case_categories (name) VALUES
+    ('RA 9262 (VAWC) ‐ Physical'),
+    ('RA 9262 (VAWC) ‐ Sexual'),
+    ('RA 9262 (VAWC) ‐ Psychosocial'),
+    ('RA 9262 (VAWC) ‐ Economic'),
+    ('RA 7877 (Sexual Harassment)'),
+    ('RA 9208 (Anti‐trafficking)'),
+    ('Psychological'),
+    ('Other cases / Bullying Emotional'),
+    ('Programs/Activities/Projects Implemented');
 
 -- Case intervention types
-CREATE TABLE IF NOT EXISTS `case_interventions` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `name` varchar(255) NOT NULL,
-  `description` text,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE case_interventions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 
-INSERT IGNORE INTO `case_interventions` (`name`, `description`) VALUES
-('M/CSWD', 'Municipal/City Social Welfare and Development'),
-('PNP', 'Philippine National Police'),
-('Court', 'Court intervention'),
-('Issued BPO', 'Barangay Protection Order'),
-('Medical', 'Medical assistance');
+INSERT INTO case_interventions (name) VALUES
+    ('M/CSWD'), ('PNP'), ('Court'), ('Issued BPO'), ('Medical');
 
 /*-------------------------------------------------------------
   SECTION 1.B: CENSUS LOOKUP TABLES
   -------------------------------------------------------------*/
 
 -- Asset types
-CREATE TABLE IF NOT EXISTS `asset_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL UNIQUE,
-    `description` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE asset_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO asset_types (name) VALUES
@@ -124,12 +120,12 @@ INSERT INTO asset_types (name) VALUES
     ('Others');
 
 -- Income source types
-CREATE TABLE IF NOT EXISTS `income_source_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL UNIQUE,
-    `description` TEXT,
-    `requires_amount` BOOLEAN DEFAULT FALSE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE income_source_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    requires_amount BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO income_source_types (name, requires_amount) VALUES
@@ -146,11 +142,11 @@ INSERT INTO income_source_types (name, requires_amount) VALUES
     ('Others', TRUE);
 
 -- Living arrangement types
-CREATE TABLE IF NOT EXISTS `living_arrangement_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL UNIQUE,
-    `description` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE living_arrangement_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO living_arrangement_types (name) VALUES
@@ -166,11 +162,11 @@ INSERT INTO living_arrangement_types (name) VALUES
     ('Others');
 
 -- Skill types
-CREATE TABLE IF NOT EXISTS `skill_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL UNIQUE,
-    `description` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE skill_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO skill_types (name) VALUES
@@ -189,11 +185,11 @@ INSERT INTO skill_types (name) VALUES
     ('Others');
 
 -- Community involvement types
-CREATE TABLE IF NOT EXISTS `involvement_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL UNIQUE,
-    `description` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE involvement_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO involvement_types (name) VALUES
@@ -211,12 +207,12 @@ INSERT INTO involvement_types (name) VALUES
     ('Others');
 
 -- Problem categories
-CREATE TABLE IF NOT EXISTS `problem_categories` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL UNIQUE,
-    `category_type` ENUM('health', 'economic', 'social', 'housing') NOT NULL,
-    `description` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE problem_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    category_type ENUM('health', 'economic', 'social', 'housing') NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO problem_categories (name, category_type) VALUES
@@ -251,12 +247,12 @@ INSERT INTO problem_categories (name, category_type) VALUES
     ('Senior Citizen Friendly Environment', 'social');
 
 -- Other needs and concerns types
-CREATE TABLE IF NOT EXISTS `other_need_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(100) NOT NULL UNIQUE,
-    `category` ENUM('social', 'economic', 'environmental', 'others') NOT NULL,
-    `description` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE other_need_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL UNIQUE,
+    category ENUM('social', 'economic', 'environmental', 'others') NOT NULL,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO other_need_types (name, category) VALUES
@@ -274,11 +270,11 @@ INSERT INTO other_need_types (name, category) VALUES
     ('Cultural Activities', 'others');
 
 -- Relationship types
-CREATE TABLE IF NOT EXISTS `relationship_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `name` VARCHAR(50) NOT NULL UNIQUE,
-    `description` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+CREATE TABLE relationship_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 INSERT INTO relationship_types (name) VALUES
@@ -296,51 +292,76 @@ INSERT INTO relationship_types (name) VALUES
   -------------------------------------------------------------*/
 
 -- Main users table
-CREATE TABLE IF NOT EXISTS `users` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `username` varchar(50) NOT NULL UNIQUE,
-  `email` varchar(255) NOT NULL UNIQUE,
-  `password` varchar(255) NOT NULL,
-  `first_name` varchar(100) NOT NULL,
-  `last_name` varchar(100) NOT NULL,
-  `contact_number` varchar(20),
-  `role_id` int(11) NOT NULL,
-  `barangay_id` int(11) NOT NULL,
-  `is_active` tinyint(1) DEFAULT 1,
-  `esignature_path` varchar(500),
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `role_id` (`role_id`),
-  KEY `barangay_id` (`barangay_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(100) NOT NULL UNIQUE,
+    phone VARCHAR(15) UNIQUE,
+    role_id INT DEFAULT 8, -- Default to resident
+    barangay_id INT DEFAULT 1, -- Default to a generic/first barangay
+    id_expiration_date DATE,
+    id_type VARCHAR(50),
+    first_name VARCHAR(50),
+    last_name VARCHAR(50),
+    gender ENUM('Male', 'Female', 'Others'),
+    password VARCHAR(255) NOT NULL,
+    email_verified_at TIMESTAMP NULL,
+    phone_verified_at TIMESTAMP NULL,
+    verification_token VARCHAR(32),
+    verification_expiry DATETIME,
+    is_active BOOLEAN DEFAULT TRUE,
+    last_login DATETIME,
+    start_term_date DATE NULL,
+    end_term_date DATE NULL,
+    id_image_path VARCHAR(255) DEFAULT 'default.png',
+    signature_image_path VARCHAR(255) NULL,
+    esignature_path VARCHAR(255) NULL,
+    govt_id_image LONGBLOB,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES roles(id),
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id)
+);
 
 -- Person information
-CREATE TABLE IF NOT EXISTS `persons` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `user_id` int(11) DEFAULT NULL,
-  `first_name` varchar(100) NOT NULL,
-  `last_name` varchar(100) NOT NULL,
-  `middle_name` varchar(100),
-  `birth_date` date,
-  `gender` enum('Male','Female','Other'),
-  `contact_number` varchar(20),
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `user_id` (`user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE persons (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    middle_name VARCHAR(50),
+    last_name VARCHAR(50) NOT NULL,
+    suffix VARCHAR(10),
+    birth_date DATE NOT NULL,
+    birth_place VARCHAR(100) NOT NULL,
+    gender ENUM('MALE', 'FEMALE') NOT NULL,
+    civil_status ENUM('SINGLE', 'MARRIED', 'WIDOW/WIDOWER', 'SEPARATED') NOT NULL,
+    citizenship VARCHAR(50) DEFAULT 'Filipino',
+    religion VARCHAR(50),
+    education_level ENUM('NOT ATTENDED ANY SCHOOL', 'ELEMENTARY LEVEL', 'ELEMENTARY GRADUATE', 'HIGH SCHOOL LEVEL', 'HIGH SCHOOL GRADUATE', 'VOCATIONAL', 'COLLEGE LEVEL', 'COLLEGE GRADUATE', 'POST GRADUATE'),
+    occupation VARCHAR(100),
+    monthly_income DECIMAL(10,2),
+    years_of_residency INT DEFAULT 0,
+    nhts_pr_listahanan BOOLEAN DEFAULT FALSE,
+    indigenous_people BOOLEAN DEFAULT FALSE,
+    pantawid_beneficiary BOOLEAN DEFAULT FALSE,
+    resident_type ENUM('REGULAR', 'SENIOR', 'PWD') DEFAULT 'REGULAR',
+    contact_number VARCHAR(20),
+    user_id INT,
+    census_id VARCHAR(50) UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL
+);
 
 -- User-Role assignment
-CREATE TABLE IF NOT EXISTS `user_roles` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `user_id` INT NOT NULL,
-    `role_id` INT NOT NULL,
-    `barangay_id` INT NOT NULL,
-    `start_term_date` DATE NULL,
-    `end_term_date` DATE NULL,
-    `is_active` BOOLEAN DEFAULT TRUE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE user_roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    role_id INT NOT NULL,
+    barangay_id INT NOT NULL,
+    start_term_date DATE NULL,
+    end_term_date DATE NULL,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_user_role_barangay (user_id, role_id, barangay_id),
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE CASCADE,
@@ -348,854 +369,1003 @@ CREATE TABLE IF NOT EXISTS `user_roles` (
 );
 
 -- Official ID
-CREATE TABLE IF NOT EXISTS `person_identification` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `osca_id` VARCHAR(50),
-    `gsis_id` VARCHAR(50),
-    `sss_id` VARCHAR(50),
-    `tin_id` VARCHAR(50),
-    `philhealth_id` VARCHAR(50),
-    `other_id_type` VARCHAR(50),
-    `other_id_number` VARCHAR(50),
-    `id_image_path` VARCHAR(255),
-    `selfie_image_path` VARCHAR(255),
-    `signature_image_path` VARCHAR(255),
-    `signature_date` DATE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_identification (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    osca_id VARCHAR(50),
+    gsis_id VARCHAR(50),
+    sss_id VARCHAR(50),
+    tin_id VARCHAR(50),
+    philhealth_id VARCHAR(50),
+    other_id_type VARCHAR(50),
+    other_id_number VARCHAR(50),
+    id_image_path VARCHAR(255),
+    selfie_image_path VARCHAR(255),
+    signature_image_path VARCHAR(255),
+    signature_date DATE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
 );
 
 -- Address information
-CREATE TABLE IF NOT EXISTS `addresses` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `person_id` int(11) NOT NULL,
-  `house_no` varchar(50),
-  `street` varchar(255),
-  `barangay_id` int(11) NOT NULL,
-  `is_primary` tinyint(1) DEFAULT 0,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `person_id` (`person_id`),
-  KEY `barangay_id` (`barangay_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE addresses (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    user_id INT,
+    barangay_id INT NOT NULL,
+    house_no VARCHAR(50),
+    street VARCHAR(100),
+    phase VARCHAR(50),
+    municipality VARCHAR(100) DEFAULT 'SAN RAFAEL',
+    province VARCHAR(100) DEFAULT 'BULACAN',
+    region VARCHAR(50) DEFAULT 'III',
+    subdivision VARCHAR(100),
+    block_lot VARCHAR(50),
+    residency_type ENUM('Home Owner', 'Renter', 'Boarder', 'Living-In') NOT NULL,
+    years_in_san_rafael INT,
+    is_primary BOOLEAN DEFAULT TRUE,
+    is_permanent BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id)
+);
 
 -- Emergency contact information
-CREATE TABLE IF NOT EXISTS `emergency_contacts` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `contact_name` VARCHAR(100) NOT NULL,
-    `contact_number` VARCHAR(20) NOT NULL,
-    `contact_address` VARCHAR(200),
-    `relationship` VARCHAR(50),
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE emergency_contacts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    contact_name VARCHAR(100) NOT NULL,
+    contact_number VARCHAR(20) NOT NULL,
+    contact_address VARCHAR(200),
+    relationship VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
 );
 
 -- Purok table
-CREATE TABLE IF NOT EXISTS `purok` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `barangay_id` INT NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE purok (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
     UNIQUE KEY uk_barangay_purok (barangay_id, name)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Household information
-CREATE TABLE IF NOT EXISTS `households` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `household_number` VARCHAR(50) NOT NULL,
-    `barangay_id` INT NOT NULL,
-    `purok_id` INT,
-    `household_head_person_id` INT,
-    `household_size` INT DEFAULT 1,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE households (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    household_number VARCHAR(50) NOT NULL,
+    barangay_id INT NOT NULL,
+    purok_id INT,
+    household_head_person_id INT,
+    household_size INT DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
     FOREIGN KEY (purok_id) REFERENCES purok(id) ON DELETE SET NULL,
     FOREIGN KEY (household_head_person_id) REFERENCES persons(id) ON DELETE SET NULL,
     UNIQUE KEY uk_household_number (household_number, barangay_id, purok_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person-Household relationship
-CREATE TABLE IF NOT EXISTS `household_members` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `household_id` INT NOT NULL,
-    `person_id` INT NOT NULL,
-    `relationship_type_id` INT NOT NULL,
-    `is_household_head` BOOLEAN DEFAULT FALSE,
-    `relationship_to_head` VARCHAR(50),
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE household_members (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    household_id INT NOT NULL,
+    person_id INT NOT NULL,
+    relationship_type_id INT NOT NULL,
+    is_household_head BOOLEAN DEFAULT FALSE,
+    relationship_to_head VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_household_person (household_id, person_id),
     FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (relationship_type_id) REFERENCES relationship_types(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 /*-------------------------------------------------------------
   SECTION 2.B: NORMALIZED PERSON DETAIL TABLES (CENSUS)
   -------------------------------------------------------------*/
 
 -- Person assets (Normalized version)
-CREATE TABLE IF NOT EXISTS `person_assets` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `asset_type_id` INT NOT NULL,
-    `details` TEXT, -- For specifics if 'Others' or additional info
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
+CREATE TABLE person_assets (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    asset_type_id INT NOT NULL,
+    details TEXT, -- For specifics if 'Others' or additional info
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (asset_type_id) REFERENCES asset_types(id) ON DELETE CASCADE,
     UNIQUE KEY uk_person_asset (person_id, asset_type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person income sources (Normalized version)
-CREATE TABLE IF NOT EXISTS `person_income_sources` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `source_type_id` INT NOT NULL,
-    `amount` DECIMAL(10,2), -- If requires_amount is true in income_source_types
-    `details` TEXT, -- For specifics if 'Others' or additional info
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
+CREATE TABLE person_income_sources (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    source_type_id INT NOT NULL,
+    amount DECIMAL(10,2), -- If requires_amount is true in income_source_types
+    details TEXT, -- For specifics if 'Others' or additional info
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (source_type_id) REFERENCES income_source_types(id) ON DELETE CASCADE,
     UNIQUE KEY uk_person_income_source (person_id, source_type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person living arrangements (Normalized version)
-CREATE TABLE IF NOT EXISTS `person_living_arrangements` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `arrangement_type_id` INT NOT NULL,
-    `details` TEXT, -- For specifics if 'Others' or additional info
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
+CREATE TABLE person_living_arrangements (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    arrangement_type_id INT NOT NULL,
+    details TEXT, -- For specifics if 'Others' or additional info
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (arrangement_type_id) REFERENCES living_arrangement_types(id) ON DELETE CASCADE,
     UNIQUE KEY uk_person_arrangement (person_id, arrangement_type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person skills (Normalized version)
-CREATE TABLE IF NOT EXISTS `person_skills` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `skill_type_id` INT NOT NULL,
-    `details` TEXT, -- For specifics if 'Others' or additional info
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
+CREATE TABLE person_skills (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    skill_type_id INT NOT NULL,
+    details TEXT, -- For specifics if 'Others' or additional info
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (skill_type_id) REFERENCES skill_types(id) ON DELETE CASCADE,
     UNIQUE KEY uk_person_skill (person_id, skill_type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person community involvements (Normalized version)
-CREATE TABLE IF NOT EXISTS `person_involvements` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `involvement_type_id` INT NOT NULL,
-    `details` TEXT, -- For specifics if 'Others' or additional info
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
+CREATE TABLE person_involvements (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    involvement_type_id INT NOT NULL,
+    details TEXT, -- For specifics if 'Others' or additional info
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (involvement_type_id) REFERENCES involvement_types(id) ON DELETE CASCADE,
     UNIQUE KEY uk_person_involvement (person_id, involvement_type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person problems/concerns (linking to problem_categories)
-CREATE TABLE IF NOT EXISTS `person_problems` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `problem_category_id` INT NOT NULL,
-    `details` TEXT, -- For specific details of the problem
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
+CREATE TABLE person_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    problem_category_id INT NOT NULL,
+    details TEXT, -- For specific details of the problem
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, -- Added for consistency
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (problem_category_id) REFERENCES problem_categories(id) ON DELETE CASCADE,
     UNIQUE KEY uk_person_problem (person_id, problem_category_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Economic Problems
-CREATE TABLE IF NOT EXISTS `person_economic_problems` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `loss_income` BOOLEAN DEFAULT FALSE,
-    `unemployment` BOOLEAN DEFAULT FALSE,
-    `high_cost_living` BOOLEAN DEFAULT FALSE,
-    `skills_training` BOOLEAN DEFAULT FALSE,
-    `skills_training_details` TEXT,
-    `livelihood` BOOLEAN DEFAULT FALSE,
-    `livelihood_details` TEXT,
-    `other_economic` BOOLEAN DEFAULT FALSE,
-    `other_economic_details` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_economic_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    loss_income BOOLEAN DEFAULT FALSE,
+    unemployment BOOLEAN DEFAULT FALSE,
+    high_cost_living BOOLEAN DEFAULT FALSE,
+    skills_training BOOLEAN DEFAULT FALSE,
+    skills_training_details TEXT,
+    livelihood BOOLEAN DEFAULT FALSE,
+    livelihood_details TEXT,
+    other_economic BOOLEAN DEFAULT FALSE,
+    other_economic_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Social Problems
-CREATE TABLE IF NOT EXISTS `person_social_problems` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `loneliness` BOOLEAN DEFAULT FALSE,
-    `isolation` BOOLEAN DEFAULT FALSE,
-    `neglect` BOOLEAN DEFAULT FALSE,
-    `recreational` BOOLEAN DEFAULT FALSE,
-    `senior_friendly` BOOLEAN DEFAULT FALSE,
-    `other_social` BOOLEAN DEFAULT FALSE,
-    `other_social_details` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_social_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    loneliness BOOLEAN DEFAULT FALSE,
+    isolation BOOLEAN DEFAULT FALSE,
+    neglect BOOLEAN DEFAULT FALSE,
+    recreational BOOLEAN DEFAULT FALSE,
+    senior_friendly BOOLEAN DEFAULT FALSE,
+    other_social BOOLEAN DEFAULT FALSE,
+    other_social_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Health Problems
-CREATE TABLE IF NOT EXISTS `person_health_problems` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `condition_illness` BOOLEAN DEFAULT FALSE,
-    `condition_illness_details` TEXT,
-    `high_cost_medicine` BOOLEAN DEFAULT FALSE,
-    `lack_medical_professionals` BOOLEAN DEFAULT FALSE,
-    `lack_sanitation` BOOLEAN DEFAULT FALSE,
-    `lack_health_insurance` BOOLEAN DEFAULT FALSE,
-    `inadequate_health_services` BOOLEAN DEFAULT FALSE,
-    `other_health` BOOLEAN DEFAULT FALSE,
-    `other_health_details` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_health_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    condition_illness BOOLEAN DEFAULT FALSE,
+    condition_illness_details TEXT,
+    high_cost_medicine BOOLEAN DEFAULT FALSE,
+    lack_medical_professionals BOOLEAN DEFAULT FALSE,
+    lack_sanitation BOOLEAN DEFAULT FALSE,
+    lack_health_insurance BOOLEAN DEFAULT FALSE,
+    inadequate_health_services BOOLEAN DEFAULT FALSE,
+    other_health BOOLEAN DEFAULT FALSE,
+    other_health_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Housing Problems
-CREATE TABLE IF NOT EXISTS `person_housing_problems` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `overcrowding` BOOLEAN DEFAULT FALSE,
-    `no_permanent_housing` BOOLEAN DEFAULT FALSE,
-    `independent_living` BOOLEAN DEFAULT FALSE,
-    `lost_privacy` BOOLEAN DEFAULT FALSE,
-    `squatters` BOOLEAN DEFAULT FALSE,
-    `other_housing` BOOLEAN DEFAULT FALSE,
-    `other_housing_details` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_housing_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    overcrowding BOOLEAN DEFAULT FALSE,
+    no_permanent_housing BOOLEAN DEFAULT FALSE,
+    independent_living BOOLEAN DEFAULT FALSE,
+    lost_privacy BOOLEAN DEFAULT FALSE,
+    squatters BOOLEAN DEFAULT FALSE,
+    other_housing BOOLEAN DEFAULT FALSE,
+    other_housing_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Community Service Problems
-CREATE TABLE IF NOT EXISTS `person_community_problems` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `desire_participate` BOOLEAN DEFAULT FALSE,
-    `skills_to_share` BOOLEAN DEFAULT FALSE,
-    `other_community` BOOLEAN DEFAULT FALSE,
-    `other_community_details` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_community_problems (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    desire_participate BOOLEAN DEFAULT FALSE,
+    skills_to_share BOOLEAN DEFAULT FALSE,
+    other_community BOOLEAN DEFAULT FALSE,
+    other_community_details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person health information (replaces senior_health, more generic)
-CREATE TABLE IF NOT EXISTS `person_health_info` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `health_condition` TEXT, -- General description
-    `has_maintenance` BOOLEAN DEFAULT FALSE,
-    `maintenance_details` TEXT,
-    `high_cost_medicines` BOOLEAN DEFAULT FALSE,
-    `lack_medical_professionals` BOOLEAN DEFAULT FALSE,
-    `lack_sanitation_access` BOOLEAN DEFAULT FALSE,
-    `lack_health_insurance` BOOLEAN DEFAULT FALSE,
-    `lack_medical_facilities` BOOLEAN DEFAULT FALSE,
-    `other_health_concerns` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_health_info (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    health_condition TEXT, -- General description
+    has_maintenance BOOLEAN DEFAULT FALSE,
+    maintenance_details TEXT,
+    high_cost_medicines BOOLEAN DEFAULT FALSE,
+    lack_medical_professionals BOOLEAN DEFAULT FALSE,
+    lack_sanitation_access BOOLEAN DEFAULT FALSE,
+    lack_health_insurance BOOLEAN DEFAULT FALSE,
+    lack_medical_facilities BOOLEAN DEFAULT FALSE,
+    other_health_concerns TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Person other needs (linking to other_need_types)
-CREATE TABLE IF NOT EXISTS `person_other_needs` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `need_type_id` INT NOT NULL,
-    `details` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE person_other_needs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    need_type_id INT NOT NULL,
+    details TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (need_type_id) REFERENCES other_need_types(id) ON DELETE CASCADE,
     UNIQUE KEY uk_person_other_need (person_id, need_type_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Family composition table
-CREATE TABLE IF NOT EXISTS `family_composition` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `household_id` INT NOT NULL,
-    `person_id` INT NOT NULL,
-    `name` VARCHAR(150) NOT NULL,
-    `relationship` VARCHAR(50) NOT NULL,
-    `age` INT NOT NULL,
-    `civil_status` ENUM('SINGLE', 'MARRIED', 'WIDOW/WIDOWER', 'SEPARATED') NOT NULL,
-    `occupation` VARCHAR(100),
-    `monthly_income` DECIMAL(10,2) DEFAULT 0.00,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE family_composition (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    household_id INT NOT NULL,
+    person_id INT NOT NULL,
+    name VARCHAR(150) NOT NULL,
+    relationship VARCHAR(50) NOT NULL,
+    age INT NOT NULL,
+    civil_status ENUM('SINGLE', 'MARRIED', 'WIDOW/WIDOWER', 'SEPARATED') NOT NULL,
+    occupation VARCHAR(100),
+    monthly_income DECIMAL(10,2) DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (household_id) REFERENCES households(id) ON DELETE CASCADE,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Legacy tables for backward compatibility (kept from second file structure)
 -- Income sources details
-CREATE TABLE IF NOT EXISTS `income_sources` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `own_earnings` BOOLEAN DEFAULT FALSE,
-    `own_pension` BOOLEAN DEFAULT FALSE,
-    `own_pension_amount` DECIMAL(10,2),
-    `stocks_dividends` BOOLEAN DEFAULT FALSE,
-    `dependent_on_children` BOOLEAN DEFAULT FALSE,
-    `spouse_salary` BOOLEAN DEFAULT FALSE,
-    `insurances` BOOLEAN DEFAULT FALSE,
-    `spouse_pension` BOOLEAN DEFAULT FALSE,
-    `spouse_pension_amount` DECIMAL(10,2),
-    `rentals_sharecrops` BOOLEAN DEFAULT FALSE,
-    `savings` BOOLEAN DEFAULT FALSE,
-    `livestock_orchards` BOOLEAN DEFAULT FALSE,
-    `others` BOOLEAN DEFAULT FALSE,
-    `others_specify` VARCHAR(100),
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE income_sources (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    own_earnings BOOLEAN DEFAULT FALSE,
+    own_pension BOOLEAN DEFAULT FALSE,
+    own_pension_amount DECIMAL(10,2),
+    stocks_dividends BOOLEAN DEFAULT FALSE,
+    dependent_on_children BOOLEAN DEFAULT FALSE,
+    spouse_salary BOOLEAN DEFAULT FALSE,
+    insurances BOOLEAN DEFAULT FALSE,
+    spouse_pension BOOLEAN DEFAULT FALSE,
+    spouse_pension_amount DECIMAL(10,2),
+    rentals_sharecrops BOOLEAN DEFAULT FALSE,
+    savings BOOLEAN DEFAULT FALSE,
+    livestock_orchards BOOLEAN DEFAULT FALSE,
+    others BOOLEAN DEFAULT FALSE,
+    others_specify VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Assets and properties
-CREATE TABLE IF NOT EXISTS `assets_properties` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `house` BOOLEAN DEFAULT FALSE,
-    `house_lot` BOOLEAN DEFAULT FALSE,
-    `farmland` BOOLEAN DEFAULT FALSE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE assets_properties (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    house BOOLEAN DEFAULT FALSE,
+    house_lot BOOLEAN DEFAULT FALSE,
+    farmland BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Living arrangements
-CREATE TABLE IF NOT EXISTS `living_arrangements` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `spouse` BOOLEAN DEFAULT FALSE,
-    `care_institutions` BOOLEAN DEFAULT FALSE,
-    `children` BOOLEAN DEFAULT FALSE,
-    `grandchildren` BOOLEAN DEFAULT FALSE,
-    `househelps` BOOLEAN DEFAULT FALSE,
-    `relatives` BOOLEAN DEFAULT FALSE,
-    `others` BOOLEAN DEFAULT FALSE,
-    `others_specify` VARCHAR(100),
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE living_arrangements (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    spouse BOOLEAN DEFAULT FALSE,
+    care_institutions BOOLEAN DEFAULT FALSE,
+    children BOOLEAN DEFAULT FALSE,
+    grandchildren BOOLEAN DEFAULT FALSE,
+    househelps BOOLEAN DEFAULT FALSE,
+    relatives BOOLEAN DEFAULT FALSE,
+    others BOOLEAN DEFAULT FALSE,
+    others_specify VARCHAR(100),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Skills
-CREATE TABLE IF NOT EXISTS `skills` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `dental` BOOLEAN DEFAULT FALSE,
-    `counseling` BOOLEAN DEFAULT FALSE,
-    `evangelization` BOOLEAN DEFAULT FALSE,
-    `farming` BOOLEAN DEFAULT FALSE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE skills (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    dental BOOLEAN DEFAULT FALSE,
+    counseling BOOLEAN DEFAULT FALSE,
+    evangelization BOOLEAN DEFAULT FALSE,
+    farming BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Problems and needs
-CREATE TABLE IF NOT EXISTS `problems_needs` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `lack_income` BOOLEAN DEFAULT FALSE,
-    `unemployment` BOOLEAN DEFAULT FALSE,
-    `economic_others` BOOLEAN DEFAULT FALSE,
-    `economic_others_specify` VARCHAR(100),
-    `loneliness` BOOLEAN DEFAULT FALSE,
-    `isolation` BOOLEAN DEFAULT FALSE,
-    `neglect` BOOLEAN DEFAULT FALSE,
-    `lack_health_insurance` BOOLEAN DEFAULT FALSE,
-    `inadequate_health_services` BOOLEAN DEFAULT FALSE,
-    `lack_medical_facilities` BOOLEAN DEFAULT FALSE,
-    `overcrowding` BOOLEAN DEFAULT FALSE,
-    `no_permanent_housing` BOOLEAN DEFAULT FALSE,
-    `independent_living` BOOLEAN DEFAULT FALSE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE problems_needs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    lack_income BOOLEAN DEFAULT FALSE,
+    unemployment BOOLEAN DEFAULT FALSE,
+    economic_others BOOLEAN DEFAULT FALSE,
+    economic_others_specify VARCHAR(100),
+    loneliness BOOLEAN DEFAULT FALSE,
+    isolation BOOLEAN DEFAULT FALSE,
+    neglect BOOLEAN DEFAULT FALSE,
+    lack_health_insurance BOOLEAN DEFAULT FALSE,
+    inadequate_health_services BOOLEAN DEFAULT FALSE,
+    lack_medical_facilities BOOLEAN DEFAULT FALSE,
+    overcrowding BOOLEAN DEFAULT FALSE,
+    no_permanent_housing BOOLEAN DEFAULT FALSE,
+    independent_living BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 /*-------------------------------------------------------------
   SECTION 2.C: CHILD-SPECIFIC INFORMATION
   -------------------------------------------------------------*/
 
 -- Child-specific information
-CREATE TABLE IF NOT EXISTS `child_information` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `is_malnourished` BOOLEAN DEFAULT FALSE,
-    `attending_school` BOOLEAN DEFAULT FALSE,
-    `school_name` VARCHAR(255),
-    `grade_level` VARCHAR(50),
-    `school_type` ENUM('Public', 'Private', 'ALS', 'Day Care', 'SNP', 'Not Attending') DEFAULT 'Not Attending',
-    `immunization_complete` BOOLEAN DEFAULT FALSE,
-    `is_pantawid_beneficiary` BOOLEAN DEFAULT FALSE, -- Note: also in persons table, check usage
-    `has_timbang_operation` BOOLEAN DEFAULT FALSE,
-    `has_feeding_program` BOOLEAN DEFAULT FALSE,
-    `has_supplementary_feeding` BOOLEAN DEFAULT FALSE,
-    `in_caring_institution` BOOLEAN DEFAULT FALSE,
-    `is_under_foster_care` BOOLEAN DEFAULT FALSE,
-    `is_directly_entrusted` BOOLEAN DEFAULT FALSE,
-    `is_legally_adopted` BOOLEAN DEFAULT FALSE,
-    `occupation` VARCHAR(255),
-    `garantisadong_pambata` BOOLEAN DEFAULT FALSE,
-    `under_six_years` BOOLEAN DEFAULT FALSE,
-    `grade_school` BOOLEAN DEFAULT FALSE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE child_information (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    is_malnourished BOOLEAN DEFAULT FALSE,
+    attending_school BOOLEAN DEFAULT FALSE,
+    school_name VARCHAR(255),
+    grade_level VARCHAR(50),
+    school_type ENUM('Public', 'Private', 'ALS', 'Day Care', 'SNP', 'Not Attending') DEFAULT 'Not Attending',
+    immunization_complete BOOLEAN DEFAULT FALSE,
+    is_pantawid_beneficiary BOOLEAN DEFAULT FALSE, -- Note: also in persons table, check usage
+    has_timbang_operation BOOLEAN DEFAULT FALSE,
+    has_feeding_program BOOLEAN DEFAULT FALSE,
+    has_supplementary_feeding BOOLEAN DEFAULT FALSE,
+    in_caring_institution BOOLEAN DEFAULT FALSE,
+    is_under_foster_care BOOLEAN DEFAULT FALSE,
+    is_directly_entrusted BOOLEAN DEFAULT FALSE,
+    is_legally_adopted BOOLEAN DEFAULT FALSE,
+    occupation VARCHAR(255),
+    garantisadong_pambata BOOLEAN DEFAULT FALSE,
+    under_six_years BOOLEAN DEFAULT FALSE,
+    grade_school BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Child health conditions (specific ENUM based, kept separate from generic health concerns)
-CREATE TABLE IF NOT EXISTS `child_health_conditions` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `condition_type` ENUM('Malaria', 'Dengue', 'Pneumonia', 'Tuberculosis', 'Diarrhea') NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE child_health_conditions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    condition_type ENUM('Malaria', 'Dengue', 'Pneumonia', 'Tuberculosis', 'Diarrhea') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
     -- Consider adding UNIQUE KEY (person_id, condition_type) if a child can't have the same condition listed twice.
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Child disabilities (specific ENUM based)
-CREATE TABLE IF NOT EXISTS `child_disabilities` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `disability_type` ENUM('Blind/Visually Impaired', 'Hearing Impairment', 'Speech/Communication', 'Orthopedic/Physical', 'Intellectual/Learning', 'Psychosocial') NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE child_disabilities (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    disability_type ENUM('Blind/Visually Impaired', 'Hearing Impairment', 'Speech/Communication', 'Orthopedic/Physical', 'Intellectual/Learning', 'Psychosocial') NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
     -- Consider adding UNIQUE KEY (person_id, disability_type)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 /*-------------------------------------------------------------
   SECTION 2.D: RESIDENT DETAILS AND GOVERNMENT PROGRAMS
   -------------------------------------------------------------*/
 
 -- Government programs participation
-CREATE TABLE IF NOT EXISTS `government_programs` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL UNIQUE,
-    `nhts_pr_listahanan` BOOLEAN DEFAULT FALSE,
-    `indigenous_people` BOOLEAN DEFAULT FALSE,
-    `pantawid_beneficiary` BOOLEAN DEFAULT FALSE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE government_programs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL UNIQUE,
+    nhts_pr_listahanan BOOLEAN DEFAULT FALSE,
+    indigenous_people BOOLEAN DEFAULT FALSE,
+    pantawid_beneficiary BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Temporary records table
-CREATE TABLE IF NOT EXISTS `temporary_records` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `last_name` VARCHAR(100) NOT NULL,
-    `suffix` VARCHAR(10),
-    `first_name` VARCHAR(100) NOT NULL,
-    `house_number` VARCHAR(100) NOT NULL,
-    `street` VARCHAR(100) NOT NULL,
-    `barangay_id` VARCHAR(100) NOT NULL,
-    `municipality` VARCHAR(100) NOT NULL,
-    `province` VARCHAR(100) NOT NULL,
-    `region` VARCHAR(100) NOT NULL,
-    `id_type` VARCHAR(100) NOT NULL,
-    `id_number` VARCHAR(100) NOT NULL,
-    `middle_name` VARCHAR(100),
-    `date_of_birth` DATE NOT NULL,
-    `place_of_birth` VARCHAR(255) NOT NULL,
-    `months_residency` INT NOT NULL,
-    `days_residency` INT NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE temporary_records (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    last_name VARCHAR(100) NOT NULL,
+    suffix VARCHAR(10),
+    first_name VARCHAR(100) NOT NULL,
+    house_number VARCHAR(100) NOT NULL,
+    street VARCHAR(100) NOT NULL,
+    barangay_id VARCHAR(100) NOT NULL,
+    municipality VARCHAR(100) NOT NULL,
+    province VARCHAR(100) NOT NULL,
+    region VARCHAR(100) NOT NULL,
+    id_type VARCHAR(100) NOT NULL,
+    id_number VARCHAR(100) NOT NULL,
+    middle_name VARCHAR(100),
+    date_of_birth DATE NOT NULL,
+    place_of_birth VARCHAR(255) NOT NULL,
+    months_residency INT NOT NULL,
+    days_residency INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 
 /*-------------------------------------------------------------
   SECTION 3: BARANGAY OPERATIONS & DOCUMENT REQUEST SYSTEM
   -------------------------------------------------------------*/
 
 -- Barangay settings and operation information
-CREATE TABLE IF NOT EXISTS `barangay_settings` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `barangay_id` INT NOT NULL UNIQUE,
-    `cutoff_time` TIME NOT NULL DEFAULT '15:00:00',
-    `opening_time` TIME NOT NULL DEFAULT '08:00:00',
-    `closing_time` TIME NOT NULL DEFAULT '17:00:00',
-    `barangay_captain_name` VARCHAR(100),
-    `contact_number` VARCHAR(15),
-    `email` VARCHAR(100),
-    `local_barangay_contact` VARCHAR(20),
-    `pnp_contact` VARCHAR(20),
-    `bfp_contact` VARCHAR(20),
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE barangay_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL UNIQUE,
+    cutoff_time TIME NOT NULL DEFAULT '15:00:00',
+    opening_time TIME NOT NULL DEFAULT '08:00:00',
+    closing_time TIME NOT NULL DEFAULT '17:00:00',
+    barangay_captain_name VARCHAR(100),
+    contact_number VARCHAR(15),
+    email VARCHAR(100),
+    local_barangay_contact VARCHAR(20),
+    pnp_contact VARCHAR(20),
+    bfp_contact VARCHAR(20),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Document attribute types
-CREATE TABLE IF NOT EXISTS `document_attribute_types` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `document_type_id` INT NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-    `code` VARCHAR(40) NOT NULL,
-    `description` VARCHAR(200),
-    `is_required` BOOLEAN DEFAULT FALSE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE document_attribute_types (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    document_type_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    code VARCHAR(40) NOT NULL,
+    description VARCHAR(200),
+    is_required BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_doc_attr_code (document_type_id, code),
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Document requests
-CREATE TABLE IF NOT EXISTS `document_requests` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `person_id` INT NOT NULL,
-    `document_type_id` INT NOT NULL,
-    `barangay_id` INT NOT NULL,
-    `status` ENUM('pending', 'processing', 'for_payment', 'paid', 'for_pickup', 'completed', 'cancelled', 'rejected') DEFAULT 'pending',
-    `price` DECIMAL(10,2) DEFAULT 0.00,
-    `remarks` TEXT,
-    `proof_image_path` VARCHAR(255) NULL,
-    `requested_by_user_id` INT,
-    `processed_by_user_id` INT,
-    `completed_at` DATETIME,
-    `request_date` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE document_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    document_type_id INT NOT NULL,
+    barangay_id INT NOT NULL,
+    status ENUM('pending', 'processing', 'for_payment', 'paid', 'for_pickup', 'completed', 'cancelled', 'rejected') DEFAULT 'pending',
+    price DECIMAL(10,2) DEFAULT 0.00,
+    remarks TEXT,
+    proof_image_path VARCHAR(255) NULL,
+    requested_by_user_id INT,
+    processed_by_user_id INT,
+    completed_at DATETIME,
+    request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
     FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (processed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Document request attributes
-CREATE TABLE IF NOT EXISTS `document_request_attributes` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `request_id` INT NOT NULL,
-    `attribute_type_id` INT NOT NULL,
-    `value` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE document_request_attributes (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    request_id INT NOT NULL,
+    attribute_type_id INT NOT NULL,
+    value TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_request_attribute (request_id, attribute_type_id),
     FOREIGN KEY (request_id) REFERENCES document_requests(id) ON DELETE CASCADE,
     FOREIGN KEY (attribute_type_id) REFERENCES document_attribute_types(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Barangay document prices
-CREATE TABLE IF NOT EXISTS `barangay_document_prices` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `barangay_id` INT NOT NULL,
-    `document_type_id` INT NOT NULL,
-    `price` DECIMAL(10,2) NOT NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE barangay_document_prices (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    document_type_id INT NOT NULL,
+    price DECIMAL(10,2) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     UNIQUE KEY uk_barangay_document (barangay_id, document_type_id),
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Service categories
-CREATE TABLE IF NOT EXISTS `service_categories` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `barangay_id` INT NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-    `description` TEXT,
-    `icon` VARCHAR(50) DEFAULT 'fa-cog',
-    `display_order` INT DEFAULT 0,
-    `is_active` BOOLEAN DEFAULT TRUE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE service_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    icon VARCHAR(50) DEFAULT 'fa-cog',
+    display_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Custom services
-CREATE TABLE IF NOT EXISTS `custom_services` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `category_id` INT NOT NULL,
-    `barangay_id` INT NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-    `description` TEXT,
-    `detailed_guide` TEXT,
-    `requirements` TEXT,
-    `processing_time` VARCHAR(100),
-    `fees` VARCHAR(100),
-    `icon` VARCHAR(50) DEFAULT 'fa-file',
-    `url_path` VARCHAR(255),
-    `display_order` INT DEFAULT 0,
-    `is_active` BOOLEAN DEFAULT TRUE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE custom_services (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    category_id INT NOT NULL,
+    barangay_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    detailed_guide TEXT,
+    requirements TEXT,
+    processing_time VARCHAR(100),
+    fees VARCHAR(100),
+    icon VARCHAR(50) DEFAULT 'fa-file',
+    url_path VARCHAR(255),
+    display_order INT DEFAULT 0,
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (category_id) REFERENCES service_categories(id) ON DELETE CASCADE,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Service requirements
-CREATE TABLE IF NOT EXISTS `service_requirements` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `service_id` INT NOT NULL,
-    `name` VARCHAR(100) NOT NULL,
-    `description` TEXT,
-    `is_required` BOOLEAN DEFAULT TRUE,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE service_requirements (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    service_id INT NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    description TEXT,
+    is_required BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (service_id) REFERENCES custom_services(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Service requests
-CREATE TABLE IF NOT EXISTS `service_requests` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `service_id` INT NOT NULL,
-    `user_id` INT NOT NULL,
-    `status` ENUM('pending', 'processing', 'completed', 'rejected', 'cancelled') DEFAULT 'pending',
-    `remarks` TEXT,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE service_requests (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    service_id INT NOT NULL,
+    user_id INT NOT NULL,
+    status ENUM('pending', 'processing', 'completed', 'rejected', 'cancelled') DEFAULT 'pending',
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (service_id) REFERENCES custom_services(id) ON DELETE CASCADE,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Service request attachments
-CREATE TABLE IF NOT EXISTS `service_request_attachments` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `request_id` INT NOT NULL,
-    `file_name` VARCHAR(255) NOT NULL,
-    `file_path` VARCHAR(255) NOT NULL,
-    `file_type` VARCHAR(50),
-    `file_size` INT,
-    `uploaded_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+CREATE TABLE service_request_attachments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    request_id INT NOT NULL,
+    file_name VARCHAR(255) NOT NULL,
+    file_path VARCHAR(255) NOT NULL,
+    file_type VARCHAR(50),
+    file_size INT,
+    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (request_id) REFERENCES service_requests(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 /*-------------------------------------------------------------
   SECTION 4: BLOTTER/CASE MANAGEMENT SYSTEM
   -------------------------------------------------------------*/
 
 -- External participants (for people not in the persons table)
-CREATE TABLE IF NOT EXISTS `external_participants` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `first_name` varchar(100) NOT NULL,
-  `last_name` varchar(100) NOT NULL,
-  `contact_number` varchar(20),
-  `address` varchar(500),
-  `age` int(3),
-  `gender` enum('Male','Female','Other'),
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE external_participants (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    first_name VARCHAR(50) NOT NULL,
+    last_name VARCHAR(50) NOT NULL,
+    contact_number VARCHAR(20),
+    address VARCHAR(255),
+    age INT,
+    gender ENUM('Male', 'Female', 'Others'),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
 
 -- Main blotter case information
-CREATE TABLE IF NOT EXISTS `blotter_cases` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `case_number` varchar(50) NOT NULL UNIQUE,
-  `location` varchar(255) NOT NULL,
-  `description` text NOT NULL,
-  `status` enum('pending','open','closed','completed','solved','endorsed_to_court','cfa_eligible','dismissed') DEFAULT 'pending',
-  `barangay_id` int(11) NOT NULL,
-  `incident_date` datetime,
-  `filing_date` datetime,
-  `scheduling_deadline` datetime GENERATED ALWAYS AS (DATE_ADD(filing_date, INTERVAL 5 DAY)) STORED,
-  `accepted_by_user_id` int(11) DEFAULT NULL,
-  `accepted_by_role_id` int(11) DEFAULT NULL,
-  `accepted_at` datetime DEFAULT NULL,
-  `resolved_at` datetime DEFAULT NULL,
-  `cfa_issued_at` datetime DEFAULT NULL,
-  `endorsed_to_court_at` datetime DEFAULT NULL,
-  `captain_signature_date` datetime DEFAULT NULL,
-  `chief_signature_date` datetime DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `barangay_id` (`barangay_id`),
-  KEY `accepted_by_user_id` (`accepted_by_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE blotter_cases (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    case_number VARCHAR(50) UNIQUE,
+    incident_date DATETIME,
+    location VARCHAR(200),
+    description TEXT,
+    status ENUM('pending', 'open', 'closed', 'completed', 'transferred', 'solved', 'endorsed_to_court', 'cfa_eligible', 'deleted') DEFAULT 'pending',
+    scheduling_status ENUM('none', 'pending_schedule', 'schedule_proposed', 'schedule_confirmed', 'scheduled', 'completed', 'cancelled') DEFAULT 'none',
+    barangay_id INT,
+    reported_by_person_id INT,
+    assigned_to_user_id INT,
+    scheduled_hearing DATETIME,
+    resolution_details TEXT,
+    resolved_at DATETIME,
+    is_cfa_eligible BOOLEAN DEFAULT FALSE,
+    cfa_issued_at DATETIME NULL,
+    endorsed_to_court_at DATETIME NULL,
+    hearing_count INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE SET NULL,
+    FOREIGN KEY (reported_by_person_id) REFERENCES persons(id) ON DELETE SET NULL,
+    FOREIGN KEY (assigned_to_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
 
-CREATE TABLE IF NOT EXISTS `blotter_participants` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `person_id` int(11) DEFAULT NULL,
-  `external_participant_id` int(11) DEFAULT NULL,
-  `role` enum('complainant','respondent','witness') NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`),
-  KEY `person_id` (`person_id`),
-  KEY `external_participant_id` (`external_participant_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- People involved in blotter cases
+CREATE TABLE blotter_participants (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    person_id INT,
+    external_participant_id INT,
+    role ENUM('complainant', 'respondent', 'witness') NOT NULL,
+    statement TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_case_person_role (blotter_case_id, person_id, role),
+    UNIQUE KEY uk_case_external_role (blotter_case_id, external_participant_id, role),
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
+    FOREIGN KEY (external_participant_id) REFERENCES external_participants(id) ON DELETE CASCADE
+);
 
-CREATE TABLE IF NOT EXISTS `blotter_case_categories` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `category_id` int(11) NOT NULL,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`),
-  KEY `category_id` (`category_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Case-category relationship
+CREATE TABLE blotter_case_categories (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    category_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_case_category (blotter_case_id, category_id),
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (category_id) REFERENCES case_categories(id) ON DELETE CASCADE
+);
 
-CREATE TABLE IF NOT EXISTS `blotter_case_interventions` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `intervention_id` int(11) NOT NULL,
-  `intervened_at` datetime NOT NULL,
-  `remarks` text,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`),
-  KEY `intervention_id` (`intervention_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Case-intervention relationship
+CREATE TABLE blotter_case_interventions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    intervention_id INT NOT NULL,
+    intervened_at DATETIME NOT NULL,
+    performed_by VARCHAR(100),
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_case_intervention_date (blotter_case_id, intervention_id, intervened_at),
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (intervention_id) REFERENCES case_interventions(id) ON DELETE CASCADE
+);
 
--- Schedule management tables
-CREATE TABLE IF NOT EXISTS `schedule_proposals` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `proposed_by_user_id` int(11) NOT NULL,
-  `proposed_date` date NOT NULL,
-  `proposed_time` time NOT NULL,
-  `hearing_location` varchar(255) DEFAULT 'Barangay Hall',
-  `presiding_officer` varchar(255) NOT NULL,
-  `presiding_officer_position` enum('barangay_captain','chief_officer') NOT NULL,
-  `status` enum('proposed','user_confirmed','captain_confirmed','rejected','pending_user_confirmation') DEFAULT 'proposed',
-  `captain_confirmed` tinyint(1) DEFAULT 0,
-  `captain_confirmed_at` datetime DEFAULT NULL,
-  `captain_remarks` text,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`),
-  KEY `proposed_by_user_id` (`proposed_by_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Case hearings and mediation
+CREATE TABLE case_hearings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    hearing_date DATETIME NOT NULL,
+    hearing_type ENUM('initial', 'mediation', 'conciliation', 'final') NOT NULL,
+    hearing_notes TEXT,
+    hearing_outcome ENUM('scheduled', 'conducted', 'postponed', 'resolved', 'failed') DEFAULT 'scheduled',
+    presided_by_user_id INT,
+    next_hearing_date DATETIME,
+    hearing_number INT DEFAULT 1,
+    presiding_officer_name VARCHAR(100) NULL,
+    presiding_officer_position VARCHAR(100) NULL,
+    is_mediation_successful BOOLEAN DEFAULT FALSE,
+    resolution_details TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (presided_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
 
-CREATE TABLE IF NOT EXISTS `participant_notifications` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `participant_id` int(11) NOT NULL,
-  `participant_type` enum('registered','external') NOT NULL,
-  `email` varchar(255),
-  `contact_number` varchar(20),
-  `notification_sent_at` datetime DEFAULT NULL,
-  `confirmed` tinyint(1) DEFAULT 0,
-  `confirmed_at` datetime DEFAULT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Case hearing attendees
+CREATE TABLE hearing_attendances (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    hearing_id INT NOT NULL,
+    participant_id INT NOT NULL,
+    is_present BOOLEAN DEFAULT FALSE,
+    remarks VARCHAR(255),
+    participant_type VARCHAR(20) NULL,
+    attendance_remarks TEXT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_hearing_participant (hearing_id, participant_id),
+    FOREIGN KEY (hearing_id) REFERENCES case_hearings(id) ON DELETE CASCADE,
+    FOREIGN KEY (participant_id) REFERENCES blotter_participants(id) ON DELETE CASCADE
+);
 
--- Hearing management tables
-CREATE TABLE IF NOT EXISTS `case_hearings` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `hearing_number` int(2) NOT NULL DEFAULT 1,
-  `hearing_date` datetime NOT NULL,
-  `presiding_officer_name` varchar(255) NOT NULL,
-  `presiding_officer_position` enum('barangay_captain','chief_officer') NOT NULL,
-  `hearing_outcome` enum('scheduled','completed','mediation_successful','mediation_failed','no_show','postponed') DEFAULT 'scheduled',
-  `resolution_details` text,
-  `hearing_notes` text,
-  `is_mediation_successful` tinyint(1) DEFAULT 0,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  `updated_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- CFA certificates
+CREATE TABLE cfa_certificates (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    complainant_person_id INT NULL,
+    issued_by_user_id INT NULL,
+    certificate_number VARCHAR(50) NOT NULL,
+    issued_at DATETIME NOT NULL,
+    reason VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (complainant_person_id) REFERENCES persons(id) ON DELETE SET NULL,
+    FOREIGN KEY (issued_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
 
-CREATE TABLE IF NOT EXISTS `hearing_attendance` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `hearing_id` int(11) NOT NULL,
-  `participant_id` int(11) NOT NULL,
-  `attended` tinyint(1) DEFAULT 0,
-  `attendance_remarks` text,
-  PRIMARY KEY (`id`),
-  KEY `hearing_id` (`hearing_id`),
-  KEY `participant_id` (`participant_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+/*-------------------------------------------------------------
+  SECTION 5: EVENTS & REPORTING SYSTEM
+  -------------------------------------------------------------*/
 
--- CFA Certificate management
-CREATE TABLE IF NOT EXISTS `cfa_certificates` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `complainant_person_id` int(11) NOT NULL,
-  `issued_by_user_id` int(11) NOT NULL,
-  `certificate_number` varchar(50) NOT NULL UNIQUE,
-  `issued_at` datetime NOT NULL,
-  `reason` text,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`),
-  KEY `complainant_person_id` (`complainant_person_id`),
-  KEY `issued_by_user_id` (`issued_by_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Event management
+CREATE TABLE events (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    title VARCHAR(100) NOT NULL,
+    description TEXT,
+    start_datetime DATETIME NOT NULL,
+    end_datetime DATETIME NOT NULL,
+    location VARCHAR(200) NOT NULL,
+    organizer VARCHAR(100),
+    barangay_id INT NOT NULL,
+    created_by_user_id INT NOT NULL,
+    status ENUM('scheduled', 'ongoing', 'completed', 'postponed', 'cancelled') DEFAULT 'scheduled',
+    max_participants INT DEFAULT NULL,
+    registration_required BOOLEAN DEFAULT FALSE,
+    registration_deadline DATETIME DEFAULT NULL,
+    event_type ENUM('meeting', 'seminar', 'activity', 'celebration', 'emergency', 'other') DEFAULT 'other',
+    contact_person VARCHAR(100),
+    contact_number VARCHAR(20),
+    requirements TEXT,
+    notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
--- Notification system
-CREATE TABLE IF NOT EXISTS `case_notifications` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `blotter_case_id` int(11) NOT NULL,
-  `notified_user_id` int(11) NOT NULL,
-  `notification_type` enum('case_filed','case_accepted','schedule_proposed','hearing_scheduled','case_closed') NOT NULL,
-  `message` text,
-  `is_read` tinyint(1) DEFAULT 0,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `blotter_case_id` (`blotter_case_id`),
-  KEY `notified_user_id` (`notified_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Event participants
+CREATE TABLE event_participants (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    event_id INT NOT NULL,
+    person_id INT NOT NULL,
+    attendance_status ENUM('registered', 'confirmed', 'attended', 'no_show') DEFAULT 'registered',
+    remarks VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_event_person (event_id, person_id),
+    FOREIGN KEY (event_id) REFERENCES events(id) ON DELETE CASCADE,
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE
+);
 
--- Audit trail
-CREATE TABLE IF NOT EXISTS `audit_trails` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `user_id` int(11) NOT NULL,
-  `admin_user_id` int(11) NOT NULL,
-  `action` varchar(50) NOT NULL,
-  `table_name` varchar(100) NOT NULL,
-  `record_id` int(11) NOT NULL,
-  `description` text,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `user_id` (`user_id`),
-  KEY `admin_user_id` (`admin_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Monthly report tracking
+CREATE TABLE monthly_reports (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    report_month INT NOT NULL,
+    report_year INT NOT NULL,
+    created_by_user_id INT NOT NULL,
+    prepared_by_user_id INT NULL,
+    submitted_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_barangay_month_year (barangay_id, report_month, report_year),
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
+    FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (prepared_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
 
--- Monthly reports
-CREATE TABLE IF NOT EXISTS `monthly_reports` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `barangay_id` int(11) NOT NULL,
-  `report_year` int(4) NOT NULL,
-  `report_month` int(2) NOT NULL,
-  `prepared_by_user_id` int(11) NOT NULL,
-  `submitted_at` datetime NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
-  KEY `barangay_id` (`barangay_id`),
-  KEY `prepared_by_user_id` (`prepared_by_user_id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+-- Monthly report details by category
+CREATE TABLE monthly_report_details (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    monthly_report_id INT NOT NULL,
+    category_id INT NOT NULL,
+    total_cases INT DEFAULT 0,
+    total_pnp INT DEFAULT 0,
+    total_court INT DEFAULT 0,
+    total_issued_bpo INT DEFAULT 0,
+    total_medical INT DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_report_category (monthly_report_id, category_id),
+    FOREIGN KEY (monthly_report_id) REFERENCES monthly_reports(id) ON DELETE CASCADE,
+    FOREIGN KEY (category_id) REFERENCES case_categories(id) ON DELETE CASCADE
+);
+
+/*-------------------------------------------------------------
+  SECTION 6: SYSTEM TABLES (AUDIT, TOKENS, SESSIONS)
+  -------------------------------------------------------------*/
+
+-- System activity auditing
+CREATE TABLE audit_trails (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    admin_user_id INT,
+    action VARCHAR(50) NOT NULL,
+    table_name VARCHAR(100),
+    record_id VARCHAR(100),
+    old_values TEXT,
+    new_values TEXT,
+    description VARCHAR(255),
+    ip_address VARCHAR(45),
+    user_agent VARCHAR(255),
+    action_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+
+-- Scheduling and notifications
+CREATE TABLE schedule_proposals (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    blotter_case_id INT NOT NULL,
+    proposed_by_user_id INT NOT NULL,
+    proposed_date DATE NOT NULL,
+    proposed_time TIME NOT NULL,
+    hearing_location VARCHAR(255) NOT NULL,
+    presiding_officer VARCHAR(100) NOT NULL,
+    presiding_officer_position VARCHAR(50) NOT NULL,
+    status ENUM('proposed', 'user_confirmed', 'captain_confirmed', 'both_confirmed', 'conflict', 'pending_user_confirmation', 'pending_officer_confirmation', 'cancelled') NOT NULL DEFAULT 'proposed',
+    user_confirmed BOOLEAN DEFAULT FALSE,
+    user_confirmed_at DATETIME,
+    captain_confirmed BOOLEAN DEFAULT FALSE,
+    captain_confirmed_at DATETIME,
+    confirmed_by_role INT,
+    user_remarks TEXT,
+    captain_remarks TEXT,
+    conflict_reason TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id),
+    FOREIGN KEY (proposed_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (confirmed_by_role) REFERENCES roles(id)
+);
+
+-- Email logs
+CREATE TABLE email_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    to_email VARCHAR(255) NOT NULL,
+    subject VARCHAR(255) NOT NULL,
+    template_used VARCHAR(100),
+    sent_at DATETIME NOT NULL,
+    status ENUM('sent', 'failed', 'pending') DEFAULT 'pending',
+    error_message TEXT NULL,
+    blotter_case_id INT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE SET NULL
+);
+
+-- Notifications
+CREATE TABLE notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    type VARCHAR(50) NOT NULL DEFAULT 'general',
+    title VARCHAR(255) NOT NULL,
+    message TEXT NOT NULL,
+    related_table VARCHAR(100) NULL,
+    related_id INT NULL,
+    action_url VARCHAR(255) NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    priority ENUM('low', 'medium', 'high', 'urgent') DEFAULT 'medium',
+    expires_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_user_id (user_id),
+    INDEX idx_type (type),
+    INDEX idx_is_read (is_read),
+    INDEX idx_created_at (created_at),
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
 -- Hearing schedules
-CREATE TABLE IF NOT EXISTS `hearing_schedules` (
-  `id` int(11) NOT NULL AUTO_INCREMENT,
-  `hearing_date` date NOT NULL,
-  `hearing_time` time NOT NULL,
-  `max_hearings_per_slot` int(2) DEFAULT 5,
-  `current_bookings` int(2) DEFAULT 0,
-  `is_available` tinyint(1) DEFAULT 1,
-  `created_at` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+CREATE TABLE hearing_schedules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    hearing_date DATE NOT NULL,
+    hearing_time TIME NOT NULL,
+    location VARCHAR(255) DEFAULT 'Barangay Hall',
+    max_hearings_per_slot INT DEFAULT 5,
+    current_bookings INT DEFAULT 0,
+    is_available BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+-- Password reset tokens
+CREATE TABLE password_reset_tokens (
+    email VARCHAR(100) PRIMARY KEY,
+    token VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (email) REFERENCES users(email) ON DELETE CASCADE
+);
+
+-- Personal access tokens (for API authentication)
+CREATE TABLE personal_access_tokens (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    tokenable_type VARCHAR(255) NOT NULL,
+    tokenable_id INT NOT NULL,
+    name VARCHAR(255) NOT NULL,
+    token VARCHAR(64) NOT NULL UNIQUE,
+    abilities TEXT,
+    last_used_at TIMESTAMP NULL,
+    expires_at TIMESTAMP NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    INDEX idx_tokenable (tokenable_type, tokenable_id)
+);
+
+-- Sessions table (for web sessions)
+CREATE TABLE sessions (
+    id VARCHAR(255) PRIMARY KEY,
+    user_id INT NULL,
+    ip_address VARCHAR(45) NULL,
+    user_agent TEXT NULL,
+    payload LONGTEXT NOT NULL,
+    last_activity INT NOT NULL,
+    INDEX idx_sessions_user_id (user_id),
+    INDEX idx_sessions_last_activity (last_activity)
+);
 
 /*-------------------------------------------------------------
   SECTION 7: SAMPLE DATA INSERTION
@@ -1448,25 +1618,25 @@ GROUP BY bc.id, bc.case_number, bc.incident_date, bc.status, bc.scheduling_statu
 
 
 -- Add missing participant_notifications table
-CREATE TABLE IF NOT EXISTS `participant_notifications` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `blotter_case_id` INT NOT NULL,
-    `participant_id` INT NOT NULL,
-    `email_address` VARCHAR(255),
-    `phone_number` VARCHAR(20),
-    `notification_type` ENUM('summons', 'hearing_notice', 'reminder') DEFAULT 'summons',
-    `sent_at` DATETIME,
-    `confirmed` BOOLEAN DEFAULT FALSE,
-    `confirmed_at` DATETIME NULL,
-    `confirmation_token` VARCHAR(255),
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE participant_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    participant_id INT NOT NULL,
+    email_address VARCHAR(255),
+    phone_number VARCHAR(20),
+    notification_type ENUM('summons', 'hearing_notice', 'reminder') DEFAULT 'summons',
+    sent_at DATETIME,
+    confirmed BOOLEAN DEFAULT FALSE,
+    confirmed_at DATETIME NULL,
+    confirmation_token VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
     FOREIGN KEY (participant_id) REFERENCES blotter_participants(id) ON DELETE CASCADE,
     UNIQUE KEY uk_case_participant_type (blotter_case_id, participant_id, notification_type),
     INDEX idx_confirmation_token (confirmation_token),
     INDEX idx_sent_confirmed (sent_at, confirmed)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+);
 
 -- Insert sample data for existing blotter cases to prevent errors
 -- This assumes you have blotter cases with IDs 1-4 and corresponding participants
@@ -1495,9 +1665,13 @@ WHERE bp.blotter_case_id IN (
 ON DUPLICATE KEY UPDATE confirmed = VALUES(confirmed);
 
 
+
 -- Add missing columns to custom_services table
 ALTER TABLE custom_services 
-ADD COLUMN service_photo VARCHAR(255) AFTER additional_notes;
+ADD COLUMN service_type VARCHAR(50) DEFAULT 'general' AFTER barangay_id,
+ADD COLUMN priority_level ENUM('normal', 'high', 'urgent') DEFAULT 'normal' AFTER display_order,
+ADD COLUMN availability_type ENUM('always', 'scheduled', 'limited') DEFAULT 'always' AFTER priority_level,
+ADD COLUMN additional_notes TEXT AFTER availability_type;
 
 -- Add new status for blotter cases
 ALTER TABLE blotter_cases 
@@ -1518,19 +1692,29 @@ ADD COLUMN notification_sent_at DATETIME NULL AFTER notification_sent,
 ADD FOREIGN KEY (proposed_by_role_id) REFERENCES roles(id) ON DELETE CASCADE;
 
 -- Add new table for schedule notifications
-CREATE TABLE IF NOT EXISTS `schedule_notifications` (
-    `id` INT AUTO_INCREMENT PRIMARY KEY,
-    `schedule_proposal_id` INT NOT NULL,
-    `notified_user_id` INT NOT NULL,
-    `notification_type` ENUM('proposal', 'confirmation', 'rejection') NOT NULL,
-    `is_read` BOOLEAN DEFAULT FALSE,
-    `read_at` DATETIME NULL,
-    `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    `updated_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+CREATE TABLE schedule_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    schedule_proposal_id INT NOT NULL,
+    notified_user_id INT NOT NULL,
+    notification_type ENUM('proposal', 'confirmation', 'rejection') NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (schedule_proposal_id) REFERENCES schedule_proposals(id) ON DELETE CASCADE,
     FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
-
+);
+CREATE TABLE case_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    notified_user_id INT NOT NULL,
+    notification_type ENUM('case_filed', 'case_accepted', 'hearing_scheduled', 'signature_required') NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 -- Add indexes for better performance
 CREATE INDEX idx_schedule_proposals_status ON schedule_proposals(status);
 CREATE INDEX idx_schedule_notifications_user ON schedule_notifications(notified_user_id, is_read);
@@ -1564,3 +1748,31 @@ ADD COLUMN purpose TEXT AFTER business_type,
 ADD COLUMN ctc_number VARCHAR(100) AFTER purpose,
 ADD COLUMN or_number VARCHAR(100) AFTER ctc_number,
 ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE blotter_cases 
+ADD COLUMN accepted_by_user_id INT NULL AFTER assigned_to_user_id,
+ADD COLUMN accepted_by_role_id INT NULL AFTER accepted_by_user_id,
+ADD COLUMN accepted_at DATETIME NULL AFTER accepted_by_role_id,
+ADD COLUMN filing_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER incident_date,
+ADD COLUMN scheduling_deadline DATETIME GENERATED ALWAYS AS (DATE_ADD(filing_date, INTERVAL 5 DAY)) STORED,
+ADD COLUMN requires_dual_signature BOOLEAN DEFAULT FALSE AFTER hearing_count,
+ADD COLUMN captain_signature_date DATETIME NULL AFTER requires_dual_signature,
+ADD COLUMN chief_signature_date DATETIME NULL AFTER captain_signature_date,
+ADD FOREIGN KEY (accepted_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+ADD FOREIGN KEY (accepted_by_role_id) REFERENCES roles(id) ON DELETE SET NULL;
+ALTER TABLE custom_services 
+ADD COLUMN service_photo VARCHAR(255) AFTER additional_notes;
+
+ALTER TABLE barangay.users ADD COLUMN chief_officer_esignature_path LONGBLOB NULL;
+ALTER TABLE barangay.case_notifications
+MODIFY COLUMN notification_type ENUM(
+    'case_filed',
+    'case_accepted',
+    'hearing_scheduled',
+    'signature_required',
+    'schedule_confirmation',
+    'schedule_approved',
+    'schedule_rejected'
+) NOT NULL;
+
+
+CREATE INDEX idx_users_esignature ON users(esignature_path);

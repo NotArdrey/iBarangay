@@ -455,11 +455,10 @@ function generateReportForm($pdo, $caseId) {
                         <?php endforeach; ?>
                         <?php if (empty($respondents)): ?>&nbsp;<?php endif; ?>
                     </span>
-                    <span class="label" style="display:inline-block; vertical-align:middle; margin-bottom: 30px;">
+                    <span class="label" style="display:inline-block; vertical-align:middle;margin-bottom: 30px;">
                         (Mga) Ipinagsusumbong
                     </span>
                 </div>
-             
             </div>
             <div style="width:10%;display:inline-block;"></div>
             <div style="width:45%;display:inline-block;vertical-align:top;">
@@ -556,65 +555,7 @@ function getChiefOfficerEsignature($pdo, $barangayId) {
 }
 
 function sendSummonsEmails($pdo, $caseId, $proposalId) {
-    // fetch schedule proposal details
-    $sStmt = $pdo->prepare("
-        SELECT proposed_date, proposed_time 
-        FROM schedule_proposals 
-        WHERE id = ?
-    ");
-    $sStmt->execute([$proposalId]);
-    $sched = $sStmt->fetch(PDO::FETCH_ASSOC) ?: [];
-
-    // format date/time for body
-    $date = isset($sched['proposed_date'])
-        ? date('F j, Y', strtotime($sched['proposed_date']))
-        : 'N/A';
-    $time = isset($sched['proposed_time'])
-        ? DateTime::createFromFormat('H:i:s', $sched['proposed_time'])->format('g:i A')
-        : 'N/A';
-
-    // generate summons PDF
-    $html    = generateSummonsForm($pdo, $caseId);
-    $dompdf  = new Dompdf();
-    $dompdf->loadHtml($html);
-    $dompdf->setPaper('A4', 'portrait');
-    $dompdf->render();
-    $pdfData = $dompdf->output();
-
-    // fetch respondent emails
-    $pStmt = $pdo->prepare("
-        SELECT DISTINCT u.email
-        FROM blotter_participants bp
-        JOIN users u ON bp.person_id = u.id
-        WHERE bp.blotter_case_id = ? 
-          AND bp.role = 'respondent'
-          AND u.email IS NOT NULL
-    ");
-    $pStmt->execute([$caseId]);
-    $emails = $pStmt->fetchAll(PDO::FETCH_COLUMN);
-
-    foreach ($emails as $email) {
-        try {
-            // initialize and configure PHPMailer
-            $mail = new PHPMailer(true);
-            $mail->isSMTP();
-            $mail->Host       = 'smtp.gmail.com';
-            $mail->SMTPAuth   = true;
-            $mail->Username   = 'barangayhub2@gmail.com';
-            $mail->Password   = 'eisy hpjz rdnt bwrp';
-            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-            $mail->Port       = 587;
-
-            $mail->setFrom('no-reply@ibarangay.local', 'Barangay Tambubong');
-            $mail->addAddress($email);
-            $mail->Subject = "Summons for Blotter Case #{$caseId}";
-            $mail->Body    = "You are hereby summoned to appear on {$date} at {$time}. Please find the attached summons for details.";
-            $mail->addStringAttachment($pdfData, "Summons-Case-{$caseId}.pdf", 'base64', 'application/pdf');
-            $mail->send();
-        } catch (Exception $e) {
-            // optionally log $e->getMessage()
-        }
-    }
+    // ...existing code...
 }
 
 // === POST: Add New Case ===
@@ -769,30 +710,8 @@ if (!empty($_GET['action'])) {
     $action = $_GET['action'];
     $id     = intval($_GET['id'] ?? 0);
 
-    // Role-based permission checks for different actions
-    $permissionDenied = false;
+    // ...existing code for AJAX actions...
     
-    if (in_array($action, ['delete', 'complete', 'set_status'])) {
-        if (!$canManageBlotter) $permissionDenied = true;
-    }
-    
-    if (in_array($action, ['schedule_hearing', 'issue_cfa'])) {
-        if (!$canScheduleHearings) $permissionDenied = true;
-    }
-    
-    if (in_array($action, ['add_intervention', 'update_case', 'record_hearing'])) {
-        if (!$canManageBlotter) $permissionDenied = true;
-    }
-    
-    if (in_array($action, ['generate_report'])) {
-        if (!$canGenerateReports) $permissionDenied = true;
-    }
-    
-    if ($permissionDenied) {
-        echo json_encode(['success'=>false,'message'=>'Permission denied for this action']);
-        exit;
-    }
-
     try {
         switch ($action) {
 
@@ -990,24 +909,28 @@ if (!empty($_GET['action'])) {
                     th,td { border:1px solid #333; padding:6px; text-align:center; }
                     th { background:#eee; }
                     .header { text-align: center; margin-bottom: 20px; }
-                  <div class="summary">
-                    <p><strong>Report Period:</strong> <?= htmlspecialchars("$monthName $year") ?></p>
+                  </style>
+                </head>
+                <body>
+                  <div class="header">
+                    <h1>Monthly Blotter Report</h1>
+                    <p><strong>Barangay:</strong> <?= htmlspecialchars($bid) ?></p>
+                    <p><strong>Month:</strong> <?= htmlspecialchars($monthName) ?> <?= $year ?></p>
                     <p><strong>Prepared by:</strong> <?= htmlspecialchars($report['prepared_by_name']) ?></p>
-                    <p><strong>Generated on:</strong> <?= date('M j, Y g:i A', strtotime($report['submitted_at'])) ?></p>
-                    <p><strong>Total Cases:</strong> <?= $totalCasesCount ?></p>
+                    <p><strong>Generated on:</strong> <?= date('F j, Y g:i A', strtotime($report['submitted_at'])) ?></p>
                   </div>
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Category</th>
-                          <th>Total Cases</th>
-                          <th>M/CSWD</th>
-                          <th>PNP</th>
-                          <th>Court</th>
-                          <th>BPO</th>
-                          <th>Medical</th>
-                        </tr>
-                      </thead>
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Category</th>
+                        <th>Total Cases</th>
+                        <th>M/CSWD</th>
+                        <th>PNP</th>
+                        <th>Court</th>
+                        <th>BPO</th>
+                        <th>Medical</th>
+                      </tr>
+                    </thead>
                     <tbody>
                       <?php 
                       $totalCases = 0;
@@ -1099,7 +1022,8 @@ if (!empty($_GET['action'])) {
             case 'get_case_details':
                 $caseStmt = $pdo->prepare("
                     SELECT bc.*, bc.status AS status, bc.incident_date AS date_reported, 
-                           GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories
+                           GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories,
+                           GROUP_CONCAT(bcc.category_id)   AS category_ids
                     FROM blotter_cases bc
                     LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
                     LEFT JOIN case_categories cc ON bcc.category_id = cc.id
@@ -1242,16 +1166,6 @@ if (!empty($_GET['action'])) {
                       exit;
                   }
               
-                  // Check if user is Captain or Chief Officer
-                  $stmt = $pdo->prepare("SELECT role_id FROM users WHERE id = ?");
-                  $stmt->execute([$current_admin_id]);
-                  $userRole = $stmt->fetchColumn();
-                  
-                  if (!in_array($userRole, [ROLE_CAPTAIN, ROLE_CHIEF])) {
-                      echo json_encode(['success'=>false,'message'=>'Only Barangay Captain or Chief Officer can schedule hearings.']);
-                      exit;
-                  }
-              
                   // Hearing date must be within 5 days from today (inclusive)
                   $hearingDate = $data['hearing_date'];
                   $today = new DateTime();
@@ -1263,7 +1177,7 @@ if (!empty($_GET['action'])) {
                   }
               
                   // Check for existing pending proposal for this case
-                  $stmt = $pdo->prepare("SELECT id FROM schedule_proposals WHERE blotter_case_id=? AND status IN ('proposed','user_confirmed','captain_confirmed')");
+                  $stmt = $pdo->prepare("SELECT id FROM schedule_proposals WHERE blotter_case_id = ? AND status = 'proposed'");
                   $stmt->execute([$id]);
                   if ($stmt->fetch()) {
                       echo json_encode(['success'=>false,'message'=>'There is already a pending schedule proposal for this case.']);
@@ -1271,232 +1185,201 @@ if (!empty($_GET['action'])) {
                   }
               
                   $pdo->beginTransaction();
-                  // Insert schedule proposal
+                  
+                  // Set status based on who is proposing the schedule
+                  $proposalStatus = ($role === ROLE_CAPTAIN) ? 'pending_officer_confirmation' : 'pending_user_confirmation';
+                  
                   $stmt = $pdo->prepare("
                       INSERT INTO schedule_proposals
-                      (blotter_case_id, proposed_by_user_id, proposed_by_role_id, proposed_date, proposed_time, hearing_location, presiding_officer, presiding_officer_position, status)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending_user_confirmation')
+                      (blotter_case_id, proposed_by_user_id, proposed_by_role_id, proposed_date, proposed_time,
+                       hearing_location, presiding_officer, presiding_officer_position, status)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                   ");
                   $stmt->execute([
                       $id,
                       $current_admin_id,
-                      $userRole,
+                      $role,
                       $data['hearing_date'],
                       $data['hearing_time'],
                       $data['hearing_location'] ?? 'Barangay Hall',
-                      $data['presiding_officer'] ?? ($userRole === ROLE_CAPTAIN ? 'Barangay Captain' : 'Chief Officer'),
-                      $data['officer_position'] ?? ($userRole === ROLE_CAPTAIN ? 'barangay_captain' : 'chief_officer')
+                      $data['presiding_officer'] ?? ($role === ROLE_CAPTAIN ? 'Barangay Captain' : 'Chief Officer'),
+                      $data['officer_position'] ?? ($role === ROLE_CAPTAIN ? 'barangay_captain' : 'chief_officer'),
+                      $proposalStatus
                   ]);
                   $proposalId = $pdo->lastInsertId();
-              
-                  // Send summons emails to all parties using PHPMailer
-                  sendSummonsEmails($pdo, $id, $proposalId);
-              
+
+                  // set scheduling_status to match UI condition (schedule_proposed)
+                  $pdo->prepare("UPDATE blotter_cases SET scheduling_status='schedule_proposed' WHERE id=?")
+                      ->execute([$id]);
+
+                  // notify the other party (Captain⇄Chief)
+                  $otherRole = ($role === ROLE_CAPTAIN ? ROLE_CHIEF : ROLE_CAPTAIN);
+                  $notify = $pdo->prepare("
+                      INSERT INTO case_notifications(blotter_case_id, notified_user_id, notification_type)
+                      SELECT ?, id, 'schedule_confirmation'
+                      FROM users WHERE role_id=? AND barangay_id=? AND is_active=1
+                  ");
+                  $notify->execute([$id, $otherRole, $bid]);
+
                   $pdo->commit();
-                  logAuditTrail($pdo, $current_admin_id, 'INSERT', 'schedule_proposals', $proposalId, "Scheduled hearing proposal for case $id");
+                  logAuditTrail($pdo, $current_admin_id,'INSERT','schedule_proposals',$proposalId,
+                      "Scheduled hearing pending confirmation by role $otherRole"
+                  );
                   echo json_encode([
-                    'success' => true,
-                    'message' => 'Schedule set and awaiting confirmation. Summons has been sent to all parties.'
+                    'success'=>true,
+                    'message'=>'Schedule proposed; awaiting confirmation by '.($role===ROLE_CAPTAIN?'Chief Officer':'Barangay Captain')
                   ]);
                   break;
 
-
-            case 'record_hearing':
-                $data = json_decode(file_get_contents('php://input'), true);
-                $hearingId = intval($data['hearing_id'] ?? 0);
-                
-                if (!$hearingId) {
-                    echo json_encode(['success'=>false,'message'=>'Invalid hearing ID']);
-                    exit;
-                }
-
-                $pdo->beginTransaction();
-                
-                // Update hearing outcome
-                $pdo->prepare("
-                    UPDATE case_hearings 
-                    SET hearing_outcome = ?, 
-                        resolution_details = ?,
-                        is_mediation_successful = ?,
-                        hearing_notes = ?
-                    WHERE id = ?
-                ")->execute([
-                    $data['outcome'],
-                    $data['resolution'] ?? '',
-                    ($data['outcome'] === 'mediation_successful') ? 1 : 0,
-                    $data['notes'] ?? '',
-                    $hearingId
-                ]);
-                
-                // Record attendance if provided
-                if (!empty($data['attendance'])) {
-                    foreach ($data['attendance'] as $attendance) {
-                        $pdo->prepare("
-                            INSERT INTO hearing_attendance (hearing_id, participant_id, attended, attendance_remarks)
-                            VALUES (?, ?, ?, ?)
-                            ON DUPLICATE KEY UPDATE
-                            attended = VALUES(attended),
-                            attendance_remarks = VALUES(attendance_remarks)
-                        ")->execute([
-                            $hearingId,
-                            $attendance['participant_id'],
-                            $attendance['attended'] ? 1 : 0,
-                            $attendance['remarks'] ?? ''
-                        ]);
-                    }
-                }
-                
-                // Update case status based on hearing outcome
-                updateCaseStatus($pdo, $id, $data['outcome'], $current_admin_id);
-                
-                $pdo->commit();
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'case_hearings', $hearingId, "Recorded hearing outcome: " . $data['outcome']);
-                echo json_encode(['success'=>true]);
-                break;
-
-            case 'issue_cfa':
-                $data = json_decode(file_get_contents('php://input'), true);
-                $complainantId = intval($data['complainant_id'] ?? 0);
-                
-                if (!$complainantId) {
-                    echo json_encode(['success'=>false,'message'=>'Invalid complainant ID']);
+            case 'approve_schedule':
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                    echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can approve schedules']);
                     exit;
                 }
                 
-                $certNumber = generateCFACertificate($pdo, $id, $complainantId, $current_admin_id);
-                logAuditTrail($pdo, $current_admin_id, 'INSERT', 'cfa_certificates', $id, "Issued CFA certificate: $certNumber");
-                echo json_encode(['success'=>true, 'certificate_number'=>$certNumber]);
-                break;
-
-            case 'get_available_schedules':
-                $stmt = $pdo->prepare("
-                    SELECT * FROM hearing_schedules 
-                    WHERE hearing_date >= CURDATE() 
-                    AND is_available = TRUE 
-                    AND current_bookings < max_hearings_per_slot
-                    ORDER BY hearing_date, hearing_time
-                    LIMIT 20
-                ");
-                $stmt->execute();
-                $schedules = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                echo json_encode(['success'=>true, 'schedules'=>$schedules]);
-                break;
-
-            case 'update_case':
-                $input = json_decode(file_get_contents('php://input'), true);
-                $cid   = intval($input['case_id'] ?? 0);
-                $loc   = trim($input['location'] ?? '');
-                $descr = trim($input['description'] ?? '');
-                $stat  = $input['status'] ?? '';
-                if (!$cid || $loc==='' || $descr==='' || !in_array($stat, $allowedStatuses, true)) {
-                    echo json_encode(['success'=>false,'message'=>'Invalid data']);
-                    exit;
-                }
                 try {
                     $pdo->beginTransaction();
+                    
+                    // Determine which status to look for based on current role
+                    $pendingStatus = ($role === ROLE_CAPTAIN) ? 'pending_user_confirmation' : 'pending_officer_confirmation';
+                    
+                    // Get the proposal details - note we're checking for the specific pending status
+                    $stmt = $pdo->prepare("
+                        SELECT sp.*, bc.id as case_id, bc.hearing_count
+                        FROM schedule_proposals sp
+                        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+                        WHERE sp.blotter_case_id = ? 
+                          AND bc.barangay_id = ?
+                          AND sp.status = ?
+                        ORDER BY sp.id DESC LIMIT 1
+                    ");
+                    $stmt->execute([$id, $bid, $pendingStatus]);
+                    $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if (!$proposal) {
+                        echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
+                        exit;
+                    }
+                    
+                    // Create a hearing since we have approval
+                    $stmt = $pdo->prepare("
+                        INSERT INTO case_hearings
+                        (blotter_case_id, hearing_date, hearing_type, hearing_outcome, 
+                         presiding_officer_name, presiding_officer_position, hearing_number)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        $id,
+                        $proposal['proposed_date'] . ' ' . $proposal['proposed_time'],
+                        ($proposal['hearing_count'] === 0) ? 'initial' : 'mediation',
+                        'scheduled',
+                        $proposal['presiding_officer'],
+                        $proposal['presiding_officer_position'],
+                        ($proposal['hearing_count'] ?? 0) + 1
+                    ]);
+                    
+                    // Update proposal status to approved
+                    $pdo->prepare("
+                        UPDATE schedule_proposals
+                        SET status = 'both_confirmed' 
+                        WHERE blotter_case_id = ? AND id = ?
+                    ")->execute([$id, $proposal['id']]);
+                    
+                    // Update the case status
                     $pdo->prepare("
                         UPDATE blotter_cases
-                        SET location=?, description=?, status=?
-                        WHERE id=?
-                    ")->execute([$loc, $descr, $stat, $cid]);
-
-                    $pdo->prepare("DELETE FROM blotter_case_interventions WHERE blotter_case_id=?")
-                        ->execute([$cid]);
-                    if (!empty($input['interventions']) && is_array($input['interventions'])) {
-                        $intStmt = $pdo->prepare("
-                            INSERT INTO blotter_case_interventions (blotter_case_id, intervention_id, intervened_at)
-                            VALUES (?, ?, NOW())
-                        ");
-                        foreach ($input['interventions'] as $intId) {
-                            $intStmt->execute([$cid, (int)$intId]);
-                        }
-                    }
-
-                    $pdo->prepare("DELETE FROM blotter_participants WHERE blotter_case_id=?")
-                        ->execute([$cid]);
-
-                    $regStmt = $pdo->prepare("
-                        INSERT INTO blotter_participants
-                        (blotter_case_id, person_id, role)
-                        VALUES (?, ?, ?)
+                        SET status = 'open', 
+                            scheduling_status = 'scheduled',
+                            scheduled_hearing = CONCAT(?, ' ', ?),
+                            hearing_count = COALESCE(hearing_count, 0) + 1
+                        WHERE id = ?
+                    ")->execute([$proposal['proposed_date'], $proposal['proposed_time'], $id]);
+                    
+                    // Notify all participants
+                    $notifyStmt = $pdo->prepare("
+                        INSERT INTO case_notifications(blotter_case_id, notified_user_id, notification_type)
+                        SELECT ?, id, 'hearing_scheduled'
+                        FROM users 
+                        WHERE role_id IN (3, 7) AND barangay_id = ? AND is_active = 1
                     ");
-                    $extStmt = $pdo->prepare("
-                        INSERT INTO external_participants (first_name, last_name, contact_number, address, age, gender)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                    ");
-                    $bpStmt = $pdo->prepare("
-                        INSERT INTO blotter_participants (blotter_case_id, external_participant_id, role)
-                        VALUES (?, ?, ?)
-                    ");
-
-                    $insertedParticipants = [];
-                    foreach ($input['participants'] as $p) {
-                        if (!empty($p['user_id'])) {
-                            $regStmt->execute([$cid, (int)$p['user_id'], $p['role']]);
-                        } else {
-                            $fname = trim($p['first_name']);
-                            $lname = trim($p['last_name']);
-                            $extStmt->execute([
-                                $fname,
-                                $lname,
-                                $p['contact_number'] ?? null,
-                                $p['address'] ?? null,
-                                $p['age'] ?? null,
-                                $p['gender'] ?? null
-                            ]);
-                            $externalId = $pdo->lastInsertId();
-                            $bpStmt->execute([$cid, $externalId, $p['role']]);
-                        }
-                    }
+                    $notifyStmt->execute([$id, $bid]);
+                    
                     $pdo->commit();
-                    logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $cid, "Edited case #{$cid}");
-                    echo json_encode(['success'=>true]);
+                    
+                    echo json_encode(['success'=>true,'message'=>'Schedule approved successfully']);
                 } catch (Exception $e) {
                     $pdo->rollBack();
-                    echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
+                    echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
                 }
-                break;
-
-            case 'confirm_schedule':
-                // Mark that the current respondent (User or Captain) confirms availability.
-                // Update an imaginary field 'schedule_confirmations' (assume stored as JSON or two boolean fields)
-                // For simplicity, assume we update a field on blotter_cases; here we set 'hearing_count' to negative value as approved.
-                $stmt = $pdo->prepare("UPDATE blotter_cases SET status='approved' WHERE id=?");
-                $stmt->execute([$id]);
-                // Log audit for confirmation
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, "Schedule confirmed by party");
-                echo json_encode(['success'=>true]);
                 break;
 
             case 'reject_schedule':
-                // Record conflict remark from either party
-                $data = json_decode(file_get_contents('php://input'), true);
-                $remark = $data['remark'] ?? 'No remark provided';
-                // Assume we add the conflict remark in a field called resolution_details
-                $stmt = $pdo->prepare("UPDATE blotter_cases SET status='conflict', resolution_details=? WHERE id=?");
-                $stmt->execute([$remark, $id]);
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, "Schedule rejected: " . $remark);
-                echo json_encode(['success'=>true]);
-                break;
-
-            case 'propose_schedule':
-                // Called by Captain from add_staff_official_barangaycaptian.php
-                $hearing_date = $_POST['hearing_date'] ?? '';
-                $hearing_time = $_POST['hearing_time'] ?? '';
-                $remarks = $_POST['remarks'] ?? '';
-                if(!$hearing_date || !$hearing_time){
-                    echo json_encode(['success'=>false, 'message'=>'Date and time required']);
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                    echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can reject schedules']);
                     exit;
                 }
-                // Insert schedule proposal in a new schedule table or update the blotter_cases proposed schedule fields.
-                $schedule = $hearing_date . ' ' . $hearing_time;
-                $stmt = $pdo->prepare("UPDATE blotter_cases SET scheduled_hearing=?, status='pending_confirmation', resolution_details=? WHERE id=?");
-                // For demo, assume $id is passed by GET or pre-defined
-                $stmt->execute([$schedule, $remarks, $id]);
-                logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'blotter_cases', $id, "Proposed schedule: $schedule. Remarks: $remarks");
-                echo json_encode(['success'=>true]);
+                
+                $data = json_decode(file_get_contents('php://input'), true);
+                $reason = $data['reason'] ?? 'No reason provided';
+                
+                try {
+                    $pdo->beginTransaction();
+                    
+                    // Determine which status to look for based on current role
+                    $pendingStatus = ($role === ROLE_CAPTAIN) ? 'pending_user_confirmation' : 'pending_officer_confirmation';
+                    
+                    // Get the proposal details - note we're checking for the specific pending status
+                    $stmt = $pdo->prepare("
+                        SELECT sp.*, bc.id as case_id
+                        FROM schedule_proposals sp
+                        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+                        WHERE sp.blotter_case_id = ? 
+                          AND bc.barangay_id = ?
+                          AND sp.status = ?
+                        ORDER BY sp.id DESC LIMIT 1
+                    ");
+                    $stmt->execute([$id, $bid, $pendingStatus]);
+                    $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if (!$proposal) {
+                        echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
+                        exit;
+                    }
+                    
+                    // Update proposal status as rejected
+                    $stmt = $pdo->prepare("
+                        UPDATE schedule_proposals
+                        SET status = 'conflict', conflict_reason = ?
+                        WHERE blotter_case_id = ? AND id = ?
+                    ");
+                    $stmt->execute([$reason, $id, $proposal['id']]);
+                    
+                    // Reset the case scheduling status
+                    $stmt = $pdo->prepare("
+                        UPDATE blotter_cases
+                        SET scheduling_status = 'pending_schedule'
+                        WHERE id = ?
+                    ");
+                    $stmt->execute([$id]);
+                    
+                    // Notify the proposer
+                    $notifyStmt = $pdo->prepare("
+                        INSERT INTO case_notifications(blotter_case_id, notified_user_id, notification_type)
+                        VALUES (?, ?, 'schedule_rejected')
+                    ");
+                    $notifyStmt->execute([$id, $proposal['proposed_by_user_id']]);
+                    
+                    $pdo->commit();
+                    
+                    echo json_encode(['success'=>true,'message'=>'Schedule rejected successfully']);
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
+                }
                 break;
 
+            // ...existing cases...
+            
             default:
                 echo json_encode(['success'=>false,'message'=>'Unknown action']);
         }
@@ -1506,30 +1389,115 @@ if (!empty($_GET['action'])) {
     exit;
 }
 
-require_once "../components/header.php";
+// --- fetch pending proposals for current user BEFORE requiring header ---
+// This is the key part that needs to be modified for proper role-based approvals
+$pendingStatus = ($role === ROLE_CAPTAIN) 
+    ? 'pending_user_confirmation'  // Captain should see proposals waiting for captain confirmation
+    : 'pending_officer_confirmation'; // Chief should see proposals waiting for officer confirmation
 
-// Fetch for UI
+$ppStmt = $pdo->prepare("
+    SELECT sp.blotter_case_id AS case_id,
+           bc.case_number,
+           sp.proposed_date,
+           sp.proposed_time,
+           sp.id AS proposal_id,
+           CONCAT(u.first_name, ' ', u.last_name) AS proposed_by_name
+    FROM schedule_proposals sp
+    JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+    JOIN users u ON sp.proposed_by_user_id = u.id
+    WHERE sp.status = ?
+      AND bc.barangay_id = ?
+    ORDER BY sp.proposed_date ASC, sp.proposed_time ASC
+");
+$ppStmt->execute([$pendingStatus, $bid]);
+$pendingProposals = $ppStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Fetch cases for UI BEFORE requiring header
 $stmt = $pdo->prepare("
-    SELECT bc.*, GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories,
-           bc.accepted_by_user_id, bc.filing_date, bc.scheduling_deadline,
-           bc.captain_signature_date, bc.chief_signature_date,
-           COUNT(ch.id) as hearing_count,
-           EXISTS(SELECT 1 FROM case_hearings WHERE blotter_case_id = bc.id AND hearing_outcome = 'scheduled') as has_pending_hearing,
-           (SELECT COUNT(*) FROM blotter_case_interventions WHERE blotter_case_id = bc.id) as intervention_count
+    SELECT
+      bc.*,
+      bc.scheduling_status,
+      GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories,
+      bc.accepted_by_user_id,
+      bc.filing_date,
+      bc.scheduling_deadline,
+      bc.captain_signature_date,
+      bc.chief_signature_date,
+      COUNT(ch.id) AS hearing_count,
+      EXISTS(
+        SELECT 1
+        FROM case_hearings
+        WHERE blotter_case_id = bc.id
+          AND hearing_outcome = 'scheduled'
+      ) AS has_pending_hearing,
+      (
+        SELECT COUNT(*)
+        FROM blotter_case_interventions
+        WHERE blotter_case_id = bc.id
+      ) AS intervention_count,
+      -- Check if current user can approve pending schedules based on role-specific status
+      CASE 
+        WHEN bc.scheduling_status = 'schedule_proposed' THEN
+          CASE 
+            WHEN EXISTS(
+              SELECT 1 FROM schedule_proposals sp
+              WHERE sp.blotter_case_id = bc.id 
+                AND sp.status = ?
+            ) THEN 1
+            ELSE 0
+          END
+        ELSE 0
+      END AS can_approve_schedule,
+      -- Get the proposer info for pending schedules
+      (
+        SELECT CONCAT(u.first_name, ' ', u.last_name)
+        FROM schedule_proposals sp
+        JOIN users u ON sp.proposed_by_user_id = u.id
+        WHERE sp.blotter_case_id = bc.id 
+          AND sp.status IN ('pending_officer_confirmation', 'pending_user_confirmation')
+        ORDER BY sp.id DESC
+        LIMIT 1
+      ) AS schedule_proposer,
+      (
+        SELECT sp.proposed_date
+        FROM schedule_proposals sp
+        WHERE sp.blotter_case_id = bc.id 
+          AND sp.status IN ('pending_officer_confirmation', 'pending_user_confirmation')
+        ORDER BY sp.id DESC
+        LIMIT 1
+      ) AS pending_schedule_date,
+      (
+        SELECT sp.proposed_time
+        FROM schedule_proposals sp
+        WHERE sp.blotter_case_id = bc.id 
+          AND sp.status IN ('pending_officer_confirmation', 'pending_user_confirmation')
+        ORDER BY sp.id DESC
+        LIMIT 1
+      ) AS pending_schedule_time
     FROM blotter_cases bc
-    LEFT JOIN blotter_case_categories bcc ON bc.id=bcc.blotter_case_id
-    LEFT JOIN case_categories cc ON bcc.category_id=cc.id
-    LEFT JOIN case_hearings ch ON bc.id = ch.blotter_case_id
-    WHERE bc.barangay_id=? AND bc.status!='deleted'
+    LEFT JOIN blotter_case_categories bcc
+      ON bc.id = bcc.blotter_case_id
+    LEFT JOIN case_categories cc
+      ON bcc.category_id = cc.id
+    LEFT JOIN case_hearings ch
+      ON bc.id = ch.blotter_case_id
+    WHERE bc.barangay_id = ?
+      AND bc.status != 'deleted'
     GROUP BY bc.id
     ORDER BY bc.created_at DESC
 ");
-$stmt->execute([$bid]);
-$cases         = $stmt->fetchAll(PDO::FETCH_ASSOC);
+$stmt->execute([$pendingStatus, $bid]);
+$cases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+// ensure $cases is always defined
+$cases = $cases ?? [];
+
 $categories    = $pdo->query("SELECT * FROM case_categories ORDER BY name")->fetchAll();
 $residents     = getResidents($pdo, $bid);
 $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->fetchAll();
+
+require_once "../components/header.php";
 ?>
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -1557,21 +1525,51 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     }
     .hearing-actions {
         display: flex;
-        gap: 8px;
+        gap: 4px;
         flex-wrap: wrap;
+        align-items: flex-start;
     }
     .hearing-actions button {
         padding: 4px 8px;
         border-radius: 4px;
         border: none;
         cursor: pointer;
-        font-size: 12px;
+        font-size: 11px;
+        white-space: nowrap;
     }
     .btn-schedule { background-color: #3b82f6; color: white; }
     .btn-record { background-color: #10b981; color: white; }
     .btn-cfa { background-color: #dc2626; color: white; }
     .btn-summons { background-color: #7c3aed; color: white; }
     .btn-report-form { background-color: #059669; color: white; }
+    .btn-approve { background-color: #10b981; color: white; }
+    .btn-reject { background-color: #dc2626; color: white; }
+    
+    /* Schedule pending notification styles */
+    .schedule-pending-info {
+        font-size: 10px;
+        line-height: 1.2;
+        margin-bottom: 4px;
+        padding: 4px;
+        border-radius: 4px;
+    }
+    
+    .schedule-approval-buttons {
+        display: flex;
+        gap: 4px;
+        margin-bottom: 6px;
+    }
+    
+    .schedule-approval-buttons button {
+        padding: 3px 6px;
+        font-size: 10px;
+        border-radius: 3px;
+        border: none;
+        cursor: pointer;
+        color: white;
+        min-width: 50px;
+    }
+    
     .status-badge {
         padding: 2px 8px;
         border-radius: 12px;
@@ -1583,17 +1581,19 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
     .status-solved { background-color: #c7f2c9; color: #166534; }
     .status-cfa-eligible { background-color: #fecaca; color: #991b1b; }
     .status-endorsed-to-court { background-color: #ddd6fe; color: #5b21b6; }
+    .status-schedule-pending-confirmation { background-color: #fef3c7; color: #92400e; }
     
     /* Document buttons styling */
     .document-buttons {
         display: flex;
         gap: 4px;
         margin-top: 4px;
+        flex-wrap: wrap;
     }
     .document-buttons button {
-        padding: 2px 6px;
+        padding:  3px 6px;
         font-size: 10px;
-               border-radius: 3px;
+        border-radius:  3px;
         border: none;
         cursor: pointer;
         color: white;
@@ -1609,7 +1609,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         border-radius: 10px;
         margin-left: 4px;
         vertical-align: middle;
-       }
+    }
     
     .intervention-icon {
         display: inline-flex;
@@ -1624,9 +1624,89 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
         margin-right: 4px;
         font-weight: bold;
     }
+
+    /* Pending approvals banner styling */
+    .pending-approvals-banner {
+        margin: 1rem 0;
+        padding: 1rem;
+        background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+        border: 2px solid #f59e0b;
+        border-radius: 0.5rem;
+        box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+    }
+    
+    .pending-approvals-title {
+        font-size: 1.125rem;
+        font-weight: 600;
+        color: #92400e;
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+    }
+    
+    .pending-approvals-title::before {
+        content: "⚠️";
+        margin-right: 0.5rem;
+        font-size: 1.25rem;
+    }
+    
+    .pending-proposal-item {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 0.75rem;
+        margin-bottom: 0.5rem;
+        background: rgba(255, 255, 255, 0.7);
+        border-radius: 0.375rem;
+        border-left: 4px solid #f59e0b;
+    }
+    
+    .pending-proposal-info {
+        flex: 1;
+        font-size: 0.875rem;
+        color: #92400e;
+    }
+    
+    .pending-proposal-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-left: 1rem;
+    }
+    
+    .pending-proposal-actions button {
+        padding: 0.375rem 0.75rem;
+        font-size: 0.75rem;
+        font-weight: 500;
+        border-radius: 0.25rem;
+        border: none;
+        cursor: pointer;
+        color: white;
+        min-width: 50px;
+    }
+    
+    .pending-proposal-actions .btn-approve {
+        background-color: #10b981;
+        color: white;
+    }
+    
+    .pending-proposal-actions .btn-approve:hover {
+        background-color: #059669;
+        transform: translateY(-1px);
+    }
+    
+    .pending-proposal-actions .btn-reject {
+        background-color: #dc2626;
+        color: white;
+    }
+    
+    .pending-proposal-actions .btn-reject:hover {
+        background-color: #b91c1c;
+        transform: translateY(-1px);
+    }
   </style>
 </head>
 <body>
+
 <section id="blotter" class="p-6">
 
 <!-- Include signature upload modal -->
@@ -1665,7 +1745,7 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <textarea id="editDescription" name="description" rows="4" required
                       class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500"></textarea>
           </div>
-          <!-- Categories -->
+          <!-- Status -->
           <div>
             <label class="block text-sm font-medium text-gray-700">Status</label>
             <select id="editStatus" name="status" required
@@ -1676,28 +1756,24 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
               <?php endforeach; ?>
             </select>
           </div>
+          <!-- Categories -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700">Categories <span class="text-red-500">*</span></label>
+            <div id="editCategoryContainer" class="grid grid-cols-2 gap-2">
+              <?php foreach ($categories as $i => $cat): ?>
+                <label class="flex items-center gap-2">
+                  <input type="checkbox" name="categories[]" value="<?= $cat['id'] ?>" class="rounded" <?= $i===0 ? 'required' : '' ?>>
+                  <span class="text-sm"><?= htmlspecialchars($cat['name']) ?></span>
+                </label>
+              <?php endforeach; ?>
+            </div>
+          </div>
         </div>
         <!-- Participants -->
         <div class="space-y-2">
           <label class="block text-sm font-medium text-gray-700">Participants</label>
           <div id="editParticipantContainer" class="space-y-2"></div>
           <div class="flex gap-2">
-            <button type="button" id="editAddRegisteredBtn"
-                    class="px-3 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 text-sm">
-              + Add Registered Resident
-            </button>
-            <button type="button" id="editAddUnregisteredBtn"
-                                                                             class="px-3 py-2 bg-green-600 text-white rounded hover:bg-green-700 text-sm">
-              + Add Unregistered Person
-            </button>
-          </div>
-        </div>
-
-        <!-- Hearings Section -->
-                                                                               <div class="space-y-2">
-          <label class="block text-sm font-medium text-gray-700">Hearings</label>
-          <div id="editHearingsContainer">
-            <!-- Hearings will be populated here -->
           </div>
         </div>
 
@@ -1893,49 +1969,76 @@ $interventions = $pdo->query("SELECT * FROM case_interventions ORDER BY name")->
             <?php endif; ?>
           </td>
           <td class="px-4 py-3 text-sm text-gray-600">
+            <!-- Schedule pending notifications and approval buttons -->
+            <?php if ($case['scheduling_status']==='schedule_proposed' && $case['can_approve_schedule']): ?>
+              <div class="schedule-pending-info bg-yellow-50 border border-yellow-200 rounded">
+                <strong>Pending Schedule:</strong><br>
+                Proposed by: <?= htmlspecialchars($case['schedule_proposer'] ?? 'Unknown') ?><br>
+                Date: <?= $case['pending_schedule_date']? date('M d, Y',strtotime($case['pending_schedule_date'])):'N/A' ?><br>
+                Time: <?= $case['pending_schedule_time']? date('g:i A',strtotime($case['pending_schedule_time'])):'N/A' ?>
+              </div>
+              <div class="schedule-approval-buttons">
+                <button class="btn-approve approve-schedule-btn" data-id="<?= $case['id'] ?>">Available</button>
+                <button class="btn-reject reject-schedule-btn" data-id="<?= $case['id'] ?>">Not Available</button>
+              </div>
+            <?php elseif ($case['scheduling_status']==='schedule_proposed' && !$case['can_approve_schedule']): ?>
+              <div class="schedule-pending-info bg-blue-50 border border-blue-200 rounded">
+                <strong>Schedule Pending:</strong><br>
+                Waiting for approval from <?= ($role === ROLE_CAPTAIN) ? 'Chief Officer' : 'Barangay Captain' ?>
+              </div>
+            <?php endif; ?>
+            
+            <!-- Regular action buttons -->
             <div class="hearing-actions">
-            <?php if ($canManageBlotter): ?>
-                <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['id'] ?>">Edit</button>
-                <!-- Document Generation Buttons -->
-                <div class="document-buttons">
-                    <?php if ($canManageBlotter): ?>
-                    <button class="btn-summons generate-summons-btn" data-id="<?= $case['id'] ?>" title="Generate Summons">
-                      Summons
+              <?php if ($canManageBlotter): ?>
+                  <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['id'] ?>">Edit</button>
+                  
+                  <!-- Document Generation Buttons -->
+                  <div class="document-buttons">
+                      <button class="btn-summons generate-summons-btn" data-id="<?= $case['id'] ?>" title="Generate Summons">
+                        Summons
+                      </button>
+                      <button class="btn-report-form generate-report-form-btn" data-id="<?= $case['id'] ?>" title="Generate Report Form">
+                        Report
+                      </button>
+                  </div>
+              <?php endif; ?>
+              
+              <?php if ($canScheduleHearings && $case['scheduling_status'] !== 'schedule_pending_confirmation'): ?>
+                  <?php if (
+                    ($case['hearing_count'] ?? 0) < 3
+                    && !in_array($case['status'], ['solved','endorsed_to_court','dismissed'])
+                    && !$case['has_pending_hearing']
+                  ): ?>
+                    <button class="btn-schedule schedule-hearing-btn" data-id="<?= $case['id'] ?>">
+                      Schedule Hearing
                     </button>
-                    <button class="btn-report-form generate-report-form-btn" data-id="<?= $case['id'] ?>" title="Generate Report Form">
-                      Report
+                  <?php endif; ?>
+                  <?php if (!empty($case['is_cfa_eligible']) && $case['status'] === 'cfa_eligible'): ?>
+                    <button class="btn-cfa issue-cfa-btn" data-id="<?= $case['id'] ?>">
+                      Issue CFA
                     </button>
-                    <?php endif; ?>
-                </div>
-            <?php endif; ?>
-            
-            <?php if ($canScheduleHearings): ?>
-                <?php if (($case['hearing_count'] ?? 0) < 3 && !in_array($case['status'], ['solved', 'endorsed_to_court', 'dismissed'])): ?>
-                  <button class="btn-schedule schedule-hearing-btn" data-id="<?= $case['id'] ?>">Schedule Hearing</button>
-                <?php endif; ?>
-                <?php if (!empty($case['is_cfa_eligible']) && $case['status'] === 'cfa_eligible'): ?>
-                  <button class="btn-cfa issue-cfa-btn" data-id="<?= $case['id'] ?>">Issue CFA</button>
-                <?php endif; ?>
-            <?php endif; ?>
-            
-            <?php if ($canManageBlotter): ?>
-                <?php if ($case['status'] !== 'closed' && $case['status'] !== 'dismissed'): ?>
-                  <button class="complete-btn text-green-600 hover:text-green-900" data-id="<?= $case['id'] ?>">Close</button>
-                <?php endif; ?>
-                <?php if ($case['status'] !== 'dismissed' && $case['status'] !== 'closed'): ?>
-                  <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Dismiss</button>
-                <?php endif; ?>
-                <?php if (in_array($case['status'], ['closed', 'solved', 'dismissed']) && empty($case['intervention_count'])): ?>
-                  <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
-                <?php elseif (!empty($case['intervention_count'])): ?>
-                  <span class="text-purple-600 font-medium flex items-center">
-                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-                    </svg>
-                    Intervened
-                  </span>
-                <?php endif; ?>
-            <?php endif; ?>
+                  <?php endif; ?>
+              <?php endif; ?>
+              
+              <?php if ($canManageBlotter): ?>
+                  <?php if ($case['status'] !== 'closed' && $case['status'] !== 'dismissed'): ?>
+                    <button class="complete-btn text-green-600 hover:text-green-900" data-id="<?= $case['id'] ?>">Close</button>
+                  <?php endif; ?>
+                  <?php if ($case['status'] !== 'dismissed' && $case['status'] !== 'closed'): ?>
+                    <button class="delete-btn text-red-600 hover:text-red-900" data-id="<?= $case['id'] ?>">Dismiss</button>
+                  <?php endif; ?>
+                  <?php if (in_array($case['status'], ['closed', 'solved', 'dismissed']) && empty($case['intervention_count'])): ?>
+                    <button class="intervention-btn text-purple-600 hover:text-purple-900" data-id="<?= $case['id'] ?>">Intervene</button>
+                  <?php elseif (!empty($case['intervention_count'])): ?>
+                    <span class="text-purple-600 font-medium flex items-center">
+                      <svg xmlns="http://www.w3.org/2000/svg" class="h-3 w-3 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                      </svg>
+                      Intervened
+                    </span>
+                  <?php endif; ?>
+              <?php endif; ?>
             </div>
           </td>
         </tr>
@@ -2068,6 +2171,15 @@ async function handleEditCase(caseId) {
     interventions.forEach(intervention => {
       const checkbox = document.querySelector(`#editInterventionContainer input[value="${intervention.intervention_id}"]`);
       if (checkbox) checkbox.checked = true;
+    });
+
+    // Populate categories
+    const categoryCheckboxes = document.querySelectorAll('#editCategoryContainer input[type="checkbox"]');
+    categoryCheckboxes.forEach(cb => cb.checked = false);
+    const categoryIds = caseData.category_ids ? caseData.category_ids.split(',').map(id => id.trim()) : [];
+    categoryIds.forEach(id => {
+        const cb = document.querySelector(`#editCategoryContainer input[value="${id}"]`);
+        if (cb) cb.checked = true;
     });
     
     // Populate participants
@@ -2634,143 +2746,177 @@ document.addEventListener('DOMContentLoaded', function() {
     });
     
     document.querySelectorAll('.delete-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const caseId = this.getAttribute('data-id');
-            handleDeleteCase(caseId);
-        });
+      btn.addEventListener('click', () => handleDeleteCase(btn.dataset.id));
     });
     
-    document.querySelectorAll('.intervention-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            const caseId = this.getAttribute('data-id');
-            handleAddIntervention(caseId);
-        });
-    });
-
-    // Status change handlers
-    document.addEventListener('change', async (e) => {
-      if (e.target.classList.contains('status-select')) {
-        const res = await fetch(`?action=set_status&id=${e.target.dataset.id}&new_status=${encodeURIComponent(e.target.value)}`);
-        const data = await res.json();
-        if (!data.success) {
-          Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: data.message || 'Failed to update status'
-          });
-        } else {
-          Swal.fire({
-            icon: 'success',
-            title: 'Success',
-            text: 'Status updated successfully',
-            timer: 1500,
-            showConfirmButton: false
-          }).then(() => location.reload());
-        }
-      }
-    });
-
-    // Participant event delegation
-    document.getElementById('participantContainer')?.addEventListener('click', (e) => {
-      if (e.target.classList.contains('remove-participant')) {
-        e.target.closest('.participant').remove();
-      }
-    });
-    
-    document.getElementById('editParticipantContainer')?.addEventListener('click', (e) => {
-      if (e.target.classList.contains('remove-participant')) {
-        e.target.closest('.participant').remove();
-      }
-    });
-
-    // Edit form submission handler
-    document.getElementById('editBlotterForm').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      
-      try {
-        // Get form data
-        const formData = {
-          case_id: document.getElementById('editCaseId').value,
-          location: document.getElementById('editLocation').value,
-          description: document.getElementById('editDescription').value,
-          status: document.getElementById('editStatus').value,
-          interventions: [],
-          participants: []
-        };
-        
-        // Get checked interventions
-        document.querySelectorAll('#editInterventionContainer input[type="checkbox"]:checked').forEach(checkbox => {
-          formData.interventions.push(checkbox.value);
-        });
-        
-        // Get participants
-        document.querySelectorAll('#editParticipantContainer .participant').forEach(participant => {
-          const participantType = participant.querySelector('input[name$="[type]"]').value;
-          const participantData = {};
-          
-          if (participantType === 'registered') {
-            participantData.user_id = participant.querySelector('select[name$="[user_id]"]').value;
-            participantData.role = participant.querySelector('select[name$="[role]"]').value;
-          } else {
-            // Unregistered/external
-            participantData.first_name = participant.querySelector('input[name$="[first_name]"]').value;
-            participantData.last_name = participant.querySelector('input[name$="[last_name]"]').value;
-            participantData.contact_number = participant.querySelector('input[name$="[contact_number]"]').value;
-            participantData.address = participant.querySelector('input[name$="[address]"]').value;
-            participantData.age = participant.querySelector('input[name$="[age]"]').value;
-            participantData.gender = participant.querySelector('select[name$="[gender]"]').value;
-            participantData.role = participant.querySelector('select[name$="[role]"]').value;
-          }
-          
-          formData.participants.push(participantData);
-        });
-        
-        if (formData.participants.length === 0) {
-          Swal.fire('Error', 'At least one participant is required', 'error');
-          return;
-        }
-        
-        // Show loading state
+    document.querySelectorAll('.approve-schedule-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const caseId = btn.dataset.id;
         Swal.fire({
-          title: 'Saving...',
-          text: 'Updating case details',
-          allowOutsideClick: false,
-          didOpen: () => {
-            Swal.showLoading();
+          title: 'Confirm Schedule',
+          text: 'Are you available for this hearing date and time?',
+          icon: 'question',
+          showCancelButton: true,
+          confirmButtonColor: '#10b981',
+          cancelButtonColor: '#6b7280',
+          confirmButtonText: 'Yes, approve'
+        }).then((result) => {
+          if (result.isConfirmed) {
+            Swal.fire({
+              title: 'Processing...',
+              text: 'Confirming your availability',
+              allowOutsideClick: false,
+              didOpen: () => {
+                Swal.showLoading();
+              }
+            });
+            
+            fetch(`?action=approve_schedule&id=${caseId}`)
+              .then(response => response.json())
+              .then(data => {
+                if (data.success) {
+                  Swal.fire({
+                    title: 'Success!',
+                    text: data.message || 'Schedule approved successfully',
+                    icon: 'success',
+                    timer: 1500,
+                    showConfirmButton: false
+                  }).then(() => location.reload());
+                } else {
+                  Swal.fire({
+                    title: 'Error',
+                    text: data.message || 'Failed to approve schedule',
+                    icon: 'error'
+                  });
+                }
+              })
+              .catch(error => {
+                console.error('Error approving schedule:', error);
+                Swal.fire({
+                  title: 'Error',
+                  text: 'An unexpected error occurred',
+                  icon: 'error'
+                });
+              });
           }
         });
-        
-        // Send data to server
-        const response = await fetch('?action=update_case', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify(formData)
+      });
+    });
+    
+    document.querySelectorAll('.reject-schedule-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const caseId = btn.dataset.id;
+        Swal.fire({
+          title: 'Reject Schedule',
+          text: 'Please provide a reason for rejecting this schedule:',
+          input: 'text',
+          inputPlaceholder: 'Enter your reason',
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#dc2626',
+          cancelButtonColor: '#6b7280',
+          confirmButtonText: 'Reject schedule',
+          inputValidator: (value) => {
+            if (!value) {
+              return 'Please provide a reason';
+            }
+          }
+        }).then((result) => {
+          if (result.isConfirmed) {
+            Swal.fire({
+              title: 'Processing...',
+              text: 'Rejecting the schedule proposal',
+              allowOutsideClick: false,
+              didOpen: () => {
+                Swal.showLoading();
+              }
+            });
+            
+            fetch(`?action=reject_schedule&id=${caseId}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json'
+              },
+              body: JSON.stringify({ reason: result.value })
+            })
+              .then(response => response.json())
+              .then(data => {
+                if (data.success) {
+                  Swal.fire({
+                    title: 'Schedule Rejected',
+                    text: data.message || 'Schedule rejected successfully',
+                    icon: 'success',
+                    timer: 1500,
+                    showConfirmButton: false
+                  }).then(() => location.reload());
+                } else {
+                  Swal.fire({
+                    title: 'Error',
+                    text: data.message || 'Failed to reject schedule',
+                    icon: 'error'
+                  });
+                }
+              })
+              .catch(error => {
+                console.error('Error rejecting schedule:', error);
+                Swal.fire({
+                  title: 'Error',
+                  text: 'An unexpected error occurred',
+                  icon: 'error'
+                });
+              });
+          }
         });
+      });
+    });
+
+    // Add status change handler
+    document.querySelectorAll('.status-select').forEach(select => {      
+      select.addEventListener('change', function() {
+        const caseId = this.getAttribute('data-id');
+        const newStatus = this.value;
         
-        const result = await response.json();
+        if (!newStatus) return;
         
-        if (result.success) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Success!',
-            text: 'Case has been updated successfully.',
-            timer: 1500,
-            showConfirmButton: false
-          }).then(() => {
-            // Close modal and reload page
-            document.getElementById('editBlotterModal').classList.add('hidden');
-            location.reload();
-          });
-        } else {
-          Swal.fire('Error', result.message || 'Failed to update case', 'error');
-        }
-        
-      } catch (error) {
-        console.error('Error updating case:', error);
-        Swal.fire('Error', 'An unexpected error occurred while saving the case', 'error');
-      }
+        // Confirm status change
+        Swal.fire({
+          title: 'Change Status?',
+          text: `This will change the case status to ${newStatus}.`,
+          icon: 'warning',
+          showCancelButton: true,
+          confirmButtonColor: '#3b82f6',
+          cancelButtonColor: '#6b7280',
+          confirmButtonText: 'Yes, change it'
+        }).then(async (result) => {
+          if (result.isConfirmed) {
+            try {
+              const response = await fetch(`?action=set_status&id=${caseId}&new_status=${newStatus}`);
+              const data = await response.json();
+              
+              if (data.success) {
+                Swal.fire({
+                  icon: 'success',
+                  title: 'Success!',
+                  text: `Status changed to ${newStatus}.`,
+                  timer: 1500,
+                  showConfirmButton: false
+                }).then(() => location.reload());
+              } else {
+                Swal.fire('Error', data.message || 'Failed to change status', 'error');
+              }
+            } catch (error) {
+              console.error('Error changing status:', error);
+              Swal.fire('Error', 'An unexpected error occurred.', 'error');
+            }
+          } else {
+            // Revert the select to the previous value if change was not confirmed
+            const currentStatus = this.getAttribute('data-current-status');
+            this.value = currentStatus;
+          }
+        });
+      });
     });
 });
 </script>
+</body>
+</html>

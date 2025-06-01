@@ -1,3 +1,6 @@
+<?php
+global $pdo, $role, $current_admin_id;
+?>
 <!-- Signature Upload Modal -->
 <div id="signatureUploadModal" tabindex="-1"
      class="hidden fixed inset-0 z-50 flex items-center justify-center p-4 overflow-auto">
@@ -55,7 +58,12 @@
       <?php endif; ?>
       
       <!-- Form -->
-      <form method="POST" enctype="multipart/form-data" class="p-6 space-y-4">
+      <form id="signatureUploadForm"
+            method="POST"
+            action="../pages/blotter.php?action=upload_signature"
+            enctype="multipart/form-data" class="p-6 space-y-4">
+        <input type="hidden" name="role" value="<?= htmlspecialchars($role) ?>">
+        
         <div>
           <label class="block text-sm font-medium text-gray-700 mb-2">Signature Type</label>
           <select name="signature_type" class="w-full p-2 border border-gray-300 rounded focus:ring-blue-500 focus:border-blue-500" required>
