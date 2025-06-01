@@ -11,17 +11,18 @@ if (!in_array($_SESSION['role_id'], [3,4,5,6,7])) {
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $service_id = $_POST['service_id'] ?? '';
-    $name = $_POST['name'] ?? '';
-    $description = $_POST['description'] ?? '';
+    $name = trim($_POST['name'] ?? '');
+    $description = trim($_POST['description'] ?? '');
     $icon = $_POST['icon'] ?? '';
-    $requirements = $_POST['requirements'] ?? '';
-    $detailed_guide = $_POST['detailed_guide'] ?? '';
-    $processing_time = $_POST['processing_time'] ?? '';
-    $fees = $_POST['fees'] ?? '';
+    $requirements = trim($_POST['requirements'] ?? '');
+    $detailed_guide = trim($_POST['detailed_guide'] ?? '');
+    $processing_time = trim($_POST['processing_time'] ?? '');
+    $fees = trim($_POST['fees'] ?? '');
     $barangay_id = $_SESSION['barangay_id'];
 
+    // Validation
     if (empty($service_id) || empty($name) || empty($description)) {
-        echo json_encode(['success' => false, 'message' => 'Required fields are missing']);
+        echo json_encode(['success' => false, 'message' => 'Service ID, name, and description are required']);
         exit();
     }
 
@@ -31,7 +32,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         // Verify service exists and belongs to the barangay
         $stmt = $pdo->prepare("
-            SELECT id, service_photo 
+            SELECT id, service_photo
             FROM custom_services 
             WHERE id = ? AND barangay_id = ?
         ");
@@ -39,7 +40,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $existing_service = $stmt->fetch();
         
         if (!$existing_service) {
-            echo json_encode(['success' => false, 'message' => 'Service not found']);
+            $pdo->rollBack();
+            echo json_encode(['success' => false, 'message' => 'Service not found or you do not have permission to modify this service']);
             exit();
         }
 
@@ -97,11 +99,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 detailed_guide = ?,
                 processing_time = ?,
                 fees = ?,
-                service_photo = ?
+                service_photo = ?,
+                updated_at = CURRENT_TIMESTAMP
             WHERE id = ? AND barangay_id = ?
         ");
         
-        $stmt->execute([
+        $update_result = $stmt->execute([
             $name,
             $description,
             $icon,
@@ -114,8 +117,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $barangay_id
         ]);
 
+        if (!$update_result) {
+            $pdo->rollBack();
+            // Clean up new uploaded file on error
+            if (isset($_FILES['service_photo']) && $_FILES['service_photo']['error'] === UPLOAD_ERR_OK && $photo_filename !== $old_photo && file_exists($upload_dir . $photo_filename)) {
+                unlink($upload_dir . $photo_filename);
+            }
+            echo json_encode(['success' => false, 'message' => 'Failed to update service in database']);
+            exit();
+        }
+
         // Delete old photo if a new one was uploaded and old one exists
-        if (isset($_FILES['service_photo']) && $_FILES['service_photo']['error'] === UPLOAD_ERR_OK && $old_photo) {
+        if (isset($_FILES['service_photo']) && $_FILES['service_photo']['error'] === UPLOAD_ERR_OK && $old_photo && $old_photo !== $photo_filename) {
             $old_photo_path = $upload_dir . $old_photo;
             if (file_exists($old_photo_path)) {
                 unlink($old_photo_path);
@@ -137,6 +150,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $pdo->commit();
 
         echo json_encode(['success' => true, 'message' => 'Service updated successfully']);
+
     } catch (PDOException $e) {
         // Rollback transaction on error
         $pdo->rollBack();
@@ -146,8 +160,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             unlink($upload_dir . $photo_filename);
         }
         
-        error_log($e->getMessage());
-        echo json_encode(['success' => false, 'message' => 'Failed to update service']);
+        error_log("Update service error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Database error occurred while updating service']);
+    } catch (Exception $e) {
+        // Rollback transaction on error
+        $pdo->rollBack();
+        
+        // Clean up new uploaded file on error
+        if (isset($photo_filename) && $photo_filename !== $old_photo && file_exists($upload_dir . $photo_filename)) {
+            unlink($upload_dir . $photo_filename);
+        }
+        
+        error_log("Update service error: " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'An unexpected error occurred']);
     }
 } else {
     http_response_code(405);

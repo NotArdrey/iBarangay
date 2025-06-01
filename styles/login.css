@@ -154,6 +154,25 @@ input:focus {
   opacity: 1;
 }
 
+/* Forgot Password Link */
+.forget-pass {
+  margin-top: 0.5rem;
+  text-align: right;
+}
+
+.forget-pass .alt-link {
+  color: var(--primary-blue);
+  text-decoration: none;
+  font-size: 0.875rem;
+  font-weight: 500;
+  transition: color var(--transition-speed) ease;
+}
+
+.forget-pass .alt-link:hover {
+  color: var(--secondary-blue);
+  text-decoration: underline;
+}
+
 /* Sign In Button */
 .login-btn {
   width: calc(100% - 3rem);
@@ -182,6 +201,37 @@ input:focus {
   transform: scale(0.98);
 }
 
+/* Sign Up Section - Fixed Design */
+.signup {
+  padding: 1.5rem 2rem;
+  background: #fafbfc;
+  border-top: 1px solid #e2e8f0;
+  text-align: center;
+  color: var(--text-dark);
+  font-size: 0.875rem;
+}
+
+.signup span {
+  display: inline-block;
+  margin-right: 0.5rem;
+  font-weight: 400;
+  color: #64748b;
+}
+
+.signup .alt-link {
+  color: var(--primary-blue);
+  text-decoration: none;
+  font-weight: 600;
+  transition: all var(--transition-speed) ease;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+}
+
+.signup .alt-link:hover {
+  color: var(--secondary-blue);
+  background: rgba(59, 130, 246, 0.1);
+  text-decoration: underline;
+}
 
 /* Divider */
 .divider {
@@ -225,31 +275,17 @@ input:focus {
   cursor: pointer;
 }
 
-/* Dark container for Forgot Password / Sign Up */
-.alt-links-container {
-  background-color: #ffffff; /* Adjust color to match your preferred design */
-  padding: 1rem;
-  text-align: center;
-}
-
+/* Alternative Links (General) */
 .alt-link {
-  color: #000000;  /* White text on dark background */
+  color: var(--primary-blue);
   text-decoration: none;
-  font-weight: 600;
-  display: inline-block;
-  margin: 0.5rem 0;
+  font-weight: 500;
   transition: color var(--transition-speed) ease;
 }
 
 .alt-link:hover {
-  color: var(--primary-blue);
+  color: var(--secondary-blue);
   text-decoration: underline;
-}
-
-.signup {
-  margin-top: 0.5rem;
-  color: #000000;
-  font-weight: 400;
 }
 
 /* Footer */
@@ -303,5 +339,15 @@ input:focus {
 
   .divider {
     margin: 1rem;
+  }
+
+  .signup {
+    padding: 1rem 1.5rem;
+  }
+
+  .signup span,
+  .signup .alt-link {
+    display: block;
+    margin: 0.25rem 0;
   }
 }
