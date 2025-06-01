@@ -481,7 +481,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="ALS" <?= $child_info['school_type'] === 'ALS' ? 'checked' : '' ?> class="form-radio">
-                                    <span class="ml-2">ALS</span>
+                                    <span class="ml-2">ALS (Alternative Learning System)</span>
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="Day Care" <?= $child_info['school_type'] === 'Day Care' ? 'checked' : '' ?> class="form-radio">
@@ -489,11 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="SNP" <?= $child_info['school_type'] === 'SNP' ? 'checked' : '' ?> class="form-radio">
-                                    <span class="ml-2">SNP</span>
-                                </label>
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="school_type" value="Not Attending" <?= $child_info['school_type'] === 'Not Attending' ? 'checked' : '' ?> class="form-radio">
-                                    <span class="ml-2">Not Attending</span>
+                                    <span class="ml-2">SNP (Special Needs Program)</span>
                                 </label>
                             </div>
                         </div>
