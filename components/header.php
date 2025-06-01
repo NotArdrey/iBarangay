@@ -236,16 +236,16 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
   </a>
 </li>
 
-<!-- Temporary Record -->
+<!-- Manage Census -->
 <li>
-  <a href="../pages/temporary_record.php" class="nav-link">
+  <a href="../pages/manage_census.php" class="nav-link">
     <span class="icon-container">
       <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
         <path stroke-linecap="round" stroke-linejoin="round" 
-        d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
+          d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H4v-2a4 4 0 015-3.87M12 12a4 4 0 100-8 4 4 0 000 8zm6 0a3 3 0 100-6 3 3 0 000 6zm-12 0a3 3 0 100-6 3 3 0 000 6z" />
       </svg>
     </span>
-    <span class="font-medium text-gray-700">Temporary Record</span>
+    <span class="font-medium text-gray-700">Manage Census</span>
   </a>
 </li>
 
@@ -317,19 +317,6 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
       </svg>
     </span>
     <span class="font-medium text-gray-700">Events</span>
-  </a>
-</li>
-
-<!-- Manage Census -->
-<li>
-  <a href="../pages/manage_census.php" class="nav-link">
-    <span class="icon-container">
-      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-        <path stroke-linecap="round" stroke-linejoin="round" 
-          d="M17 20h5v-2a4 4 0 00-5-3.87M9 20H4v-2a4 4 0 015-3.87M12 12a4 4 0 100-8 4 4 0 000 8zm6 0a3 3 0 100-6 3 3 0 000 6zm-12 0a3 3 0 100-6 3 3 0 000 6z" />
-      </svg>
-    </span>
-    <span class="font-medium text-gray-700">Manage Census</span>
   </a>
 </li>
 

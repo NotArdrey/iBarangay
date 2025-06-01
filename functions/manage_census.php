@@ -105,10 +105,10 @@ function saveResident($pdo, $data, $barangay_id) {
         // Insert present address
         $stmt_address = $pdo->prepare("
                 INSERT INTO addresses (
-                person_id, barangay_id, house_no, street,
+                person_id, barangay_id, barangay_name, house_no, street,
                 municipality, province, region, is_primary, is_permanent
                 ) VALUES (
-                :person_id, :barangay_id, :house_no, :street,
+                :person_id, :barangay_id, :barangay_name, :house_no, :street,
                 :municipality, :province, :region, :is_primary, :is_permanent
                 )
             ");
@@ -117,13 +117,14 @@ function saveResident($pdo, $data, $barangay_id) {
         $stmt_address->execute([
                 ':person_id' => $person_id,
                 ':barangay_id' => $barangay_id,
-            ':house_no' => trim($data['present_house_no'] ?? ''),
-            ':street' => trim($data['present_street'] ?? ''),
-            ':municipality' => trim($data['present_municipality'] ?? ''),
-            ':province' => trim($data['present_province'] ?? ''),
-            ':region' => trim($data['present_region'] ?? ''),
-            ':is_primary' => 1,
-            ':is_permanent' => 0
+                ':barangay_name' => null, // Use barangay_id for present address
+                ':house_no' => trim($data['present_house_no'] ?? ''),
+                ':street' => trim($data['present_street'] ?? ''),
+                ':municipality' => trim($data['present_municipality'] ?? ''),
+                ':province' => trim($data['present_province'] ?? ''),
+                ':region' => trim($data['present_region'] ?? ''),
+                ':is_primary' => 1,
+                ':is_permanent' => 0
         ]);
         
         // Add person to household if household_id is provided
@@ -228,7 +229,8 @@ function saveResident($pdo, $data, $barangay_id) {
         if (empty($data['same_as_present'])) {
             $stmt_address->execute([
                 ':person_id' => $person_id,
-                ':barangay_id' => $barangay_id,
+                ':barangay_id' => null, // No barangay_id for permanent address
+                ':barangay_name' => trim($data['permanent_barangay'] ?? ''), // Use the barangay name from input
                 ':house_no' => trim($data['permanent_house_no'] ?? ''),
                 ':street' => trim($data['permanent_street'] ?? ''),
                 ':municipality' => trim($data['permanent_municipality'] ?? ''),
@@ -406,11 +408,11 @@ function saveResident($pdo, $data, $barangay_id) {
         if ($has_economic_problems) {
             $stmt_economic = $pdo->prepare("
                 INSERT INTO person_economic_problems (
-                    person_id, loss_income, unemployment, high_cost_living, 
+                    person_id, loss_income, unemployment, 
                     skills_training, skills_training_details, livelihood, livelihood_details,
                     other_economic, other_economic_details
                 ) VALUES (
-                    :person_id, :loss_income, :unemployment, :high_cost_living,
+                    :person_id, :loss_income, :unemployment,
                     :skills_training, :skills_training_details, :livelihood, :livelihood_details,
                     :other_economic, :other_economic_details
                 )
@@ -420,7 +422,6 @@ function saveResident($pdo, $data, $barangay_id) {
                 ':person_id' => $person_id,
                 ':loss_income' => isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1 ? 1 : 0,
                 ':unemployment' => isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1 ? 1 : 0,
-                ':high_cost_living' => 0, // This field isn't in the form
                 ':skills_training' => isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1 ? 1 : 0,
                 ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
                 ':livelihood' => isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1 ? 1 : 0,

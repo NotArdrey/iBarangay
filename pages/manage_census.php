@@ -14,14 +14,24 @@ $barangay_id = $_SESSION['barangay_id'];
 
 // Fetch households for selection
 $stmt = $pdo->prepare("
-    SELECT h.id AS household_id, h.purok_id, p.name as purok_name
+    SELECT h.id AS household_id, h.household_number, h.purok_id, p.name as purok_name
     FROM households h
     LEFT JOIN purok p ON h.purok_id = p.id
     WHERE h.barangay_id = ? 
-    ORDER BY h.id
+    ORDER BY h.purok_id, h.household_number
 ");
 $stmt->execute([$barangay_id]);
 $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Group households by purok for JavaScript
+$households_by_purok = [];
+foreach ($households as $household) {
+    $purok_id = $household['purok_id'];
+    if (!isset($households_by_purok[$purok_id])) {
+        $households_by_purok[$purok_id] = [];
+    }
+    $households_by_purok[$purok_id][] = $household;
+}
 
 // Fetch puroks for selection
 $stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
@@ -116,6 +126,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'present_region' => trim($_POST['present_region'] ?? 'III'),
             'permanent_house_no' => trim($_POST['permanent_house_no'] ?? ''),
             'permanent_street' => trim($_POST['permanent_street'] ?? ''),
+            'permanent_barangay' => trim($_POST['permanent_barangay'] ?? ''),
             'permanent_municipality' => trim($_POST['permanent_municipality'] ?? ''),
             'permanent_province' => trim($_POST['permanent_province'] ?? ''),
             'permanent_region' => trim($_POST['permanent_region'] ?? ''),
@@ -210,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Problems - Economic
             'problem_loss_income' => isset($_POST['problem_loss_income']) ? 1 : 0,
-            'problem_unemployment' => isset($_POST['problem_unemployment']) ? 1 : 0,
+            'problem_lack_income' => isset($_POST['problem_lack_income']) ? 1 : 0,
             'problem_high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
             'problem_skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
             'problem_skills_training_specify' => trim($_POST['problem_skills_training_specify'] ?? ''),
@@ -554,6 +565,9 @@ function isCheckboxChecked($form_data, $key)
                 </a>
                 <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+                <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    Temporary Records
+                </a>
             </div>
         </div>
 
@@ -879,8 +893,7 @@ function isCheckboxChecked($form_data, $key)
                                     <option value="<?= htmlspecialchars($household['household_id']) ?>"
                                         data-purok="<?= htmlspecialchars($household['purok_id']) ?>"
                                         <?= isSelected($household['household_id'], $form_data, 'household_id') ?>>
-                                        <?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>
-                                        <?= $household['purok_name'] ? ' - ' . htmlspecialchars($household['purok_name']) : '' ?>
+                                        <?= htmlspecialchars($household['household_number']) ?> (<?= htmlspecialchars($household['purok_name']) ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -2053,7 +2066,7 @@ function isCheckboxChecked($form_data, $key)
                     if (!householdsByPurok['<?= $household['purok_id'] ?>']) householdsByPurok['<?= $household['purok_id'] ?>'] = [];
                     householdsByPurok['<?= $household['purok_id'] ?>'].push({
                         id: '<?= htmlspecialchars($household['household_id']) ?>',
-                        number: '<?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>',
+                        number: '<?= htmlspecialchars($household['household_number']) ?>',
                         purok_name: '<?= htmlspecialchars($household['purok_name']) ?>'
                     });
                 <?php endforeach; ?>
