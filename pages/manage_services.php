@@ -36,9 +36,9 @@ $services = $stmt->fetchAll();
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
         <div class="flex justify-between items-center mb-6">
-            <h1 class="text-3xl font-semibold text-gray-800">Manage Services</h1>
+            <h1 class="text-3xl font-bold text-blue-800">Manage Services</h1>
             <div class="space-x-4">
-                <button onclick="showAddServiceModal()" class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded-lg">
+                <button onclick="showAddServiceModal()" class="w-full px-4 py-3 bg-blue-600 text-white rounded-md text-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                     <i class="fas fa-plus-circle mr-2"></i>Add Service
                 </button>
             </div>
@@ -91,7 +91,7 @@ $services = $stmt->fetchAll();
     <div id="addServiceModal" class="fixed inset-0 bg-black bg-opacity-50 hidden items-center justify-center z-50">
         <div class="bg-white rounded-lg p-8 max-w-4xl w-full max-h-[90vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
-                <h2 class="text-2xl font-bold">Add Service</h2>
+                <h2 class="text-3xl font-bold text-blue-800">Add Service</h2>
                 <button onclick="closeAddServiceModal()" class="text-gray-500 hover:text-gray-700">
                     <i class="fas fa-times"></i>
                 </button>
@@ -260,7 +260,7 @@ $services = $stmt->fetchAll();
                 </div>
 
                 <div class="flex justify-end mt-6">
-                    <button type="submit" class="bg-green-500 hover:bg-green-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
+                    <button type="submit" class="w-full px-4 py-3 bg-blue-500 text-white rounded-md text-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
                         Add Service
                     </button>
                 </div>
