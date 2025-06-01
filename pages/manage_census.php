@@ -857,13 +857,13 @@ function isCheckboxChecked($form_data, $key)
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
-                                <input type="text" name="present_house_no" value="<?= getFormValue('present_house_no', $form_data) ?>"
+                                <input type="text" name="present_house_no" required value="<?= getFormValue('present_house_no', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
-                                <input type="text" name="present_street" value="<?= getFormValue('present_street', $form_data) ?>"
+                                <input type="text" name="present_street" required value="<?= getFormValue('present_street', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
@@ -871,26 +871,26 @@ function isCheckboxChecked($form_data, $key)
 
                             <div>
                                 <label class="block text-sm font-medium">Barangay</label>
-                                <input type="text" name="present_barangay" value="<?= htmlspecialchars($barangay['name']) ?>"
+                                <input type="text" name="present_barangay" required value="<?= htmlspecialchars($barangay['name']) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                                 <input type="hidden" name="present_barangay_id" value="<?= htmlspecialchars($barangay['id']) ?>">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
-                                <input type="text" name="present_municipality" value="<?= getFormValue('present_municipality', $form_data) ?: 'SAN RAFAEL' ?>"
+                                <input type="text" name="present_municipality" required value="<?= getFormValue('present_municipality', $form_data) ?: 'SAN RAFAEL' ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
-                                <input type="text" name="present_province" value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
+                                <input type="text" name="present_province" required value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
-                                <input type="text" name="present_region" value="<?= getFormValue('present_region', $form_data) ?: 'III' ?>"
+                                <input type="text" name="present_region" required value="<?= getFormValue('present_region', $form_data) ?: 'III' ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
                         </div>
@@ -911,13 +911,13 @@ function isCheckboxChecked($form_data, $key)
                         <div id="permanentAddressFields" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
-                                <input type="text" name="permanent_house_no" value="<?= getFormValue('permanent_house_no', $form_data) ?>"
+                                <input type="text" name="permanent_house_no" required value="<?= getFormValue('permanent_house_no', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
-                                <input type="text" name="permanent_street" value="<?= getFormValue('permanent_street', $form_data) ?>"
+                                <input type="text" name="permanent_street" required value="<?= getFormValue('permanent_street', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
@@ -925,26 +925,26 @@ function isCheckboxChecked($form_data, $key)
 
                             <div>
                                 <label class="block text-sm font-medium">Barangay</label>
-                                <input type="text" name="permanent_barangay"
+                                <input type="text" name="permanent_barangay" required
                                     value="<?= getFormValue('permanent_barangay', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
-                                <input type="text" name="permanent_municipality" value="<?= getFormValue('permanent_municipality', $form_data) ?>"
+                                <input type="text" name="permanent_municipality" required value="<?= getFormValue('permanent_municipality', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
-                                <input type="text" name="permanent_province" value="<?= getFormValue('permanent_province', $form_data) ?>"
+                                <input type="text" name="permanent_province" required value="<?= getFormValue('permanent_province', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
-                                <input type="text" name="permanent_region" value="<?= getFormValue('permanent_region', $form_data) ?>"
+                                <input type="text" name="permanent_region" required value="<?= getFormValue('permanent_region', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
@@ -957,7 +957,7 @@ function isCheckboxChecked($form_data, $key)
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="block text-sm font-medium">Purok</label>
-                            <select name="purok_id" class="mt-1 block w-full border rounded p-2">
+                            <select name="purok_id" required class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT PUROK --</option>
                                 <?php foreach ($puroks as $purok): ?>
                                     <option value="<?= htmlspecialchars($purok['id']) ?>"
@@ -970,7 +970,7 @@ function isCheckboxChecked($form_data, $key)
 
                         <div>
                             <label class="block text-sm font-medium">Household Number (Optional)</label>
-                            <select name="household_id" id="household_id_select" class="mt-1 block w-full border rounded p-2">
+                            <select name="household_id" id="household_id_select" required class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT HOUSEHOLD --</option>
                                 <?php foreach ($households as $household): ?>
                                     <option value="<?= htmlspecialchars($household['household_id']) ?>"
@@ -985,7 +985,7 @@ function isCheckboxChecked($form_data, $key)
 
                         <div>
                             <label class="block text-sm font-medium">Relationship to Head</label>
-                            <select name="relationship" class="mt-1 block w-full border rounded p-2">
+                            <select name="relationship" required class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT RELATIONSHIP --</option>
                                 <option value="HEAD" <?= isSelected('HEAD', $form_data, 'relationship') ?>>HEAD</option>
                                 <option value="SPOUSE" <?= isSelected('SPOUSE', $form_data, 'relationship') ?>>SPOUSE</option>

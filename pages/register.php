@@ -226,6 +226,59 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       const birthDate = document.getElementById('birth_date').value.trim();
       const gender = document.getElementById('gender').value.trim();
       const idNumber = document.getElementById('id_number').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      const phone = document.getElementById('phone').value.trim();
+      
+      // Phone number validation for Philippine mobile numbers
+      const phoneRegex = /^09\d{9}$/;
+      if (!phoneRegex.test(phone)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid Phone Number',
+          text: 'Please enter a valid Philippine mobile number starting with 09 followed by 9 digits.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      // Email validation for Gmail only
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
+      if (!emailRegex.test(email)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid Email',
+          text: 'Only Gmail addresses are accepted. Please use a valid Gmail address.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      // Password validation regex
+      const passwordRegex = /^(?=.*[A-Z])(?=.*[0-9!@#$%^&*])[A-Za-z0-9!@#$%^&*]{8,}$/;
+      
+      // Validate password
+      if (!passwordRegex.test(password)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid Password',
+          text: 'Password must be at least 8 characters long and contain at least one capital letter and one number or special character.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      // Check if passwords match
+      if (password !== confirmPassword) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Passwords Do Not Match',
+          text: 'Please make sure your passwords match.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
       
       // Validate required fields
       if (!firstName || !lastName || !birthDate || !gender) {
