@@ -62,8 +62,6 @@ INSERT INTO document_types (name, code, description, default_fee) VALUES
     ('Barangay Indigency', 'barangay_indigency', 'A document certifying indigency status.', 0.00),
     ('Cedula', 'cedula', 'Community Tax Certificate (Cedula)', 30.00),
     ('Business Permit Clearance', 'business_permit_clearance', 'Barangay clearance for business permit.', 100.00),
-    ('Community Tax Certificate (Sedula)', 'community_tax_certificate', 'Community Tax Certificate (Sedula)', 30.00),
-    ('Good Moral Certificate', 'good_moral_certificate', 'Certification of good moral character.', 25.00),
     ('No Income Certification', 'no_income_certification', 'Certification for individuals with no regular income.', 0.00);
 
 -- Case categories for blotter management
@@ -894,13 +892,17 @@ CREATE TABLE document_attribute_types (
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE
 );
 
--- Document requests
 CREATE TABLE document_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    
+    -- Core relationships (normalized)
     person_id INT NOT NULL,
+    user_id INT NULL,
     document_type_id INT NOT NULL,
     barangay_id INT NOT NULL,
-    status ENUM('pending', 'processing', 'for_payment', 'paid', 'for_pickup', 'completed', 'cancelled', 'rejected') DEFAULT 'pending',
+    
+    -- Request status and processing
+    status ENUM('pending','completed','rejected') DEFAULT 'pending',
     price DECIMAL(10,2) DEFAULT 0.00,
     remarks TEXT,
     proof_image_path VARCHAR(255) NULL,
@@ -908,13 +910,49 @@ CREATE TABLE document_requests (
     processed_by_user_id INT,
     completed_at DATETIME,
     request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Document-specific information (only what's unique to this request)
+    purpose TEXT NULL,
+    ctc_number VARCHAR(100) NULL,
+    or_number VARCHAR(100) NULL,
+    
+    -- Business-related information (for business permits only)
+    business_name VARCHAR(100) NULL,
+    business_location VARCHAR(200) NULL,
+    business_nature VARCHAR(200) NULL,
+    business_type VARCHAR(100) NULL,
+    
+    -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- Foreign Key Constraints
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
     FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-    FOREIGN KEY (processed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY (processed_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    
+    -- Indexes for performance
+    INDEX idx_doc_requests_status_barangay (status, barangay_id, request_date),
+    INDEX idx_doc_requests_person (person_id),
+    INDEX idx_doc_requests_doctype (document_type_id),
+    INDEX idx_doc_requests_user (user_id)
+);
+
+-- Fix 2: Add unique constraint for First Time Job Seeker (one per person)
+CREATE TABLE document_request_restrictions (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    person_id INT NOT NULL,
+    document_type_code VARCHAR(50) NOT NULL,
+    first_requested_at DATETIME NOT NULL,
+    request_count INT DEFAULT 1,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_person_document_restriction (person_id, document_type_code),
+    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
+    INDEX idx_document_restrictions (document_type_code, person_id)
 );
 
 -- Document request attributes
@@ -1253,32 +1291,6 @@ CREATE TABLE audit_trails (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Scheduling and notifications
-CREATE TABLE schedule_proposals (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    blotter_case_id INT NOT NULL,
-    proposed_by_user_id INT NOT NULL,
-    proposed_date DATE NOT NULL,
-    proposed_time TIME NOT NULL,
-    hearing_location VARCHAR(255) DEFAULT 'Barangay Hall',
-    presiding_officer VARCHAR(100) DEFAULT 'Barangay Captain',
-    presiding_officer_position ENUM('barangay_captain', 'kagawad') DEFAULT 'barangay_captain',
-    status ENUM('proposed', 'user_confirmed', 'captain_confirmed', 'both_confirmed', 'conflict', 'cancelled') DEFAULT 'proposed',
-    user_confirmed BOOLEAN DEFAULT FALSE,
-    captain_confirmed BOOLEAN DEFAULT FALSE,
-    user_confirmed_at DATETIME NULL,
-    captain_confirmed_at DATETIME NULL,
-    user_remarks TEXT NULL,
-    captain_remarks TEXT NULL,
-    conflict_reason TEXT NULL,
-    email_sent BOOLEAN DEFAULT FALSE,
-    email_sent_at DATETIME NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
-    FOREIGN KEY (proposed_by_user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
 -- Email logs
 CREATE TABLE email_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1467,15 +1479,20 @@ INSERT INTO blotter_participants (blotter_case_id, external_participant_id, role
 -- Insert Blotter Case Categories
 INSERT INTO blotter_case_categories (blotter_case_id, category_id) VALUES
     (1, 8), (2, 8), (3, 8), (4, 8);
+    
+ALTER TABLE document_requests 
+ADD COLUMN user_id INT AFTER person_id,
+ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+-- Insert Document Requests (corrected statuses)
+INSERT INTO document_requests (person_id, user_id, document_type_id, barangay_id, requested_by_user_id, status) VALUES
+    (10, NULL, 1, 32, 3, 'pending'),    -- Luis Santos (no user account)
+    (11, NULL, 3, 32, 3, 'pending'),    -- Sofia Reyes (no user account)
+    (12, NULL, 4, 32, 3, 'pending'),    -- Miguel Cruz (no user account)
+    (13, NULL, 1, 32, 3, 'pending'),    -- Carlos Dela Cruz (no user account)
+    (14, NULL, 3, 32, 3, 'pending'),    -- Elena Santos (no user account)
+    (5, 5, 5, 32, 3, 'pending');        -- Test Resident (user_id=5)
 
--- Insert Document Requests
-INSERT INTO document_requests (person_id, document_type_id, barangay_id, requested_by_user_id, status) VALUES
-    (10, 1, 32, 3, 'pending'),
-    (11, 3, 32, 3, 'processing'),
-    (12, 4, 32, 3, 'for_payment'),
-    (13, 1, 32, 3, 'pending'),
-    (14, 3, 32, 3, 'processing'),
-    (15, 5, 32, 3, 'for_payment');
+
 
 -- Insert Events
 INSERT INTO events (title, description, start_datetime, end_datetime, location, barangay_id, created_by_user_id) VALUES
@@ -1712,3 +1729,176 @@ CREATE TABLE password_history (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_user_id_created (user_id, created_at)
 );
+
+CREATE TABLE schedule_proposals (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    blotter_case_id INT NOT NULL,
+    proposed_by_user_id INT NOT NULL,
+    proposed_date DATE NOT NULL,
+    proposed_time TIME NOT NULL,
+    hearing_location VARCHAR(255) NOT NULL,
+    presiding_officer VARCHAR(100) NOT NULL,
+    presiding_officer_position VARCHAR(50) NOT NULL,
+    status ENUM('proposed', 'user_confirmed', 'captain_confirmed', 'both_confirmed', 'conflict', 'pending_user_confirmation', 'pending_officer_confirmation', 'cancelled') NOT NULL DEFAULT 'proposed',
+    user_confirmed BOOLEAN DEFAULT FALSE,
+    user_confirmed_at DATETIME,
+    captain_confirmed BOOLEAN DEFAULT FALSE,
+    captain_confirmed_at DATETIME,
+    confirmed_by_role INT,
+    user_remarks TEXT,
+    captain_remarks TEXT,
+    conflict_reason TEXT,
+    complainant_confirmed  BOOLEAN DEFAULT FALSE,
+    respondent_confirmed  BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id),
+    FOREIGN KEY (proposed_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (confirmed_by_role) REFERENCES roles(id)
+);
+
+	CREATE TABLE password_history (
+		id INT AUTO_INCREMENT PRIMARY KEY,
+		user_id INT NOT NULL,
+		password_hash VARCHAR(255) NOT NULL,
+		created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+		FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+		INDEX idx_user_id_created (user_id, created_at)
+	);
+
+-- Add missing participant_notifications table
+CREATE TABLE participant_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    participant_id INT NOT NULL,
+    email_address VARCHAR(255),
+    phone_number VARCHAR(20),
+    notification_type ENUM('summons', 'hearing_notice', 'reminder') DEFAULT 'summons',
+    sent_at DATETIME,
+    confirmed BOOLEAN DEFAULT FALSE,
+    confirmed_at DATETIME NULL,
+    confirmation_token VARCHAR(255),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (participant_id) REFERENCES blotter_participants(id) ON DELETE CASCADE,
+    UNIQUE KEY uk_case_participant_type (blotter_case_id, participant_id, notification_type),
+    INDEX idx_confirmation_token (confirmation_token),
+    INDEX idx_sent_confirmed (sent_at, confirmed)
+);
+
+-- Insert sample data for existing blotter cases to prevent errors
+-- This assumes you have blotter cases with IDs 1-4 and corresponding participants
+INSERT INTO participant_notifications (blotter_case_id, participant_id, email_address, notification_type, confirmed)
+SELECT 
+    bp.blotter_case_id,
+    bp.id as participant_id,
+    CASE 
+        WHEN p.user_id IS NOT NULL THEN u.email
+        ELSE CONCAT('external_', ep.id, '@placeholder.com')
+    END as email_address,
+    'summons' as notification_type,
+    CASE 
+        WHEN RAND() > 0.3 THEN TRUE 
+        ELSE FALSE 
+    END as confirmed
+FROM blotter_participants bp
+LEFT JOIN persons p ON bp.person_id = p.id
+LEFT JOIN users u ON p.user_id = u.id
+LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
+WHERE bp.blotter_case_id IN (
+    SELECT id FROM blotter_cases 
+    WHERE status IN ('pending', 'open') 
+    AND scheduling_status IN ('none', 'pending_schedule', 'schedule_proposed')
+)
+ON DUPLICATE KEY UPDATE confirmed = VALUES(confirmed);
+
+
+
+-- Add missing columns to custom_services table
+ALTER TABLE custom_services 
+ADD COLUMN service_type VARCHAR(50) DEFAULT 'general' AFTER barangay_id,
+ADD COLUMN priority_level ENUM('normal', 'high', 'urgent') DEFAULT 'normal' AFTER display_order,
+ADD COLUMN availability_type ENUM('always', 'scheduled', 'limited') DEFAULT 'always' AFTER priority_level,
+ADD COLUMN additional_notes TEXT AFTER availability_type;
+
+-- Add new status for blotter cases
+ALTER TABLE blotter_cases 
+MODIFY COLUMN status ENUM('pending', 'open', 'closed', 'completed', 'transferred', 'solved', 'endorsed_to_court', 'cfa_eligible', 'dismissed', 'deleted') DEFAULT 'pending';
+
+-- Add new columns for case dismissal
+ALTER TABLE blotter_cases
+ADD COLUMN dismissed_by_user_id INT NULL AFTER resolved_at,
+ADD COLUMN dismissal_reason TEXT NULL AFTER dismissed_by_user_id,
+ADD COLUMN dismissal_date DATETIME NULL AFTER dismissal_reason,
+ADD FOREIGN KEY (dismissed_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- Add new columns for schedule proposals
+ALTER TABLE schedule_proposals
+ADD COLUMN proposed_by_role_id INT NOT NULL AFTER proposed_by_user_id,
+ADD COLUMN notification_sent BOOLEAN DEFAULT FALSE AFTER status,
+ADD COLUMN notification_sent_at DATETIME NULL AFTER notification_sent,
+ADD FOREIGN KEY (proposed_by_role_id) REFERENCES roles(id) ON DELETE CASCADE;
+
+-- Add new table for schedule notifications
+CREATE TABLE schedule_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    schedule_proposal_id INT NOT NULL,
+    notified_user_id INT NOT NULL,
+    notification_type ENUM('proposal', 'confirmation', 'rejection') NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (schedule_proposal_id) REFERENCES schedule_proposals(id) ON DELETE CASCADE,
+    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE case_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    notified_user_id INT NOT NULL,
+    notification_type ENUM('case_filed', 'case_accepted', 'hearing_scheduled', 'signature_required') NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+-- Add indexes for better performance
+CREATE INDEX idx_schedule_proposals_status ON schedule_proposals(status);
+CREATE INDEX idx_schedule_notifications_user ON schedule_notifications(notified_user_id, is_read);
+CREATE INDEX idx_blotter_cases_dismissed ON blotter_cases(dismissed_by_user_id, dismissal_date);
+
+
+ALTER TABLE blotter_cases 
+ADD COLUMN accepted_by_user_id INT NULL AFTER assigned_to_user_id,
+ADD COLUMN accepted_by_role_id INT NULL AFTER accepted_by_user_id,
+ADD COLUMN accepted_at DATETIME NULL AFTER accepted_by_role_id,
+ADD COLUMN filing_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER incident_date,
+ADD COLUMN scheduling_deadline DATETIME GENERATED ALWAYS AS (DATE_ADD(filing_date, INTERVAL 5 DAY)) STORED,
+ADD COLUMN requires_dual_signature BOOLEAN DEFAULT FALSE AFTER hearing_count,
+ADD COLUMN captain_signature_date DATETIME NULL AFTER requires_dual_signature,
+ADD COLUMN chief_signature_date DATETIME NULL AFTER captain_signature_date,
+ADD FOREIGN KEY (accepted_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+ADD FOREIGN KEY (accepted_by_role_id) REFERENCES roles(id) ON DELETE SET NULL;
+
+ALTER TABLE custom_services 
+ADD COLUMN service_photo VARCHAR(255) AFTER additional_notes;
+
+ALTER TABLE barangay.users ADD COLUMN chief_officer_esignature_path LONGBLOB NULL;
+ALTER TABLE barangay.case_notifications
+MODIFY COLUMN notification_type ENUM(
+    'case_filed',
+    'case_accepted',
+    'hearing_scheduled',
+    'signature_required',
+    'schedule_confirmation',
+    'schedule_approved',
+    'schedule_rejected'
+) NOT NULL;
+
+CREATE INDEX idx_users_esignature ON users(esignature_path);INSERT INTO schedule_proposals (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time) VALUES     (1, 3, '2025-06-02', '10:00:00'),     (4, 3, '2025-06-05', '09:00:00')
+
+
+
+
