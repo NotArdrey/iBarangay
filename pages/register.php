@@ -127,28 +127,10 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       </div>
 
       <div class="input-group">
-        <label for="gender">
-          <i class="fas fa-venus-mars"></i> Gender
-        </label>
-        <select id="gender" name="gender" required class="gender-select">
-          <option value="">Select Gender</option>
-          <option value="Male">Male</option>
-          <option value="Female">Female</option>
-        </select>
-      </div>
-
-      <div class="input-group">
         <label for="birth_date">
           <i class="fas fa-calendar-alt"></i> Date of Birth
         </label>
         <input type="date" id="birth_date" name="birth_date" required>
-      </div>
-
-      <div class="input-group">
-        <label for="address">
-          <i class="fas fa-map-marker-alt"></i> Address
-        </label>
-        <textarea id="address" name="address" rows="3" required></textarea>
       </div>
 
       <div class="input-group">
@@ -224,7 +206,6 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       const middleName = document.getElementById('middle_name').value.trim();
       const lastName = document.getElementById('last_name').value.trim();
       const birthDate = document.getElementById('birth_date').value.trim();
-      const gender = document.getElementById('gender').value.trim();
       const idNumber = document.getElementById('id_number').value.trim();
       const email = document.getElementById('email').value.trim();
       const password = document.getElementById('password').value;
@@ -293,11 +274,11 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       }
       
       // Validate required fields
-      if (!firstName || !lastName || !birthDate || !gender) {
+      if (!firstName || !lastName || !birthDate) {
         Swal.fire({
           icon: 'error',
           title: 'Missing Information',
-          text: 'Please fill in all required fields: First Name, Last Name, Birth Date, and Gender.'
+          text: 'Please fill in all required fields: First Name, Last Name, and Birth Date.'
         });
         return;
       }
@@ -318,7 +299,6 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       verifyData.append('middle_name', middleName);
       verifyData.append('last_name', lastName);
       verifyData.append('birth_date', birthDate);
-      verifyData.append('gender', gender);
       verifyData.append('id_number', idNumber);
       
       // Send verification request

@@ -1253,32 +1253,6 @@ CREATE TABLE audit_trails (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Scheduling and notifications
-CREATE TABLE schedule_proposals (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    blotter_case_id INT NOT NULL,
-    proposed_by_user_id INT NOT NULL,
-    proposed_date DATE NOT NULL,
-    proposed_time TIME NOT NULL,
-    hearing_location VARCHAR(255) DEFAULT 'Barangay Hall',
-    presiding_officer VARCHAR(100) DEFAULT 'Barangay Captain',
-    presiding_officer_position ENUM('barangay_captain', 'kagawad') DEFAULT 'barangay_captain',
-    status ENUM('proposed', 'user_confirmed', 'captain_confirmed', 'both_confirmed', 'conflict', 'cancelled') DEFAULT 'proposed',
-    user_confirmed BOOLEAN DEFAULT FALSE,
-    captain_confirmed BOOLEAN DEFAULT FALSE,
-    user_confirmed_at DATETIME NULL,
-    captain_confirmed_at DATETIME NULL,
-    user_remarks TEXT NULL,
-    captain_remarks TEXT NULL,
-    conflict_reason TEXT NULL,
-    email_sent BOOLEAN DEFAULT FALSE,
-    email_sent_at DATETIME NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
-    FOREIGN KEY (proposed_by_user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-
 -- Email logs
 CREATE TABLE email_logs (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1496,11 +1470,6 @@ INSERT INTO audit_trails (user_id, action, table_name, record_id, description) V
     (3, 'EXPORT', 'audit_trails', 'ALL', 'Exported audit trail report'),
     (3, 'FILTER', 'audit_trails', 'ALL', 'Applied filters to audit trail view');
 
--- Insert Schedule Proposals
-INSERT INTO schedule_proposals (blotter_case_id, proposed_by_user_id, proposed_date, proposed_time) VALUES
-    (1, 3, '2025-06-02', '10:00:00'),
-    (4, 3, '2025-06-05', '09:00:00');
-
 -- Insert CFA Certificate
 INSERT INTO cfa_certificates (blotter_case_id, complainant_person_id, issued_by_user_id, certificate_number, issued_at, reason) VALUES
     (1, 10, 4, 'TAM-CFA-2024-001', NOW(), 'Successful mediation between parties');
@@ -1616,6 +1585,70 @@ LEFT JOIN case_categories cc ON bcc.category_id = cc.id
 LEFT JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
 GROUP BY bc.id, bc.case_number, bc.incident_date, bc.status, bc.scheduling_status, b.name;
 
+-- Add missing columns to document_requests table
+ALTER TABLE document_requests 
+ADD COLUMN user_id INT AFTER person_id,
+ADD COLUMN first_name VARCHAR(50) AFTER user_id,
+ADD COLUMN middle_name VARCHAR(50) AFTER first_name,
+ADD COLUMN last_name VARCHAR(50) AFTER middle_name,
+ADD COLUMN suffix VARCHAR(10) AFTER last_name,
+ADD COLUMN gender ENUM('Male', 'Female', 'Others') AFTER suffix,
+ADD COLUMN civil_status VARCHAR(50) AFTER gender,
+ADD COLUMN citizenship VARCHAR(50) DEFAULT 'Filipino' AFTER civil_status,
+ADD COLUMN birth_date DATE AFTER citizenship,
+ADD COLUMN birth_place VARCHAR(100) AFTER birth_date,
+ADD COLUMN religion VARCHAR(50) AFTER birth_place,
+ADD COLUMN education_level VARCHAR(100) AFTER religion,
+ADD COLUMN occupation VARCHAR(100) AFTER education_level,
+ADD COLUMN monthly_income DECIMAL(10,2) AFTER occupation,
+ADD COLUMN contact_number VARCHAR(20) AFTER monthly_income,
+ADD COLUMN address_no VARCHAR(50) AFTER contact_number,
+ADD COLUMN street VARCHAR(100) AFTER address_no,
+ADD COLUMN business_name VARCHAR(100) AFTER street,
+ADD COLUMN business_location VARCHAR(200) AFTER business_name,
+ADD COLUMN business_nature VARCHAR(200) AFTER business_location,
+ADD COLUMN business_type VARCHAR(100) AFTER business_nature,
+ADD COLUMN purpose TEXT AFTER business_type,
+ADD COLUMN ctc_number VARCHAR(100) AFTER purpose,
+ADD COLUMN or_number VARCHAR(100) AFTER ctc_number,
+ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+CREATE TABLE password_history (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id_created (user_id, created_at)
+);
+
+CREATE TABLE schedule_proposals (
+    id INT PRIMARY KEY AUTO_INCREMENT,
+    blotter_case_id INT NOT NULL,
+    proposed_by_user_id INT NOT NULL,
+    proposed_date DATE NOT NULL,
+    proposed_time TIME NOT NULL,
+    hearing_location VARCHAR(255) NOT NULL,
+    presiding_officer VARCHAR(100) NOT NULL,
+    presiding_officer_position VARCHAR(50) NOT NULL,
+    status ENUM('proposed', 'user_confirmed', 'captain_confirmed', 'both_confirmed', 'conflict', 'pending_user_confirmation', 'pending_officer_confirmation', 'cancelled') NOT NULL DEFAULT 'proposed',
+    user_confirmed BOOLEAN DEFAULT FALSE,
+    user_confirmed_at DATETIME,
+    captain_confirmed BOOLEAN DEFAULT FALSE,
+    captain_confirmed_at DATETIME,
+    confirmed_by_role INT,
+    user_remarks TEXT,
+    captain_remarks TEXT,
+    conflict_reason TEXT,
+    complainant_confirmed  BOOLEAN DEFAULT FALSE,
+    respondent_confirmed  BOOLEAN DEFAULT FALSE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id),
+    FOREIGN KEY (proposed_by_user_id) REFERENCES users(id),
+    FOREIGN KEY (confirmed_by_role) REFERENCES roles(id)
+);
+
 
 -- Add missing participant_notifications table
 CREATE TABLE participant_notifications (
@@ -1664,6 +1697,8 @@ WHERE bp.blotter_case_id IN (
 )
 ON DUPLICATE KEY UPDATE confirmed = VALUES(confirmed);
 
+
+
 -- Add missing columns to custom_services table
 ALTER TABLE custom_services 
 ADD COLUMN service_type VARCHAR(50) DEFAULT 'general' AFTER barangay_id,
@@ -1671,44 +1706,84 @@ ADD COLUMN priority_level ENUM('normal', 'high', 'urgent') DEFAULT 'normal' AFTE
 ADD COLUMN availability_type ENUM('always', 'scheduled', 'limited') DEFAULT 'always' AFTER priority_level,
 ADD COLUMN additional_notes TEXT AFTER availability_type;
 
+-- Add new status for blotter cases
+ALTER TABLE blotter_cases 
+MODIFY COLUMN status ENUM('pending', 'open', 'closed', 'completed', 'transferred', 'solved', 'endorsed_to_court', 'cfa_eligible', 'dismissed', 'deleted') DEFAULT 'pending';
+
+-- Add new columns for case dismissal
+ALTER TABLE blotter_cases
+ADD COLUMN dismissed_by_user_id INT NULL AFTER resolved_at,
+ADD COLUMN dismissal_reason TEXT NULL AFTER dismissed_by_user_id,
+ADD COLUMN dismissal_date DATETIME NULL AFTER dismissal_reason,
+ADD FOREIGN KEY (dismissed_by_user_id) REFERENCES users(id) ON DELETE SET NULL;
+
+-- Add new columns for schedule proposals
+ALTER TABLE schedule_proposals
+ADD COLUMN proposed_by_role_id INT NOT NULL AFTER proposed_by_user_id,
+ADD COLUMN notification_sent BOOLEAN DEFAULT FALSE AFTER status,
+ADD COLUMN notification_sent_at DATETIME NULL AFTER notification_sent,
+ADD FOREIGN KEY (proposed_by_role_id) REFERENCES roles(id) ON DELETE CASCADE;
+
+-- Add new table for schedule notifications
+CREATE TABLE schedule_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    schedule_proposal_id INT NOT NULL,
+    notified_user_id INT NOT NULL,
+    notification_type ENUM('proposal', 'confirmation', 'rejection') NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (schedule_proposal_id) REFERENCES schedule_proposals(id) ON DELETE CASCADE,
+    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+CREATE TABLE case_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    notified_user_id INT NOT NULL,
+    notification_type ENUM('case_filed', 'case_accepted', 'hearing_scheduled', 'signature_required') NOT NULL,
+    is_read BOOLEAN DEFAULT FALSE,
+    read_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
+);
+-- Add indexes for better performance
+CREATE INDEX idx_schedule_proposals_status ON schedule_proposals(status);
+CREATE INDEX idx_schedule_notifications_user ON schedule_notifications(notified_user_id, is_read);
+CREATE INDEX idx_blotter_cases_dismissed ON blotter_cases(dismissed_by_user_id, dismissal_date);
 
 
--- Add missing columns to document_requests table
-ALTER TABLE document_requests 
-ADD COLUMN user_id INT AFTER person_id,
-ADD COLUMN first_name VARCHAR(50) AFTER user_id,
-ADD COLUMN middle_name VARCHAR(50) AFTER first_name,
-ADD COLUMN last_name VARCHAR(50) AFTER middle_name,
-ADD COLUMN suffix VARCHAR(10) AFTER last_name,
-ADD COLUMN gender ENUM('Male', 'Female', 'Others') AFTER suffix,
-ADD COLUMN civil_status VARCHAR(50) AFTER gender,
-ADD COLUMN citizenship VARCHAR(50) DEFAULT 'Filipino' AFTER civil_status,
-ADD COLUMN birth_date DATE AFTER citizenship,
-ADD COLUMN birth_place VARCHAR(100) AFTER birth_date,
-ADD COLUMN religion VARCHAR(50) AFTER birth_place,
-ADD COLUMN education_level VARCHAR(100) AFTER religion,
-ADD COLUMN occupation VARCHAR(100) AFTER education_level,
-ADD COLUMN monthly_income DECIMAL(10,2) AFTER occupation,
-ADD COLUMN contact_number VARCHAR(20) AFTER monthly_income,
-ADD COLUMN address_no VARCHAR(50) AFTER contact_number,
-ADD COLUMN street VARCHAR(100) AFTER address_no,
-ADD COLUMN business_name VARCHAR(100) AFTER street,
-ADD COLUMN business_location VARCHAR(200) AFTER business_name,
-ADD COLUMN business_nature VARCHAR(200) AFTER business_location,
-ADD COLUMN business_type VARCHAR(100) AFTER business_nature,
-ADD COLUMN purpose TEXT AFTER business_type,
-ADD COLUMN ctc_number VARCHAR(100) AFTER purpose,
-ADD COLUMN or_number VARCHAR(100) AFTER ctc_number,
-ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
+ALTER TABLE blotter_cases 
+ADD COLUMN accepted_by_user_id INT NULL AFTER assigned_to_user_id,
+ADD COLUMN accepted_by_role_id INT NULL AFTER accepted_by_user_id,
+ADD COLUMN accepted_at DATETIME NULL AFTER accepted_by_role_id,
+ADD COLUMN filing_date DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP AFTER incident_date,
+ADD COLUMN scheduling_deadline DATETIME GENERATED ALWAYS AS (DATE_ADD(filing_date, INTERVAL 5 DAY)) STORED,
+ADD COLUMN requires_dual_signature BOOLEAN DEFAULT FALSE AFTER hearing_count,
+ADD COLUMN captain_signature_date DATETIME NULL AFTER requires_dual_signature,
+ADD COLUMN chief_signature_date DATETIME NULL AFTER captain_signature_date,
+ADD FOREIGN KEY (accepted_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+ADD FOREIGN KEY (accepted_by_role_id) REFERENCES roles(id) ON DELETE SET NULL;
 
 ALTER TABLE custom_services 
 ADD COLUMN service_photo VARCHAR(255) AFTER additional_notes;
 
-CREATE TABLE password_history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_id_created (user_id, created_at)
-);
+ALTER TABLE barangay.users ADD COLUMN chief_officer_esignature_path LONGBLOB NULL;
+ALTER TABLE barangay.case_notifications
+MODIFY COLUMN notification_type ENUM(
+    'case_filed',
+    'case_accepted',
+    'hearing_scheduled',
+    'signature_required',
+    'schedule_confirmation',
+    'schedule_approved',
+    'schedule_rejected'
+) NOT NULL;
+
+CREATE INDEX idx_users_esignature ON users(esignature_path);
+
+ALTER TABLE users 
+DROP COLUMN first_name,
+DROP COLUMN last_name,
+DROP COLUMN gender;

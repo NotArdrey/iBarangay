@@ -396,6 +396,7 @@ function verifyPersonInCensus($pdo, $data) {
             WHERE LOWER(TRIM(p.last_name)) = LOWER(TRIM(:census_last_name))
             AND LOWER(TRIM(p.first_name)) = LOWER(TRIM(:census_first_name))
             AND p.birth_date = :census_birth_date
+            AND p.is_archived = FALSE
             UNION ALL
             SELECT 'temporary' as source, id, first_name, middle_name, last_name, date_of_birth as birth_date, NULL as gender, barangay_id,
                    id_number as census_id_number
@@ -456,10 +457,11 @@ function verifyPersonInCensus($pdo, $data) {
             SELECT 'census' as source, first_name, last_name, birth_date, pi.other_id_number as id_number
             FROM persons p
             LEFT JOIN person_identification pi ON p.id = pi.person_id
-            WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
+            WHERE (LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
             OR LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name))
             OR birth_date = :birth_date
-            OR LOWER(TRIM(pi.other_id_number)) = LOWER(TRIM(:id_number))
+            OR LOWER(TRIM(pi.other_id_number)) = LOWER(TRIM(:id_number)))
+            AND p.is_archived = FALSE
             UNION ALL
             SELECT 'temporary' as source, first_name, last_name, date_of_birth as birth_date, id_number
             FROM temporary_records
@@ -533,7 +535,6 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         'middle_name' => $_POST['middle_name'],
         'last_name' => $_POST['last_name'],
         'birth_date' => $birth_date,
-        'gender' => $_POST['gender'],
         'id_number' => $_POST['id_number']
     ];
     $selected_barangay_id = isset($_POST['barangay_id']) ? (int)$_POST['barangay_id'] : null;
@@ -598,19 +599,25 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     if (empty($person_id)) {
         $errors[] = "Identity verification failed. Only verified residents can register.";
     } else {
-        // Only check the persons table for user_id if the match was from census
-        if (isset($record_source) && $record_source === 'census') {
-            $stmt = $pdo->prepare("SELECT id, user_id FROM persons WHERE id = ?");
-            $stmt->execute([$person_id]);
-            $person = $stmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$person) {
-                $errors[] = "The provided identity verification has failed.";
-            } elseif (!empty($person['user_id'])) {
-                $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
-            }
+        // Check if person exists and is not already linked to a user account
+        $stmt = $pdo->prepare("
+            SELECT p.id, p.user_id, p.first_name, p.last_name, p.gender, a.barangay_id 
+            FROM persons p 
+            LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE 
+            WHERE p.id = ? AND p.is_archived = FALSE
+        ");
+        $stmt->execute([$person_id]);
+        $person = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$person) {
+            $errors[] = "The provided identity verification has failed.";
+        } elseif (!empty($person['user_id'])) {
+            $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
+        } else {
+            // Store the person's information for later use
+            $personData = $person;
+            $selected_barangay_id = $person['barangay_id'];
         }
-        // If source is 'temporary', skip this check and proceed
     }
 
     // Validate email
@@ -692,7 +699,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $verificationExpiry = date('Y-m-d H:i:s', strtotime('+1 day'));
 
         // Check if the email is already registered
-        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ?");
+        $stmt = $pdo->prepare("SELECT id FROM users WHERE email = ? AND is_active = TRUE");
         $stmt->execute([$email]);
         if ($stmt->rowCount() > 0) {
             $errors[] = "This email is already registered.";
@@ -704,7 +711,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $pdo->beginTransaction();
                 
                 // Get the verified person's information to use in the user account
-                $personStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, gender FROM persons WHERE id = ?");
+                $personStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, gender FROM persons WHERE id = ? AND is_archived = FALSE");
                 $personStmt->execute([$person_id]);
                 $personData = $personStmt->fetch(PDO::FETCH_ASSOC);
 
@@ -724,16 +731,14 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     password, 
                     role_id,
                     barangay_id, 
-                    first_name,
-                    last_name,
-                    gender,
                     verification_token, 
                     verification_expiry,
                     govt_id_image,
                     id_expiration_date,
                     id_type,
+                    id_number,
                     is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
 
                 if (!$stmt->execute([
                     $email, 
@@ -741,14 +746,12 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $passwordHash, 
                     $role_id,
                     $selected_barangay_id,
-                    $personData['first_name'],
-                    $personData['last_name'],
-                    $personData['gender'],
                     $verificationToken, 
                     $verificationExpiry,
                     $idImageData,
                     !empty($_POST['id_expiration']) ? $_POST['id_expiration'] : null,
-                    $_POST['id_type'] ?? null
+                    $_POST['id_type'] ?? null,
+                    $_POST['id_number'] ?? null
                 ])) {
                     throw new Exception("Failed to create user account.");
                 }
@@ -757,14 +760,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $user_id = $pdo->lastInsertId();
                 
                 // Link the user to the verified person record
-                $sql = "UPDATE persons SET user_id = ? WHERE id = ?";
+                $sql = "UPDATE persons SET user_id = ? WHERE id = ? AND is_archived = FALSE";
                 $stmt = $pdo->prepare($sql);
                 if (!$stmt->execute([$user_id, $person_id])) {
                     throw new Exception("Failed to link user account to person record.");
                 }
                 
                 // Handle ID document file - store in filesystem as backup
-                // Note: We've already stored the image in the database above
                 if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {                    
                     // Create a unique filename for the ID document
                     $fileExt = pathinfo($_FILES['govt_id']['name'], PATHINFO_EXTENSION);
