@@ -29,9 +29,10 @@ $barangay_name = "Barangay";
 $barangay_id = 32;
 
 if ($user_id) {
-    $sql = "SELECT u.first_name, u.last_name, u.email, u.barangay_id, b.name as barangay_name 
-            FROM users u 
-            LEFT JOIN barangay b ON u.barangay_id = b.id 
+    $sql = "SELECT p.first_name, p.last_name, u.barangay_id, b.name as barangay_name
+            FROM users u
+            LEFT JOIN persons p ON p.user_id = u.id
+            LEFT JOIN barangay b ON u.barangay_id = b.id
             WHERE u.id = ?";
     $stmt = $conn->prepare($sql);
     $stmt->execute([$user_id]);

@@ -55,8 +55,10 @@ function logAuditTrail($pdo, $adminId, $action, $table, $recordId, $desc = '') {
 
 function getResidents($pdo, $bid) {
     $stmt = $pdo->prepare("
-        SELECT u.id AS user_id, CONCAT(u.first_name,' ',u.last_name) AS name
-        FROM users u WHERE u.barangay_id = ?
+        SELECT u.id AS user_id, CONCAT(p.first_name,' ',p.last_name) AS name
+        FROM users u
+        LEFT JOIN persons p ON p.user_id = u.id
+        WHERE u.barangay_id = ?
         UNION
         SELECT p.id AS user_id, CONCAT(p.first_name,' ',p.last_name) AS name  
         FROM persons p
@@ -876,8 +878,6 @@ if (!empty($_GET['action'])) {
                       echo json_encode(['success'=>false,'message'=>'Failed to sign case']);
                   }
                   break;
-
-            case 'generate_report':
                 $year  = intval($_GET['year']  ?? date('Y'));
                 $month = intval($_GET['month'] ?? date('n'));
 
@@ -1569,7 +1569,7 @@ if (!empty($_GET['action'])) {
                       VALUES(?,CONCAT(?, ' ',?), 'mediation','scheduled',?,?,?)
                     ")->execute([
                       $proposal['blotter_case_id'],
-                                           $proposal['proposed_date'],
+                                                                                                                                                                                                                                                                                                          $proposal['proposed_date'],
                       $proposal['proposed_time'],
                       $proposal['presiding_officer'],
                       $proposal['presiding_officer_position'],
@@ -1607,10 +1607,11 @@ $ppStmt = $pdo->prepare("
            sp.proposed_date,
            sp.proposed_time,
            sp.id AS proposal_id,
-           CONCAT(u.first_name, ' ', u.last_name) AS proposed_by_name
+           CONCAT(p.first_name, ' ', p.last_name) AS proposed_by_name
     FROM schedule_proposals sp
     JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
     JOIN users u ON sp.proposed_by_user_id = u.id
+    LEFT JOIN persons p ON p.user_id = u.id
     WHERE sp.status = ?
       AND bc.barangay_id = ?
     ORDER BY sp.proposed_date ASC, sp.proposed_time ASC
@@ -1656,9 +1657,10 @@ $stmt = $pdo->prepare("
       END AS can_approve_schedule,
       -- Get the proposer info for pending schedules
       (
-        SELECT CONCAT(u.first_name, ' ', u.last_name)
+        SELECT CONCAT(p.first_name, ' ', p.last_name)
         FROM schedule_proposals sp
         JOIN users u ON sp.proposed_by_user_id = u.id
+        LEFT JOIN persons p ON p.user_id = u.id
         WHERE sp.blotter_case_id = bc.id 
           AND sp.status IN ('pending_officer_confirmation', 'pending_user_confirmation')
         ORDER BY sp.id DESC

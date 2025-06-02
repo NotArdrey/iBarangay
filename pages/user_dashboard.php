@@ -11,8 +11,10 @@ $barangay_name = "Barangay";
 $barangay_id = 32; 
 
 if ($user_id) {
-    $sql = "SELECT u.first_name, u.last_name, u.barangay_id, b.name as barangay_name 
-            FROM users u 
+    // Use persons for name fields
+    $sql = "SELECT p.first_name, p.last_name, u.barangay_id, b.name as barangay_name 
+            FROM users u
+            LEFT JOIN persons p ON p.user_id = u.id
             LEFT JOIN barangay b ON u.barangay_id = b.id 
             WHERE u.id = ?";
     $stmt = $conn->prepare($sql);
@@ -73,8 +75,10 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 }
 $stmt = null;
 
-$sql = "SELECT u.first_name, u.last_name, r.name as role
-        FROM users u 
+// Update council query to use persons for names
+$sql = "SELECT p.first_name, p.last_name, r.name as role
+        FROM users u
+        JOIN persons p ON p.user_id = u.id
         JOIN roles r ON u.role_id = r.id 
         WHERE u.barangay_id = ? 
           AND r.name IN ('barangay_captain','barangay_secretary','barangay_treasurer','barangay_councilor')
@@ -2181,7 +2185,7 @@ $stmt = null;
         // Rotate the icon
         toggleIcon.classList.add('expanded');
       } else {
-        // Hide the grid
+       // Hide the grid
         grid.classList.remove('show');
         toggleIcon.classList.remove('expanded');
         
