@@ -1,6 +1,9 @@
 <?php
 require_once '../config/dbconn.php';
-session_start();
+require_once '../functions/notification_helper.php';
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 // Check if user is logged in
 if (!isset($_SESSION['user_id'])) {
@@ -18,19 +21,8 @@ switch ($action) {
     case 'get_notifications':
         // Get notifications for dropdown
         $limit = isset($_GET['limit']) ? (int)$_GET['limit'] : 5;
-        $stmt = $pdo->prepare("
-            SELECT * FROM notifications 
-            WHERE user_id = ? 
-            ORDER BY created_at DESC 
-            LIMIT ?
-        ");
-        $stmt->execute([$user_id, $limit]);
-        $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-        // Get unread count
-        $stmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
-        $stmt->execute([$user_id]);
-        $unread_count = $stmt->fetchColumn();
+        $notifications = getRecentNotifications($user_id, $limit);
+        $unread_count = getUnreadNotificationCount($user_id);
 
         echo json_encode([
             'notifications' => $notifications,
@@ -42,9 +34,8 @@ switch ($action) {
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $notification_id = $_POST['notification_id'] ?? null;
             if ($notification_id) {
-                $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE id = ? AND user_id = ?");
-                $stmt->execute([$notification_id, $user_id]);
-                echo json_encode(['success' => true]);
+                $success = markNotificationAsRead($notification_id, $user_id);
+                echo json_encode(['success' => $success]);
             } else {
                 http_response_code(400);
                 echo json_encode(['error' => 'Notification ID required']);
@@ -57,9 +48,8 @@ switch ($action) {
 
     case 'mark_all_read':
         if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE user_id = ? AND is_read = 0");
-            $stmt->execute([$user_id]);
-            echo json_encode(['success' => true]);
+            $success = markAllNotificationsAsRead($user_id);
+            echo json_encode(['success' => $success]);
         } else {
             http_response_code(405);
             echo json_encode(['error' => 'Method not allowed']);

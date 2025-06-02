@@ -1,5 +1,6 @@
 <?php
 require_once '../config/dbconn.php';
+require_once '../functions/notification_helper.php';
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
@@ -15,11 +16,9 @@ $user_id = $_SESSION['user_id'];
 // Handle mark as read actions
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (isset($_POST['mark_read']) && isset($_POST['notification_id'])) {
-        $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE id = ? AND user_id = ?");
-        $stmt->execute([$_POST['notification_id'], $user_id]);
+        markNotificationAsRead($_POST['notification_id'], $user_id);
     } elseif (isset($_POST['mark_all_read'])) {
-        $stmt = $pdo->prepare("UPDATE notifications SET is_read = 1, read_at = NOW() WHERE user_id = ? AND is_read = 0");
-        $stmt->execute([$user_id]);
+        markAllNotificationsAsRead($user_id);
     }
     header('Location: notifications.php');
     exit();
@@ -35,9 +34,7 @@ $stmt->execute([$user_id]);
 $notifications = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Count unread notifications
-$stmt = $pdo->prepare("SELECT COUNT(*) FROM notifications WHERE user_id = ? AND is_read = 0");
-$stmt->execute([$user_id]);
-$unread_count = $stmt->fetchColumn();
+$unread_count = getUnreadNotificationCount($user_id);
 ?>
 
 <!DOCTYPE html>
@@ -132,22 +129,38 @@ $unread_count = $stmt->fetchColumn();
             flex: 1;
         }
 
+        .notification-header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
         .notification-title {
             font-weight: 600;
-            margin-bottom: 5px;
             color: var(--dark-color);
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 60%;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .notification-meta {
+            color: var(--secondary-color);
+            font-size: 0.9em;
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            white-space: nowrap;
         }
 
         .notification-message {
             color: var(--secondary-color);
             margin-bottom: 10px;
-        }
-
-        .notification-meta {
-            display: flex;
-            gap: 15px;
-            color: var(--secondary-color);
-            font-size: 0.9em;
         }
 
         .notification-actions {
@@ -239,22 +252,24 @@ $unread_count = $stmt->fetchColumn();
                 <?php foreach ($notifications as $notification): ?>
                     <div class="notification-item <?php echo !$notification['is_read'] ? 'unread' : ''; ?>">
                         <div class="notification-content">
-                            <div class="notification-title">
-                                <?php echo htmlspecialchars($notification['title']); ?>
-                                <span class="notification-type type-<?php echo strtolower($notification['priority']); ?>">
-                                    <?php echo ucfirst($notification['priority']); ?>
-                                </span>
+                            <div class="notification-header-row">
+                                <div class="notification-title">
+                                    <?php echo htmlspecialchars($notification['title']); ?>
+                                    <span class="notification-type type-<?php echo strtolower($notification['priority']); ?>">
+                                        <?php echo ucfirst($notification['priority']); ?>
+                                    </span>
+                                </div>
+                                <div class="notification-meta">
+                                    <span><i class="far fa-clock"></i> <?php echo date('M d, Y h:i A', strtotime($notification['created_at'])); ?></span>
+                                    <?php if ($notification['action_url']): ?>
+                                        <a href="<?php echo htmlspecialchars($notification['action_url']); ?>" style="color: var(--primary-color);">
+                                            <i class="fas fa-external-link-alt"></i> View Details
+                                        </a>
+                                    <?php endif; ?>
+                                </div>
                             </div>
                             <div class="notification-message">
                                 <?php echo htmlspecialchars($notification['message']); ?>
-                            </div>
-                            <div class="notification-meta">
-                                <span><i class="far fa-clock"></i> <?php echo date('M d, Y h:i A', strtotime($notification['created_at'])); ?></span>
-                                <?php if ($notification['action_url']): ?>
-                                    <a href="<?php echo htmlspecialchars($notification['action_url']); ?>" style="color: var(--primary-color);">
-                                        <i class="fas fa-external-link-alt"></i> View Details
-                                    </a>
-                                <?php endif; ?>
                             </div>
                         </div>
                         <?php if (!$notification['is_read']): ?>

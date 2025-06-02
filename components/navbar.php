@@ -450,14 +450,22 @@ if (!isset($user_info) || !$user_info) {
     const notifCount = document.getElementById('notifCount');
     const notifList = document.querySelector('.notification-list');
 
-    // Toggle dropdown
-    notifBell.addEventListener('click', function(e) {
-        e.stopPropagation();
-        notifDropdown.classList.toggle('show');
-        if (notifDropdown.classList.contains('show')) {
-            fetchNotifications();
-        }
-    });
+    // Check if on notifications page
+    const isNotificationsPage = window.location.pathname.includes('notifications.php');
+    if (isNotificationsPage) {
+      notifBell.style.pointerEvents = 'none';
+      notifBell.style.opacity = '0.5'; // visually indicate disabled
+      if (notifDropdown) notifDropdown.classList.remove('show');
+    } else {
+      // Toggle dropdown
+      notifBell.addEventListener('click', function(e) {
+          e.stopPropagation();
+          notifDropdown.classList.toggle('show');
+          if (notifDropdown.classList.contains('show')) {
+              fetchNotifications();
+          }
+      });
+    }
 
     // Close dropdown when clicking outside
     document.addEventListener('click', function(e) {
@@ -521,9 +529,9 @@ if (!isset($user_info) || !$user_info) {
     };
 
     // Initial fetch
-    fetchNotifications();
+    if (!isNotificationsPage) fetchNotifications();
 
     // Poll for new notifications every minute
-    setInterval(fetchNotifications, 60000);
+    if (!isNotificationsPage) setInterval(fetchNotifications, 60000);
   });
 </script>

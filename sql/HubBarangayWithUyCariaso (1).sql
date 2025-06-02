@@ -897,9 +897,14 @@ CREATE TABLE document_attribute_types (
 -- Document requests
 CREATE TABLE document_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
+    
+    -- Core relationships (normalized)
     person_id INT NOT NULL,
+    user_id INT NULL,
     document_type_id INT NOT NULL,
     barangay_id INT NOT NULL,
+    
+    -- Request status and processing
     status ENUM('pending', 'processing', 'for_payment', 'paid', 'for_pickup', 'completed', 'cancelled', 'rejected') DEFAULT 'pending',
     price DECIMAL(10,2) DEFAULT 0.00,
     remarks TEXT,
@@ -908,13 +913,35 @@ CREATE TABLE document_requests (
     processed_by_user_id INT,
     completed_at DATETIME,
     request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Document-specific information (only what's unique to this request)
+    purpose TEXT NULL,
+    ctc_number VARCHAR(100) NULL,
+    or_number VARCHAR(100) NULL,
+    
+    -- Business-related information (for business permits only)
+    business_name VARCHAR(100) NULL,
+    business_location VARCHAR(200) NULL,
+    business_nature VARCHAR(200) NULL,
+    business_type VARCHAR(100) NULL,
+    
+    -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- Foreign Key Constraints
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
     FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-    FOREIGN KEY (processed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+    FOREIGN KEY (processed_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    
+    -- Indexes for performance
+    INDEX idx_doc_requests_status_barangay (status, barangay_id, request_date),
+    INDEX idx_doc_requests_person (person_id),
+    INDEX idx_doc_requests_doctype (document_type_id),
+    INDEX idx_doc_requests_user (user_id)
 );
 
 -- Document request attributes

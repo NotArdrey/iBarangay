@@ -54,7 +54,8 @@ $sql = "
     SELECT bc.*, 
            GROUP_CONCAT(DISTINCT cc.name SEPARATOR ', ') AS categories,
            bp.role,
-           u.email as user_email";
+           u.email as user_email,
+           CONCAT(p.first_name, ' ', p.last_name) as proposed_by_name";
 
 // Add conditional columns if they exist
 if ($hasNewColumns) {
@@ -80,7 +81,7 @@ $sql .= "
     LEFT JOIN case_categories cc ON bcc.category_id = cc.id
     WHERE p.user_id = ?
       AND bc.status != 'deleted'
-    GROUP BY bc.id, bp.role, u.email
+    GROUP BY bc.id, bp.role, u.email, p.first_name, p.last_name
     ORDER BY bc.created_at DESC
 ";
 
@@ -103,10 +104,11 @@ foreach ($cases as &$case) {
     // Fetch latest schedule proposal for this case
     $stmt2 = $pdo->prepare("
         SELECT sp.*, 
-            COALESCE(CONCAT(u.first_name, ' ', u.last_name), 'System') as proposed_by_name,
+            COALESCE(CONCAT(p.first_name, ' ', p.last_name), 'System') as proposed_by_name,
             sp.proposed_by_role_id as confirmed_by_role
         FROM schedule_proposals sp
         LEFT JOIN users u ON sp.proposed_by_user_id = u.id
+        LEFT JOIN persons p ON u.id = p.user_id
         WHERE sp.blotter_case_id = ?
         ORDER BY sp.created_at DESC
         LIMIT 1

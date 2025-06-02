@@ -54,18 +54,22 @@ function logAuditTrail($pdo, $adminId, $action, $table, $recordId, $desc = '') {
 }
 
 function getResidents($pdo, $bid) {
-    $stmt = $pdo->prepare("
-        SELECT u.id AS user_id, CONCAT(p.first_name,' ',p.last_name) AS name
-        FROM users u
-        LEFT JOIN persons p ON p.user_id = u.id
-        WHERE u.barangay_id = ?
-        UNION
-        SELECT p.id AS user_id, CONCAT(p.first_name,' ',p.last_name) AS name  
+    $sql = "
+        SELECT 
+            p.id,
+            CONCAT(p.first_name, ' ', p.last_name) as full_name,
+            p.contact_number,
+            a.house_no,
+            a.street,
+            a.subdivision
         FROM persons p
         LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
-        WHERE a.barangay_id = ? AND p.user_id IS NULL
-    ");
-    $stmt->execute([$bid, $bid]);
+        WHERE a.barangay_id = ?
+        ORDER BY p.last_name, p.first_name
+    ";
+    
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$bid]);
     return $stmt->fetchAll(PDO::FETCH_ASSOC);
 }
 
@@ -878,6 +882,8 @@ if (!empty($_GET['action'])) {
                       echo json_encode(['success'=>false,'message'=>'Failed to sign case']);
                   }
                   break;
+
+            case 'generate_report':
                 $year  = intval($_GET['year']  ?? date('Y'));
                 $month = intval($_GET['month'] ?? date('n'));
 
@@ -1532,7 +1538,7 @@ if (!empty($_GET['action'])) {
                     echo json_encode(['success'=>false,'message'=>'Not found']); exit;
                 }
                 // determine which flag to flip
-                $personId = // fetch current user’s person_id
+                $personId = // fetch current user's person_id
                   $pdo->prepare("SELECT id FROM persons WHERE user_id=?")
                       ->execute([$_SESSION['user_id']]) 
                   && ($pid = $pdo->lastInsertId()) ? $pid : null;
@@ -1569,7 +1575,7 @@ if (!empty($_GET['action'])) {
                       VALUES(?,CONCAT(?, ' ',?), 'mediation','scheduled',?,?,?)
                     ")->execute([
                       $proposal['blotter_case_id'],
-                                                                                                                                                                                                                                                                                                          $proposal['proposed_date'],
+                                           $proposal['proposed_date'],
                       $proposal['proposed_time'],
                       $proposal['presiding_officer'],
                       $proposal['presiding_officer_position'],
@@ -1611,7 +1617,7 @@ $ppStmt = $pdo->prepare("
     FROM schedule_proposals sp
     JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
     JOIN users u ON sp.proposed_by_user_id = u.id
-    LEFT JOIN persons p ON p.user_id = u.id
+    JOIN persons p ON u.id = p.user_id
     WHERE sp.status = ?
       AND bc.barangay_id = ?
     ORDER BY sp.proposed_date ASC, sp.proposed_time ASC
@@ -1660,7 +1666,7 @@ $stmt = $pdo->prepare("
         SELECT CONCAT(p.first_name, ' ', p.last_name)
         FROM schedule_proposals sp
         JOIN users u ON sp.proposed_by_user_id = u.id
-        LEFT JOIN persons p ON p.user_id = u.id
+        JOIN persons p ON u.id = p.user_id
         WHERE sp.blotter_case_id = bc.id 
           AND sp.status IN ('pending_officer_confirmation', 'pending_user_confirmation')
         ORDER BY sp.id DESC
