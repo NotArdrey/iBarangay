@@ -1229,53 +1229,112 @@ $user = $userStmt->fetch(PDO::FETCH_ASSOC);
       });
     }
 
-    function updatePassword() {
-      const newPassword = document.getElementById('modal_new_password').value;
-      const confirmPassword = document.getElementById('modal_confirm_password').value;
-      
-      if (newPassword !== confirmPassword) {
-        Swal.fire({
-          icon: 'error',
-          title: 'Error',
-          text: 'Passwords do not match'
-        });
-        return;
-      }
-      
-      fetch('../functions/update_password.php', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `new_password=${encodeURIComponent(newPassword)}`
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Success',
-            text: 'Password has been updated successfully'
-          }).then(() => {
-            closePasswordChangeModal();
-          });
-        } else {
-          Swal.fire({
-            icon: 'error',
-            title: 'Error',
-            text: 'Failed to update password'
-          });
-        }
-      })
-      .catch(error => {
-        console.error('Error:', error);
-        Swal.fire({
-          icon: 'error',
-          title: 'Error',
-          text: 'An error occurred. Please try again.'
-        });
+function updatePassword() {
+  const newPassword = document.getElementById('modal_new_password').value;
+  const confirmPassword = document.getElementById('modal_confirm_password').value;
+  
+  // Client-side password strength validation
+  function validatePasswordStrength(password) {
+    const errors = [];
+    
+    // Minimum length
+    if (password.length < 8) {
+      errors.push('Password must be at least 8 characters long');
+    }
+    
+    // Must contain uppercase letter
+    if (!/[A-Z]/.test(password)) {
+      errors.push('Password must contain at least one uppercase letter');
+    }
+    
+    // Must contain lowercase letter
+    if (!/[a-z]/.test(password)) {
+      errors.push('Password must contain at least one lowercase letter');
+    }
+    
+    // Must contain number
+    if (!/\d/.test(password)) {
+      errors.push('Password must contain at least one number');
+    }
+    
+    // Must contain special character
+    if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
+      errors.push('Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)');
+    }
+    
+    return errors;
+  }
+  
+  // Validate password strength
+  const strengthErrors = validatePasswordStrength(newPassword);
+  if (strengthErrors.length > 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Weak Password',
+      html: strengthErrors.join('<br>')
+    });
+    return;
+  }
+  
+  // Check if passwords match
+  if (newPassword !== confirmPassword) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Passwords do not match'
+    });
+    return;
+  }
+  
+  // Show loading
+  Swal.fire({
+    title: 'Updating Password...',
+    text: 'Please wait while we update your password',
+    allowOutsideClick: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+  
+  fetch('../functions/update_password.php', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `new_password=${encodeURIComponent(newPassword)}`
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: data.message
+      }).then(() => {
+        closePasswordChangeModal();
+        // Clear the form
+        document.getElementById('modal_old_password').value = '';
+        document.getElementById('modal_new_password').value = '';
+        document.getElementById('modal_confirm_password').value = '';
+        document.getElementById('verification_code').value = '';
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: data.message
       });
     }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'An error occurred. Please try again.'
+    });
+  });
+}
 
     let currentFile = null;
 
