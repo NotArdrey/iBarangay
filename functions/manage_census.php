@@ -105,10 +105,10 @@ function saveResident($pdo, $data, $barangay_id) {
         // Insert present address
         $stmt_address = $pdo->prepare("
                 INSERT INTO addresses (
-                person_id, barangay_id, house_no, street,
+                person_id, barangay_id, barangay_name, house_no, street,
                 municipality, province, region, is_primary, is_permanent
                 ) VALUES (
-                :person_id, :barangay_id, :house_no, :street,
+                :person_id, :barangay_id, :barangay_name, :house_no, :street,
                 :municipality, :province, :region, :is_primary, :is_permanent
                 )
             ");
@@ -117,13 +117,14 @@ function saveResident($pdo, $data, $barangay_id) {
         $stmt_address->execute([
                 ':person_id' => $person_id,
                 ':barangay_id' => $barangay_id,
-            ':house_no' => trim($data['present_house_no'] ?? ''),
-            ':street' => trim($data['present_street'] ?? ''),
-            ':municipality' => trim($data['present_municipality'] ?? ''),
-            ':province' => trim($data['present_province'] ?? ''),
-            ':region' => trim($data['present_region'] ?? ''),
-            ':is_primary' => 1,
-            ':is_permanent' => 0
+                ':barangay_name' => null, // Use barangay_id for present address
+                ':house_no' => trim($data['present_house_no'] ?? ''),
+                ':street' => trim($data['present_street'] ?? ''),
+                ':municipality' => trim($data['present_municipality'] ?? ''),
+                ':province' => trim($data['present_province'] ?? ''),
+                ':region' => trim($data['present_region'] ?? ''),
+                ':is_primary' => 1,
+                ':is_permanent' => 0
         ]);
         
         // Add person to household if household_id is provided
@@ -228,7 +229,8 @@ function saveResident($pdo, $data, $barangay_id) {
         if (empty($data['same_as_present'])) {
             $stmt_address->execute([
                 ':person_id' => $person_id,
-                ':barangay_id' => $barangay_id,
+                ':barangay_id' => null, // No barangay_id for permanent address
+                ':barangay_name' => trim($data['permanent_barangay'] ?? ''), // Use the barangay name from input
                 ':house_no' => trim($data['permanent_house_no'] ?? ''),
                 ':street' => trim($data['permanent_street'] ?? ''),
                 ':municipality' => trim($data['permanent_municipality'] ?? ''),
@@ -406,11 +408,11 @@ function saveResident($pdo, $data, $barangay_id) {
         if ($has_economic_problems) {
             $stmt_economic = $pdo->prepare("
                 INSERT INTO person_economic_problems (
-                    person_id, loss_income, unemployment, high_cost_living, 
+                    person_id, loss_income, unemployment, 
                     skills_training, skills_training_details, livelihood, livelihood_details,
                     other_economic, other_economic_details
                 ) VALUES (
-                    :person_id, :loss_income, :unemployment, :high_cost_living,
+                    :person_id, :loss_income, :unemployment,
                     :skills_training, :skills_training_details, :livelihood, :livelihood_details,
                     :other_economic, :other_economic_details
                 )
@@ -420,7 +422,6 @@ function saveResident($pdo, $data, $barangay_id) {
                 ':person_id' => $person_id,
                 ':loss_income' => isset($data['problem_loss_income']) && $data['problem_loss_income'] == 1 ? 1 : 0,
                 ':unemployment' => isset($data['problem_lack_income']) && $data['problem_lack_income'] == 1 ? 1 : 0,
-                ':high_cost_living' => 0, // This field isn't in the form
                 ':skills_training' => isset($data['problem_skills_training']) && $data['problem_skills_training'] == 1 ? 1 : 0,
                 ':skills_training_details' => $data['problem_skills_training_specify'] ?? null,
                 ':livelihood' => isset($data['problem_livelihood']) && $data['problem_livelihood'] == 1 ? 1 : 0,
@@ -877,9 +878,13 @@ function deleteResident($pdo, $person_id) {
     try {
         $pdo->beginTransaction();
         
-        // Get person details for audit trail
+        // Get person details for audit trail and check for linked user account
         $stmt = $pdo->prepare("
-            SELECT first_name, last_name FROM persons WHERE id = :person_id
+            SELECT p.first_name, p.last_name, p.user_id, h.barangay_id 
+            FROM persons p
+            JOIN household_members hm ON p.id = hm.person_id
+            JOIN households h ON hm.household_id = h.id
+            WHERE p.id = :person_id
         ");
         $stmt->execute([':person_id' => $person_id]);
         $person = $stmt->fetch();
@@ -887,27 +892,64 @@ function deleteResident($pdo, $person_id) {
         if (!$person) {
             throw new Exception("Resident not found");
         }
-        
-        // Check if person is a household head
-        $stmt = $pdo->prepare("
-            SELECT id FROM households WHERE household_head_person_id = :person_id
-        ");
-        $stmt->execute([':person_id' => $person_id]);
-        $household = $stmt->fetch();
-        
-        if ($household) {
-            // Set household head to NULL before deletion
-            $stmt = $pdo->prepare("
-                UPDATE households SET household_head_person_id = NULL WHERE id = :household_id
-            ");
-            $stmt->execute([':household_id' => $household['id']]);
+
+        // If person has a linked user account, delete it
+        if (!empty($person['user_id'])) {
+            // First, delete user roles (this will cascade due to ON DELETE CASCADE)
+            $stmt = $pdo->prepare("DELETE FROM user_roles WHERE user_id = :user_id");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Delete any audit trails for this user
+            $stmt = $pdo->prepare("DELETE FROM audit_trails WHERE user_id = :user_id");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Delete any notifications for this user
+            $stmt = $pdo->prepare("DELETE FROM notifications WHERE user_id = :user_id");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Delete any sessions for this user
+            $stmt = $pdo->prepare("DELETE FROM sessions WHERE user_id = :user_id");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Delete any personal access tokens for this user
+            $stmt = $pdo->prepare("DELETE FROM personal_access_tokens WHERE tokenable_id = :user_id AND tokenable_type = 'users'");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Delete any password reset tokens for this user
+            $stmt = $pdo->prepare("DELETE FROM password_reset_tokens WHERE email = (SELECT email FROM users WHERE id = :user_id)");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Delete any email logs for this user
+            $stmt = $pdo->prepare("DELETE FROM email_logs WHERE to_email = (SELECT email FROM users WHERE id = :user_id)");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Finally, delete the user account
+            $stmt = $pdo->prepare("DELETE FROM users WHERE id = :user_id");
+            $stmt->execute([':user_id' => $person['user_id']]);
+            
+            // Log the user account deletion
+            if (isset($_SESSION['user_id'])) {
+                $stmt = $pdo->prepare("
+                    INSERT INTO audit_trails (
+                        user_id, action, table_name, record_id, description
+                    ) VALUES (
+                        :user_id, 'DELETE', 'users', :record_id, :description
+                    )
+                ");
+                
+                $stmt->execute([
+                    ':user_id' => $_SESSION['user_id'],
+                    ':record_id' => $person['user_id'],
+                    ':description' => "Deleted user account linked to resident: {$person['first_name']} {$person['last_name']} from barangay ID: {$person['barangay_id']}"
+                ]);
+            }
         }
-        
-        // Delete person (cascading deletes will handle related records)
+
+        // Delete the person record (this will cascade to related tables)
         $stmt = $pdo->prepare("DELETE FROM persons WHERE id = :person_id");
         $stmt->execute([':person_id' => $person_id]);
-        
-        // Log the action
+
+        // Log the person deletion
         if (isset($_SESSION['user_id'])) {
             $stmt = $pdo->prepare("
                 INSERT INTO audit_trails (
@@ -920,20 +962,17 @@ function deleteResident($pdo, $person_id) {
             $stmt->execute([
                 ':user_id' => $_SESSION['user_id'],
                 ':record_id' => $person_id,
-                ':description' => "Deleted resident: {$person['first_name']} {$person['last_name']}"
+                ':description' => "Deleted resident: {$person['first_name']} {$person['last_name']} from barangay ID: {$person['barangay_id']}"
             ]);
         }
-        
+
         $pdo->commit();
-        
         return [
             'success' => true,
-            'message' => 'Resident deleted successfully!'
+            'message' => 'Resident and associated user account (if any) deleted successfully'
         ];
-        
     } catch (Exception $e) {
-        $pdo->rollback();
-        
+        $pdo->rollBack();
         return [
             'success' => false,
             'message' => 'Error deleting resident: ' . $e->getMessage()

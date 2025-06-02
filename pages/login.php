@@ -29,7 +29,6 @@ if (isset($_SESSION['user_id'])) {
   <link rel="stylesheet" href="../styles/login.css">
   <!-- Include SweetAlert2 CSS and JS from CDN -->
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-  <script src="https://accounts.google.com/gsi/client" async defer></script>
 </head>
 <body>
   <div class="login-container">
@@ -65,27 +64,9 @@ if (isset($_SESSION['user_id'])) {
       <button type="submit" class="login-btn"><span>Sign In</span></button>
     </form>
 
-    <!-- Divider between standard and social login -->
-    <div class="divider">
-      <span>or sign in with</span>
-    </div>
-
-    <!-- Social Login Buttons -->
-    <div class="social-login">
-      <button type="button" class="social-btn google-btn" id="google-signin-button">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 48 48">
-          <path fill="#EA4335" d="M24 9.5c3.54 0 6.76 1.22 9.25 3.22l6.87-6.87C35.29 3.12 30.06 1 24 1 14.43 1 6.27 5.73 2.54 12.2l7.75 6.02C12.15 12.35 17.61 9.5 24 9.5z"/>
-          <path fill="#4285F4" d="M46.19 24.5c0-1.64-.15-3.21-.43-4.73H24v9h12.53c-.54 2.87-2.15 5.29-4.58 6.93l7.25 5.64c4.26-3.92 6.76-9.68 6.76-16.84z"/>
-          <path fill="#FBBC05" d="M9.29 28.9a14.18 14.18 0 0 1 0-9.8l-7.75-6.02A23.984 23.984 0 0 0 0 24c0 3.78.9 7.35 2.54 10.2l7.75-6.3z"/>
-          <path fill="#34A853" d="M24 47c6.48 0 11.91-2.14 15.88-5.81l-7.25-5.64c-2.01 1.35-4.57 2.15-8.63 2.15-6.39 0-11.85-3.85-13.76-9.21l-7.75 6.02C6.27 42.27 14.43 47 24 47z"/>
-          <path fill="none" d="M0 0h48v48H0z"/>
-        </svg>
-        <span>Google</span>
-      </button>
-      <div class="signup">
-        <span>Don't have an account?</span>
-        <a href="../pages/register.php" class="alt-link">Sign up</a>
-      </div>
+    <div class="signup">
+      <span>Don't have an account?</span>
+      <a href="../pages/register.php" class="alt-link">Sign up</a>
     </div>
 
     <!-- Footer -->
@@ -103,43 +84,6 @@ if (isset($_SESSION['user_id'])) {
   </div>
 
   <script>
-    // Google Sign-In handler
-    function handleCredentialResponse(response) {
-      console.log("Encoded JWT ID token: " + response.credential);
-      fetch('../functions/login.php', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: response.credential })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.success) {
-          window.location.href = data.redirect;
-        } else {
-          console.error('Google Sign-In error:', data.error);
-        }
-      })
-      .catch(error => console.error('Fetch error:', error));
-    }
-    
-    window.onload = function() {
-      google.accounts.id.initialize({
-        client_id: "1070456838675-ol86nondnkulmh8s9c5ceapm42tsampq.apps.googleusercontent.com",
-        callback: handleCredentialResponse,
-        auto_select: false
-      });
-      google.accounts.id.renderButton(
-        document.getElementById("google-signin-button"),
-        {
-          type: "standard",
-          theme: "outline",
-          size: "large",
-          text: "signin_with",
-          shape: "rectangular"
-        }
-      );
-    };
-
     // Toggle password visibility
     document.addEventListener('DOMContentLoaded', function() {
       const togglePassword = document.querySelector('.toggle-password');

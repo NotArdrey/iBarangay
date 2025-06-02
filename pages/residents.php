@@ -486,10 +486,12 @@ require_once __DIR__ . "/../components/header.php";
                                         data-res='<?= htmlspecialchars(json_encode(array_merge($r, ['govt_id_image' => base64_encode($r['govt_id_image'] ?? '')])), ENT_QUOTES, 'UTF-8') ?>'>
                                         View
                                     </button>
-                                    <button class="editBtn bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
-                                        data-res='<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>'>
-                                        Edit
-                                    </button>
+                                    <?php if ($role === 2): // Only show edit button for super admin ?>
+                                        <button class="editBtn bg-green-600 text-white px-2 py-1 rounded hover:bg-green-700"
+                                            data-res='<?= htmlspecialchars(json_encode($r), ENT_QUOTES, 'UTF-8') ?>'>
+                                            Edit
+                                        </button>
+                                    <?php endif; ?>
                                     <?php if ($role >= 3 && $role <= 7): ?>
                                         <button
                                             class="deactivateBtn bg-yellow-500 text-white px-2 py-1 rounded hover:bg-yellow-600"

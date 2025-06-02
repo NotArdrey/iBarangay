@@ -14,14 +14,24 @@ $barangay_id = $_SESSION['barangay_id'];
 
 // Fetch households for selection
 $stmt = $pdo->prepare("
-    SELECT h.id AS household_id, h.purok_id, p.name as purok_name
+    SELECT h.id AS household_id, h.household_number, h.purok_id, p.name as purok_name
     FROM households h
     LEFT JOIN purok p ON h.purok_id = p.id
     WHERE h.barangay_id = ? 
-    ORDER BY h.id
+    ORDER BY h.purok_id, h.household_number
 ");
 $stmt->execute([$barangay_id]);
 $households = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Group households by purok for JavaScript
+$households_by_purok = [];
+foreach ($households as $household) {
+    $purok_id = $household['purok_id'];
+    if (!isset($households_by_purok[$purok_id])) {
+        $households_by_purok[$purok_id] = [];
+    }
+    $households_by_purok[$purok_id][] = $household;
+}
 
 // Fetch puroks for selection
 $stmt = $pdo->prepare("SELECT id, name FROM purok WHERE barangay_id = ? ORDER BY name");
@@ -116,10 +126,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'present_region' => trim($_POST['present_region'] ?? 'III'),
             'permanent_house_no' => trim($_POST['permanent_house_no'] ?? ''),
             'permanent_street' => trim($_POST['permanent_street'] ?? ''),
+            'permanent_barangay' => trim($_POST['permanent_barangay'] ?? ''),
             'permanent_municipality' => trim($_POST['permanent_municipality'] ?? ''),
             'permanent_province' => trim($_POST['permanent_province'] ?? ''),
             'permanent_region' => trim($_POST['permanent_region'] ?? ''),
-            'household_id' => $_POST['household_id'] ?? '',
+            'household_id' => isset($_POST['household_id']) && $_POST['household_id'] !== '' ? (int)$_POST['household_id'] : null,
             'relationship' => $_POST['relationship'] ?? '',
             'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0,
             'resident_type' => $_POST['resident_type'] ?? 'regular',
@@ -210,7 +221,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Problems - Economic
             'problem_loss_income' => isset($_POST['problem_loss_income']) ? 1 : 0,
-            'problem_unemployment' => isset($_POST['problem_unemployment']) ? 1 : 0,
+            'problem_lack_income' => isset($_POST['problem_lack_income']) ? 1 : 0,
             'problem_high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
             'problem_skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
             'problem_skills_training_specify' => trim($_POST['problem_skills_training_specify'] ?? ''),
@@ -416,8 +427,9 @@ function isCheckboxChecked($form_data, $key)
             const birthDateInput = document.getElementById('birth_date');
             const ageInput = document.getElementById('age');
             const residentTypeSelect = document.getElementById('residentTypeSelect');
-            const validationMsg = document.getElementById('residency_age_validation');
+            const ageValidationMsg = document.getElementById('age_validation');
             const yearsOfResidencyInput = document.getElementById('years_of_residency');
+            const residencyValidationMsg = document.getElementById('residency_age_validation');
 
             if (!birthDateInput || !ageInput) return;
 
@@ -452,12 +464,12 @@ function isCheckboxChecked($form_data, $key)
                 }
 
                 if (!isValid) {
-                    validationMsg.textContent = errorMessage;
-                    validationMsg.style.color = 'red';
+                    ageValidationMsg.textContent = errorMessage;
+                    ageValidationMsg.style.color = 'red';
                     // Clear the age input if invalid
                     ageInput.value = '';
                 } else {
-                    validationMsg.textContent = '';
+                    ageValidationMsg.textContent = '';
                 }
 
                 // Validate years of residency
@@ -465,13 +477,16 @@ function isCheckboxChecked($form_data, $key)
                     const yearsOfResidency = parseInt(yearsOfResidencyInput.value);
                     if (!isNaN(yearsOfResidency) && yearsOfResidency > age) {
                         yearsOfResidencyInput.value = age;
-                        validationMsg.textContent = `Years of residency cannot exceed age (${age} years)`;
-                        validationMsg.style.color = 'red';
+                        residencyValidationMsg.textContent = `Years of residency cannot exceed age (${age} years)`;
+                        residencyValidationMsg.style.color = 'red';
+                    } else {
+                        residencyValidationMsg.textContent = '';
                     }
                 }
             } else {
                 ageInput.value = '';
-                validationMsg.textContent = '';
+                ageValidationMsg.textContent = '';
+                residencyValidationMsg.textContent = '';
             }
         }
 
@@ -480,6 +495,10 @@ function isCheckboxChecked($form_data, $key)
             const birthDateInput = document.getElementById('birth_date');
             const residentTypeSelect = document.getElementById('residentTypeSelect');
             const yearsOfResidencyInput = document.getElementById('years_of_residency');
+            const purokSelect = document.querySelector('select[name="purok_id"]');
+            const householdSelect = document.getElementById('household_id_select');
+            const relationshipSelect = document.querySelector('select[name="relationship"]');
+            const isHouseholdHeadCheckbox = document.querySelector('input[name="is_household_head"]');
             
             if (birthDateInput) {
                 // Add event listener for input change
@@ -501,6 +520,80 @@ function isCheckboxChecked($form_data, $key)
             if (yearsOfResidencyInput) {
                 yearsOfResidencyInput.addEventListener('input', calculateAge);
                 yearsOfResidencyInput.addEventListener('change', calculateAge);
+            }
+
+            // Add validation for household-related fields
+            function validateHouseholdFields() {
+                let isValid = true;
+                let errorMessage = '';
+
+                // Check if purok is selected
+                if (!purokSelect.value) {
+                    isValid = false;
+                    errorMessage = 'Please select a purok';
+                    purokSelect.classList.add('border-red-500');
+                } else {
+                    purokSelect.classList.remove('border-red-500');
+                }
+
+                // Check if household is selected
+                if (!householdSelect.value) {
+                    isValid = false;
+                    errorMessage = 'Please select a household number';
+                    householdSelect.classList.add('border-red-500');
+                } else {
+                    householdSelect.classList.remove('border-red-500');
+                }
+
+                // Check if relationship is selected
+                if (!relationshipSelect.value) {
+                    isValid = false;
+                    errorMessage = 'Please select relationship to household head';
+                    relationshipSelect.classList.add('border-red-500');
+                } else {
+                    relationshipSelect.classList.remove('border-red-500');
+                }
+
+                // If not valid, show error message
+                if (!isValid) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Missing Information',
+                        text: errorMessage,
+                        confirmButtonColor: '#3085d6'
+                    });
+                }
+
+                return isValid;
+            }
+
+            // Add event listeners for household-related fields
+            if (purokSelect) {
+                purokSelect.addEventListener('change', function() {
+                    this.classList.remove('border-red-500');
+                });
+            }
+
+            if (householdSelect) {
+                householdSelect.addEventListener('change', function() {
+                    this.classList.remove('border-red-500');
+                });
+            }
+
+            if (relationshipSelect) {
+                relationshipSelect.addEventListener('change', function() {
+                    this.classList.remove('border-red-500');
+                });
+            }
+
+            // Add form submission validation
+            const form = document.getElementById('residentForm');
+            if (form) {
+                form.addEventListener('submit', function(e) {
+                    if (!validateHouseholdFields()) {
+                        e.preventDefault();
+                    }
+                });
             }
         });
     </script>
@@ -554,6 +647,9 @@ function isCheckboxChecked($form_data, $key)
                 </a>
                 <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+                <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    Temporary Records
+                </a>
             </div>
         </div>
 
@@ -633,6 +729,7 @@ function isCheckboxChecked($form_data, $key)
                         <label class="block text-sm font-medium">Age</label>
                         <input type="number" name="age" id="age" readonly value="<?= getFormValue('age', $form_data) ?>"
                             class="mt-1 block w-full border rounded p-2 bg-gray-100">
+                        <small class="text-gray-500" id="age_validation"></small>
                     </div>
 
                     <div>
@@ -760,13 +857,13 @@ function isCheckboxChecked($form_data, $key)
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
-                                <input type="text" name="present_house_no" value="<?= getFormValue('present_house_no', $form_data) ?>"
+                                <input type="text" name="present_house_no" required value="<?= getFormValue('present_house_no', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
-                                <input type="text" name="present_street" value="<?= getFormValue('present_street', $form_data) ?>"
+                                <input type="text" name="present_street" required value="<?= getFormValue('present_street', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
@@ -774,26 +871,26 @@ function isCheckboxChecked($form_data, $key)
 
                             <div>
                                 <label class="block text-sm font-medium">Barangay</label>
-                                <input type="text" name="present_barangay" value="<?= htmlspecialchars($barangay['name']) ?>"
+                                <input type="text" name="present_barangay" required value="<?= htmlspecialchars($barangay['name']) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                                 <input type="hidden" name="present_barangay_id" value="<?= htmlspecialchars($barangay['id']) ?>">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
-                                <input type="text" name="present_municipality" value="<?= getFormValue('present_municipality', $form_data) ?: 'SAN RAFAEL' ?>"
+                                <input type="text" name="present_municipality" required value="<?= getFormValue('present_municipality', $form_data) ?: 'SAN RAFAEL' ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
-                                <input type="text" name="present_province" value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
+                                <input type="text" name="present_province" required value="<?= getFormValue('present_province', $form_data) ?: 'BULACAN' ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
-                                <input type="text" name="present_region" value="<?= getFormValue('present_region', $form_data) ?: 'III' ?>"
+                                <input type="text" name="present_region" required value="<?= getFormValue('present_region', $form_data) ?: 'III' ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                             </div>
                         </div>
@@ -814,13 +911,13 @@ function isCheckboxChecked($form_data, $key)
                         <div id="permanentAddressFields" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
-                                <input type="text" name="permanent_house_no" value="<?= getFormValue('permanent_house_no', $form_data) ?>"
+                                <input type="text" name="permanent_house_no" required value="<?= getFormValue('permanent_house_no', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
-                                <input type="text" name="permanent_street" value="<?= getFormValue('permanent_street', $form_data) ?>"
+                                <input type="text" name="permanent_street" required value="<?= getFormValue('permanent_street', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
@@ -828,26 +925,26 @@ function isCheckboxChecked($form_data, $key)
 
                             <div>
                                 <label class="block text-sm font-medium">Barangay</label>
-                                <input type="text" name="permanent_barangay"
+                                <input type="text" name="permanent_barangay" required
                                     value="<?= getFormValue('permanent_barangay', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
-                                <input type="text" name="permanent_municipality" value="<?= getFormValue('permanent_municipality', $form_data) ?>"
+                                <input type="text" name="permanent_municipality" required value="<?= getFormValue('permanent_municipality', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
-                                <input type="text" name="permanent_province" value="<?= getFormValue('permanent_province', $form_data) ?>"
+                                <input type="text" name="permanent_province" required value="<?= getFormValue('permanent_province', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
-                                <input type="text" name="permanent_region" value="<?= getFormValue('permanent_region', $form_data) ?>"
+                                <input type="text" name="permanent_region" required value="<?= getFormValue('permanent_region', $form_data) ?>"
                                     class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                             </div>
                         </div>
@@ -860,7 +957,7 @@ function isCheckboxChecked($form_data, $key)
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="block text-sm font-medium">Purok</label>
-                            <select name="purok_id" class="mt-1 block w-full border rounded p-2">
+                            <select name="purok_id" required class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT PUROK --</option>
                                 <?php foreach ($puroks as $purok): ?>
                                     <option value="<?= htmlspecialchars($purok['id']) ?>"
@@ -873,14 +970,13 @@ function isCheckboxChecked($form_data, $key)
 
                         <div>
                             <label class="block text-sm font-medium">Household Number (Optional)</label>
-                            <select name="household_id" id="household_id_select" class="mt-1 block w-full border rounded p-2">
+                            <select name="household_id" id="household_id_select" required class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT HOUSEHOLD --</option>
                                 <?php foreach ($households as $household): ?>
                                     <option value="<?= htmlspecialchars($household['household_id']) ?>"
                                         data-purok="<?= htmlspecialchars($household['purok_id']) ?>"
                                         <?= isSelected($household['household_id'], $form_data, 'household_id') ?>>
-                                        <?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>
-                                        <?= $household['purok_name'] ? ' - ' . htmlspecialchars($household['purok_name']) : '' ?>
+                                        <?= htmlspecialchars($household['household_number']) ?> (<?= htmlspecialchars($household['purok_name']) ?>)
                                     </option>
                                 <?php endforeach; ?>
                             </select>
@@ -889,7 +985,7 @@ function isCheckboxChecked($form_data, $key)
 
                         <div>
                             <label class="block text-sm font-medium">Relationship to Head</label>
-                            <select name="relationship" class="mt-1 block w-full border rounded p-2">
+                            <select name="relationship" required class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- SELECT RELATIONSHIP --</option>
                                 <option value="HEAD" <?= isSelected('HEAD', $form_data, 'relationship') ?>>HEAD</option>
                                 <option value="SPOUSE" <?= isSelected('SPOUSE', $form_data, 'relationship') ?>>SPOUSE</option>
@@ -1764,7 +1860,7 @@ function isCheckboxChecked($form_data, $key)
                     // Check if current value exceeds age
                     if (parseInt(residencyInput.value) > age) {
                         residencyInput.value = age;
-                        validationMsg.textContent = `Maximum years of residency is ${age} (cannot exceed age)`;
+                        validationMsg.textContent = `Years of residency cannot exceed age (${age} years)`;
                     } else {
                         validationMsg.textContent = ``;
                     }
@@ -2053,7 +2149,7 @@ function isCheckboxChecked($form_data, $key)
                     if (!householdsByPurok['<?= $household['purok_id'] ?>']) householdsByPurok['<?= $household['purok_id'] ?>'] = [];
                     householdsByPurok['<?= $household['purok_id'] ?>'].push({
                         id: '<?= htmlspecialchars($household['household_id']) ?>',
-                        number: '<?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>',
+                        number: '<?= htmlspecialchars($household['household_number']) ?>',
                         purok_name: '<?= htmlspecialchars($household['purok_name']) ?>'
                     });
                 <?php endforeach; ?>

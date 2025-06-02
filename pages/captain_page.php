@@ -68,7 +68,7 @@ extract(captain_loadData($pdo, $bid));
                         <?php foreach ($users as $user): ?>
                             <tr>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    <?= htmlspecialchars($user['first_name'] . ' ' . $user['last_name']) ?>
+                                    <?= htmlspecialchars($user['person_name'] ?? ($user['first_name'].' '.$user['last_name'])) ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                     <?= htmlspecialchars($user['email']) ?>

@@ -15,18 +15,33 @@ $stmt = $pdo->prepare("
         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age,
         p.years_of_residency,
-        p.resident_type
+        p.resident_type,
+        CASE WHEN ci.id IS NOT NULL THEN 1 ELSE 0 END as is_child
     FROM persons p
     LEFT JOIN household_members hm ON p.id = hm.person_id
     LEFT JOIN households h ON hm.household_id = h.id
     LEFT JOIN barangay b ON h.barangay_id = b.id
     LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
     LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
-    WHERE (h.barangay_id = ? OR h.barangay_id IS NULL)
+    LEFT JOIN child_information ci ON p.id = ci.person_id
+    WHERE h.barangay_id = ?
+    AND p.is_archived = ?
     ORDER BY p.last_name, p.first_name
 ");
-$stmt->execute([$_SESSION['barangay_id']]);
+
+// Check if we're showing archived records
+$show_archived = isset($_GET['show_archived']) && $_GET['show_archived'] === 'true';
+$stmt->execute([$_SESSION['barangay_id'], $show_archived]);
 $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Debug information
+$child_count = 0;
+foreach ($residents as $resident) {
+    if ($resident['age'] < 18 && $resident['is_child']) {
+        $child_count++;
+    }
+}
+error_log("Total residents: " . count($residents) . ", Child records: " . $child_count);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -58,6 +73,9 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
       </a>
       <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+      <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+        Temporary Records
+      </a>
     </div>
 
     <section id="censusRecords" class="bg-white rounded-lg shadow-sm p-6">
@@ -89,6 +107,11 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
             data-filter="children">
             Children
           </button>
+          <button id="btn-archived"
+            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
+            data-filter="archived">
+            Archived Records
+          </button>
         </div>
         <div>
           <input type="text" id="search-resident" placeholder="Search by name..." class="px-4 py-2 border rounded w-64">
@@ -113,25 +136,15 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <?php foreach ($residents as $resident):
               $age = $resident['age'] ?? calculateAge($resident['birth_date']);
               $residentType = strtoupper($resident['resident_type'] ?? 'REGULAR');
-              
-              // Check if this is a child record
-              $is_child = false;
-              $child_info = null;
-              if ($age < 18) {
-                $stmt = $pdo->prepare("SELECT * FROM child_information WHERE person_id = ?");
-                $stmt->execute([$resident['id']]);
-                $child_info = $stmt->fetch(PDO::FETCH_ASSOC);
-                $is_child = $child_info !== false;
-              }
-              
-              // For children, we'll use age-based categorization
-              $category = ($age < 18) ? 'CHILD' : $residentType;
+              $is_child = $resident['is_child'] && $age < 18;
+              $category = $is_child ? 'CHILD' : $residentType;
             ?>
-              <tr class="resident-row" 
-                  data-category="<?= $category ?>" 
-                  data-name="<?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
-                    ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
-                    ($resident['suffix'] ? " {$resident['suffix']}" : '')) ?>">
+              <tr class="resident-row"
+                data-category="<?= $category ?>"
+                data-name="<?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
+                              ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
+                              ($resident['suffix'] ? " {$resident['suffix']}" : '')) ?>"
+                data-archived="<?= $resident['is_archived'] ? 'true' : 'false' ?>">
                 <td class="px-6 py-4 whitespace-nowrap">
                   <?php if ($is_child): ?>
                     <span class="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
@@ -163,10 +176,14 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
                   <?php else: ?>
                     <a href="edit_resident.php?id=<?= $resident['id'] ?>" class="text-blue-600 hover:text-blue-900 mr-3">Edit</a>
                   <?php endif; ?>
-                  <a href="view_resident.php?id=<?= $resident['id'] ?>" 
-                     onclick="event.preventDefault(); viewResident(<?= $resident['id'] ?>);"
-                     class="text-green-600 hover:text-green-900 mr-3">View</a>
-                  <button onclick="deleteResident(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Delete</button>
+                  <a href="view_resident.php?id=<?= $resident['id'] ?>"
+                    onclick="event.preventDefault(); viewResident(<?= $resident['id'] ?>);"
+                    class="text-green-600 hover:text-green-900 mr-3">View</a>
+                  <?php if ($resident['is_archived']): ?>
+                    <button onclick="restoreResident(<?= $resident['id'] ?>)" class="text-green-600 hover:text-green-900">Restore</button>
+                  <?php else: ?>
+                    <button onclick="deleteResident(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Archive</button>
+                  <?php endif; ?>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -203,26 +220,32 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
       // Function to filter residents
       function filterResidents(filterType) {
+        if (filterType === 'archived') {
+          window.location.href = 'census_records.php?show_archived=true';
+          return;
+        }
+
         const rows = document.querySelectorAll('tbody tr');
         rows.forEach(row => {
           const category = row.getAttribute('data-category');
+          const isArchived = row.getAttribute('data-archived') === 'true';
           let shouldShow = false;
 
           switch (filterType) {
             case 'all':
-              shouldShow = true;
+              shouldShow = !isArchived;
               break;
             case 'regular':
-              shouldShow = category === 'REGULAR';
+              shouldShow = category === 'REGULAR' && !isArchived;
               break;
             case 'pwd':
-              shouldShow = category === 'PWD';
+              shouldShow = category === 'PWD' && !isArchived;
               break;
             case 'seniors':
-              shouldShow = category === 'SENIOR';
+              shouldShow = category === 'SENIOR' && !isArchived;
               break;
             case 'children':
-              shouldShow = category === 'CHILD';
+              shouldShow = category === 'CHILD' && !isArchived;
               break;
           }
 
@@ -253,66 +276,99 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
       filterButtons.forEach(button => {
         button.addEventListener('click', function() {
           const filterType = this.getAttribute('data-filter');
-
+          
           // Update button styles
           updateButtonStyles(this);
-
+          
           // Filter residents
           filterResidents(filterType);
-
-          // Re-apply search if there's a search term
-          const searchTerm = searchInput.value.trim();
-          if (searchTerm) {
-            searchResidents(searchTerm);
-          }
         });
       });
 
-      // Add search functionality
-      searchInput.addEventListener('input', function() {
-        const searchTerm = this.value.trim();
-
-        if (searchTerm === '') {
-          // If search is empty, just apply the current filter
-          const activeButton = document.querySelector('.filter-btn.bg-blue-600');
-          const filterType = activeButton.getAttribute('data-filter');
-          filterResidents(filterType);
-        } else {
-          // First apply the current filter, then search
-          const activeButton = document.querySelector('.filter-btn.bg-blue-600');
-          const filterType = activeButton.getAttribute('data-filter');
-          filterResidents(filterType);
-          searchResidents(searchTerm);
-        }
-      });
-
-      // Initialize with "All" filter active
-      const allButton = document.getElementById('btn-all');
-      updateButtonStyles(allButton);
-      filterResidents('all');
+      // Initialize with correct filter based on URL parameter
+      const urlParams = new URLSearchParams(window.location.search);
+      const showArchived = urlParams.get('show_archived') === 'true';
+      
+      if (showArchived) {
+        const archivedButton = document.getElementById('btn-archived');
+        updateButtonStyles(archivedButton);
+      } else {
+        const allButton = document.getElementById('btn-all');
+        updateButtonStyles(allButton);
+        filterResidents('all');
+      }
     });
 
     function deleteResident(id) {
       Swal.fire({
         title: 'Are you sure?',
-        text: "You won't be able to revert this!",
+        text: "This will archive the resident record. You can restore it later if needed.",
         icon: 'warning',
         showCancelButton: true,
         confirmButtonColor: '#3085d6',
         cancelButtonColor: '#d33',
-        confirmButtonText: 'Yes, delete it!'
+        confirmButtonText: 'Yes, archive it!'
       }).then((result) => {
         if (result.isConfirmed) {
           // Send delete request
           fetch(`../functions/delete_resident.php?id=${id}`, {
-            method: 'DELETE'
+              method: 'DELETE'
+            })
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                Swal.fire(
+                  'Archived!',
+                  'Resident has been archived.',
+                  'success'
+                ).then(() => {
+                  window.location.reload();
+                });
+              } else {
+                Swal.fire(
+                  'Error!',
+                  data.message || 'Something went wrong.',
+                  'error'
+                );
+              }
+            })
+            .catch(error => {
+              Swal.fire(
+                'Error!',
+                'Something went wrong.',
+                'error'
+              );
+            });
+        }
+      });
+    }
+
+    function viewResident(id) {
+      console.log('Viewing resident ID:', id);
+      window.location.href = 'view_resident.php?id=' + id;
+    }
+
+    function restoreResident(id) {
+      Swal.fire({
+        title: 'Are you sure?',
+        text: "This will restore the resident record and their user account.",
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonColor: '#3085d6',
+        cancelButtonColor: '#d33',
+        confirmButtonText: 'Yes, restore it!'
+      }).then((result) => {
+        if (result.isConfirmed) {
+          // Send restore request
+          fetch(`../functions/restore_resident.php?id=${id}`, {
+            method: 'POST'
           })
           .then(response => response.json())
           .then(data => {
             if (data.success) {
               Swal.fire(
-                'Deleted!',
-                'Resident has been deleted.',
+                'Restored!',
+                'Resident has been restored successfully.',
                 'success'
               ).then(() => {
                 window.location.reload();
@@ -334,11 +390,6 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
           });
         }
       });
-    }
-
-    function viewResident(id) {
-        console.log('Viewing resident ID:', id);
-        window.location.href = 'view_resident.php?id=' + id;
     }
   </script>
 </body>

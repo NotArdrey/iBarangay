@@ -291,10 +291,28 @@ if (stripos($contentType, "application/json") !== false) {
                 // If no role exists, assign resident role
                 $roleStmt = $pdo->prepare("
                     INSERT INTO user_roles (user_id, role_id, barangay_id, is_active)
-                    VALUES (?, 8, 1, TRUE)
+                    VALUES (?, 8, ?, TRUE)
                 ");
-                $roleStmt->execute([$user['id']]);
-                $roleInfo = ['role_id' => 8, 'barangay_id' => 1, 'barangay_name' => null];
+                $roleStmt->execute([$user['id'], $user['barangay_id']]);
+                $roleInfo = ['role_id' => 8, 'barangay_id' => $user['barangay_id'], 'barangay_name' => null];
+            }
+
+            // Verify that the user's barangay is still active
+            $stmt = $pdo->prepare("
+                SELECT b.id, b.name 
+                FROM barangay b 
+                WHERE b.id = ? AND b.is_active = TRUE
+            ");
+            $stmt->execute([$roleInfo['barangay_id']]);
+            $barangay = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$barangay) {
+                header('Content-Type: application/json');
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Your barangay access has been deactivated. Please contact the barangay office for assistance.'
+                ]);
+                exit;
             }
 
             session_regenerate_id(true);
@@ -307,7 +325,7 @@ if (stripos($contentType, "application/json") !== false) {
 
             if ($roleInfo['barangay_id']) {
                 $_SESSION['barangay_id']   = $roleInfo['barangay_id'];
-                $_SESSION['barangay_name'] = $roleInfo['barangay_name'];
+                $_SESSION['barangay_name'] = $barangay['name'];
             }
 
             // Update last login

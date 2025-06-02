@@ -79,7 +79,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
           <i class="fas fa-cloud-upload-alt"></i>
           <p>Drag and drop your ID document here or click to browse</p>
           <p class="small-text">Supported formats: JPG, PNG</p>
-          <input type="file" id="govt_id" name="govt_id" accept="image/*" hidden required>
+          <input type="file" id="govt_id" name="govt_id" accept="image/*" hidden>
         </div>
         <img id="id_preview" alt="ID Preview">
       </div>
@@ -226,6 +226,71 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
       const birthDate = document.getElementById('birth_date').value.trim();
       const gender = document.getElementById('gender').value.trim();
       const idNumber = document.getElementById('id_number').value.trim();
+      const email = document.getElementById('email').value.trim();
+      const password = document.getElementById('password').value;
+      const confirmPassword = document.getElementById('confirmPassword').value;
+      const phone = document.getElementById('phone').value.trim();
+      
+      // Check if government ID has been uploaded
+      const fileInput = document.getElementById('govt_id');
+      if (!fileInput.files || fileInput.files.length === 0) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Missing Government ID',
+          text: 'Please upload a valid government ID document to proceed with registration.',
+          confirmButtonText: 'OK'
+        });
+        return false;
+      }
+      
+      // Phone number validation for Philippine mobile numbers
+      const phoneRegex = /^09\d{9}$/;
+      if (!phoneRegex.test(phone)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid Phone Number',
+          text: 'Please enter a valid Philippine mobile number starting with 09 followed by 9 digits.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      // Email validation for Gmail only
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@gmail\.com$/;
+      if (!emailRegex.test(email)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid Email',
+          text: 'Only Gmail addresses are accepted. Please use a valid Gmail address.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      // Password validation regex
+      const passwordRegex = /^(?=.*[A-Z])(?=.*[0-9!@#$%^&*])[A-Za-z0-9!@#$%^&*]{8,}$/;
+      
+      // Validate password
+      if (!passwordRegex.test(password)) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Invalid Password',
+          text: 'Password must be at least 8 characters long and contain at least one capital letter and one number or special character.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      // Check if passwords match
+      if (password !== confirmPassword) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Passwords Do Not Match',
+          text: 'Please make sure your passwords match.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
       
       // Validate required fields
       if (!firstName || !lastName || !birthDate || !gender) {
@@ -236,7 +301,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
         });
         return;
       }
-      
+
       // Show loading indicator
       Swal.fire({
         title: 'Verifying...',
@@ -268,31 +333,133 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
         
         if (data.status === 'success') {
           if (data.exists) {
-            // Store the person_id in the hidden field
-            document.getElementById('person_id').value = data.person_id;
-            
-            // Show success message and submit form
-            Swal.fire({
-              icon: 'success',
-              title: 'Verification Successful',
-              text: 'Your identity has been verified. You can now complete your registration.',
-              showConfirmButton: false,
-              timer: 1500,
-              willClose: () => {
-                this.submit();
-              }
-            });
+            // Check if person has an account in any barangay
+            if (data.has_account) {
+              Swal.fire({
+                icon: 'error',
+                title: 'Account Already Exists',
+                text: 'You already have an account in another barangay. Please contact your barangay office for assistance.',
+                confirmButtonText: 'OK'
+              });
+              return;
+            }
+
+            // Check if person has multiple barangay records
+            if (data.barangay_records && data.barangay_records.length > 1) {
+              // Only allow selection for the correct source (census or temporary)
+              let barangayOptions = data.barangay_records.map(record =>
+                `<option value="${record.id}" data-source="${record.source}" data-person="${record.person_id}">${record.barangay_name ? record.barangay_name : 'Barangay #' + record.id} (${record.source})</option>`
+              ).join('');
+              Swal.fire({
+                title: 'Select Your Primary Barangay',
+                html: `
+                  <div class="barangay-selection">
+                    <p class="mb-4">You are registered in multiple barangays. Please select your primary barangay:</p>
+                    <div class="form-group">
+                      <label for="barangay_select" class="block text-sm font-medium text-gray-700 mb-2">Select Barangay:</label>
+                      <select id="barangay_select" class="swal2-input w-full p-2 border rounded">
+                        <option value="">-- Select a Barangay --</option>
+                        ${barangayOptions}
+                      </select>
+                    </div>
+                    <div class="mt-4 p-4 bg-blue-50 rounded-lg">
+                      <p class="text-sm text-blue-800">
+                        <i class="fas fa-info-circle mr-2"></i>
+                        <strong>Important:</strong> You will only be able to access services for your selected barangay. This selection cannot be changed later without contacting the barangay office.
+                      </p>
+                    </div>
+                  </div>
+                `,
+                showCancelButton: true,
+                confirmButtonText: 'Continue',
+                cancelButtonText: 'Cancel',
+                customClass: {
+                  container: 'barangay-selection-modal',
+                  popup: 'barangay-selection-popup',
+                  title: 'text-xl font-bold mb-4',
+                  htmlContainer: 'text-left',
+                  confirmButton: 'bg-blue-600 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded',
+                  cancelButton: 'bg-gray-200 hover:bg-gray-300 text-gray-800 font-bold py-2 px-4 rounded'
+                },
+                preConfirm: () => {
+                  const select = document.getElementById('barangay_select');
+                  const selectedBarangay = select.value;
+                  const selectedSource = select.options[select.selectedIndex].getAttribute('data-source');
+                  const selectedPerson = select.options[select.selectedIndex].getAttribute('data-person');
+                  if (!selectedBarangay) {
+                    Swal.showValidationMessage('Please select a barangay');
+                    return false;
+                  }
+                  // Set person_id to the correct one for the selected barangay
+                  document.getElementById('person_id').value = selectedPerson;
+                  return {barangay_id: selectedBarangay, source: selectedSource};
+                }
+              }).then((result) => {
+                if (result.isConfirmed) {
+                  // Add selected barangay_id to form
+                  const barangayInput = document.createElement('input');
+                  barangayInput.type = 'hidden';
+                  barangayInput.name = 'barangay_id';
+                  barangayInput.value = result.value.barangay_id;
+                  document.querySelector('form').appendChild(barangayInput);
+                  // Add selected source to form (optional, for backend validation)
+                  const sourceInput = document.createElement('input');
+                  sourceInput.type = 'hidden';
+                  sourceInput.name = 'record_source';
+                  sourceInput.value = result.value.source;
+                  document.querySelector('form').appendChild(sourceInput);
+                  Swal.fire({
+                    icon: 'success',
+                    title: 'Verification Successful',
+                    text: 'Your identity has been verified and barangay selected. You can now complete your registration.',
+                    showConfirmButton: false,
+                    timer: 1500,
+                    willClose: () => {
+                      document.querySelector('form').submit();
+                    }
+                  });
+                }
+              });
+            } else if (data.barangay_records && data.barangay_records.length === 1) {
+              // If only one barangay, automatically add it to form
+              const barangayInput = document.createElement('input');
+              barangayInput.type = 'hidden';
+              barangayInput.name = 'barangay_id';
+              barangayInput.value = data.barangay_records[0].id;
+              document.querySelector('form').appendChild(barangayInput);
+              // Add source to form
+              const sourceInput = document.createElement('input');
+              sourceInput.type = 'hidden';
+              sourceInput.name = 'record_source';
+              sourceInput.value = data.barangay_records[0].source;
+              document.querySelector('form').appendChild(sourceInput);
+              Swal.fire({
+                icon: 'success',
+                title: 'Verification Successful',
+                text: 'Your identity has been verified. You can now complete your registration.',
+                showConfirmButton: false,
+                timer: 1500,
+                willClose: () => {
+                  document.querySelector('form').submit();
+                }
+              });
+            } else {
+              Swal.fire({
+                icon: 'error',
+                title: 'Verification Failed',
+                text: 'No barangay records found for your identity. Please contact the barangay office for assistance.',
+                confirmButtonText: 'OK'
+              });
+            }
           } else {
-            // Person not found, show error message
             Swal.fire({
               icon: 'error',
               title: 'Verification Failed',
-              text: 'Your information does not match our records. Only verified residents can register. Please contact the barangay office for assistance.',
+              text: data.message || 'Your information does not match our records. Only verified residents can register. Please contact the barangay office for assistance.',
               confirmButtonText: 'OK'
             });
           }
         } else {
-          // Error in verification
           Swal.fire({
             icon: 'error',
             title: 'Verification Error',

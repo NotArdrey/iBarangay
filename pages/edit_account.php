@@ -19,6 +19,21 @@ $user = $stmt->fetch(PDO::FETCH_ASSOC);
 $error_message = '';
 $success_message = '';
 
+// Add this after the user data is fetched
+$id_expiration_warning = '';
+if (!empty($user['id_expiration_date'])) {
+    $expiry_date = new DateTime($user['id_expiration_date']);
+    $today = new DateTime();
+    $diff = $today->diff($expiry_date);
+    
+    // Check if ID expires in 3 months or less
+    if ($diff->days <= 90 && $expiry_date > $today) {
+        $id_expiration_warning = "Your ID will expire in " . $diff->days . " days. Please renew it soon.";
+    } elseif ($expiry_date <= $today) {
+        $id_expiration_warning = "Your ID has expired. Please upload a new valid ID.";
+    }
+}
+
 // Process form submission (for editable fields and password change)
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account'])) {
     // Retrieve and trim values for the editable fields
@@ -27,6 +42,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account'])) {
     $gender = $_POST['gender'];
     $contact_number = trim($_POST['contact_number']);
     $barangay_id = $_POST['barangay_id'];
+    
+    // Present Address
+    $present_house_no = trim($_POST['present_house_no']);
+    $present_street = trim($_POST['present_street']);
+    $present_municipality = trim($_POST['present_municipality']);
+    $present_province = trim($_POST['present_province']);
+
+    // Permanent Address
+    $permanent_house_no = trim($_POST['permanent_house_no']);
+    $permanent_street = trim($_POST['permanent_street']);
+    $permanent_municipality = trim($_POST['permanent_municipality']);
+    $permanent_province = trim($_POST['permanent_province']);
+
+    // ID Details
+    $osca_id = trim($_POST['osca_id'] ?? '');
+    $gsis_id = trim($_POST['gsis_id'] ?? '');
+    $sss_id = trim($_POST['sss_id'] ?? '');
+    $tin_id = trim($_POST['tin_id'] ?? '');
+    $philhealth_id = trim($_POST['philhealth_id'] ?? '');
+    $other_id_type = trim($_POST['other_id_type'] ?? '');
+    $other_id_number = trim($_POST['other_id_number'] ?? '');
+    
+    // New ID Details from Document AI
+    $id_type = trim($_POST['id_type'] ?? '');
+    $id_number = trim($_POST['id_number'] ?? '');
+    $id_expiration_date = trim($_POST['id_expiration_date'] ?? '');
     
     // Retrieve password change fields (if any)
     $old_password = trim($_POST['old_password'] ?? '');
@@ -56,40 +97,135 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_account'])) {
         }
     }
 
+    // Handle government ID upload
+    if (isset($_FILES['govt_id']) && $_FILES['govt_id']['error'] === UPLOAD_ERR_OK) {
+        $allowed_types = ['image/jpeg', 'image/png', 'image/jpg'];
+        $max_size = 5 * 1024 * 1024; // 5MB
+
+        if (!in_array($_FILES['govt_id']['type'], $allowed_types)) {
+            $errors[] = "Invalid file type. Please upload a JPEG or PNG image.";
+        } elseif ($_FILES['govt_id']['size'] > $max_size) {
+            $errors[] = "File size too large. Maximum size is 5MB.";
+        } else {
+            $govt_id_data = file_get_contents($_FILES['govt_id']['tmp_name']);
+            
+            // Update government ID and ID details in database
+            $updateGovtIdQuery = "UPDATE users SET 
+                                govt_id_image = ?,
+                                id_type = ?,
+                                id_number = ?,
+                                id_expiration_date = ?
+                                WHERE id = ?";
+            $updateGovtIdStmt = $pdo->prepare($updateGovtIdQuery);
+            $updateGovtIdStmt->execute([
+                $govt_id_data,
+                $id_type,
+                $id_number,
+                $id_expiration_date,
+                $user_id
+            ]);
+            
+            $success_message .= " Government ID and details have been updated successfully.";
+        }
+    }
+
     // If there are no errors, update the personal details and possibly the password
     if (empty($errors)) {
-        // Update personal details
-        $updateQuery = "UPDATE users SET 
-                            first_name = ?, 
-                            last_name = ?, 
-                            gender = ?, 
-                            phone = ?, 
-                            barangay_id = ?
-                        WHERE id = ?";
-        $updateStmt = $pdo->prepare($updateQuery);
-        $params = [
-            $first_name,
-            $last_name,
-            $gender,
-            $contact_number,
-            $barangay_id,
-            $user_id
-        ];
-        $updateStmt->execute($params);
+        try {
+            $pdo->beginTransaction();
 
-        // Update password if requested
-        if (!empty($old_password) && !empty($new_password) && !empty($confirm_password)) {
-            $new_password_hash = hash('sha256', $new_password);
-            $updatePassQuery = "UPDATE users SET password = ? WHERE id = ?";
-            $stmt_pass = $pdo->prepare($updatePassQuery);
-            $stmt_pass->execute([$new_password_hash, $user_id]);
-            $success_message .= " Your password has been changed successfully.";
+            // Update personal details
+            $updateQuery = "UPDATE users SET 
+                                first_name = ?, 
+                                last_name = ?, 
+                                gender = ?, 
+                                phone = ?, 
+                                barangay_id = ?
+                            WHERE id = ?";
+            $updateStmt = $pdo->prepare($updateQuery);
+            $params = [
+                $first_name,
+                $last_name,
+                $gender,
+                $contact_number,
+                $barangay_id,
+                $user_id
+            ];
+            $updateStmt->execute($params);
+
+            // Update present address
+            $updateAddressQuery = "UPDATE addresses SET 
+                                    house_no = ?,
+                                    street = ?,
+                                    municipality = ?,
+                                    province = ?
+                                WHERE person_id = (SELECT id FROM persons WHERE user_id = ?) AND is_primary = 1";
+            $updateAddressStmt = $pdo->prepare($updateAddressQuery);
+            $updateAddressStmt->execute([
+                $present_house_no,
+                $present_street,
+                $present_municipality,
+                $present_province,
+                $user_id
+            ]);
+
+            // Update permanent address
+            $updatePermAddressQuery = "UPDATE addresses SET 
+                                        house_no = ?,
+                                        street = ?,
+                                        municipality = ?,
+                                        province = ?
+                                    WHERE person_id = (SELECT id FROM persons WHERE user_id = ?) AND is_permanent = 1";
+            $updatePermAddressStmt = $pdo->prepare($updatePermAddressQuery);
+            $updatePermAddressStmt->execute([
+                $permanent_house_no,
+                $permanent_street,
+                $permanent_municipality,
+                $permanent_province,
+                $user_id
+            ]);
+
+            // Update ID details
+            $updateIdQuery = "UPDATE person_identification SET 
+                                osca_id = ?,
+                                gsis_id = ?,
+                                sss_id = ?,
+                                tin_id = ?,
+                                philhealth_id = ?,
+                                other_id_type = ?,
+                                other_id_number = ?
+                            WHERE person_id = (SELECT id FROM persons WHERE user_id = ?)";
+            $updateIdStmt = $pdo->prepare($updateIdQuery);
+            $updateIdStmt->execute([
+                $osca_id,
+                $gsis_id,
+                $sss_id,
+                $tin_id,
+                $philhealth_id,
+                $other_id_type,
+                $other_id_number,
+                $user_id
+            ]);
+
+            // Update password if requested
+            if (!empty($old_password) && !empty($new_password) && !empty($confirm_password)) {
+                $new_password_hash = hash('sha256', $new_password);
+                $updatePassQuery = "UPDATE users SET password = ? WHERE id = ?";
+                $stmt_pass = $pdo->prepare($updatePassQuery);
+                $stmt_pass->execute([$new_password_hash, $user_id]);
+                $success_message .= " Your password has been changed successfully.";
+            }
+
+            $pdo->commit();
+            $success_message = "Your account has been updated successfully." . $success_message;
+            
+            // Refresh the user data
+            $stmt->execute([$user_id]);
+            $user = $stmt->fetch(PDO::FETCH_ASSOC);
+        } catch (Exception $e) {
+            $pdo->rollBack();
+            $error_message = "An error occurred while updating your account: " . $e->getMessage();
         }
-        $success_message = "Your account has been updated successfully." . $success_message;
-        
-        // Refresh the user data
-        $stmt->execute([$user_id]);
-        $user = $stmt->fetch(PDO::FETCH_ASSOC);
     } else {
         $error_message = implode("<br>", $errors);
     }
@@ -100,6 +236,28 @@ $barangayQuery = "SELECT id, name FROM barangay ORDER BY name";
 $barangayStmt = $pdo->prepare($barangayQuery);
 $barangayStmt->execute();
 $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Get user's complete information including addresses and IDs
+$userQuery = "SELECT u.*, 
+                    a.house_no, a.street, a.municipality, a.province,
+                    pa.house_no as permanent_house_no, pa.street as permanent_street,
+                    pa.municipality as permanent_municipality, pa.province as permanent_province,
+                    pi.osca_id, pi.gsis_id, pi.sss_id, pi.tin_id, pi.philhealth_id,
+                    pi.other_id_type, pi.other_id_number,
+                    h.household_number, pu.name as purok_name,
+                    u.id_type, u.id_number, u.id_expiration_date
+             FROM users u
+             LEFT JOIN persons per ON u.id = per.user_id
+             LEFT JOIN addresses a ON per.id = a.person_id AND a.is_primary = 1
+             LEFT JOIN addresses pa ON per.id = pa.person_id AND pa.is_permanent = 1
+             LEFT JOIN person_identification pi ON per.id = pi.person_id
+             LEFT JOIN household_members hm ON per.id = hm.person_id
+             LEFT JOIN households h ON hm.household_id = h.id
+             LEFT JOIN purok pu ON h.purok_id = pu.id
+             WHERE u.id = ?";
+$userStmt = $pdo->prepare($userQuery);
+$userStmt->execute([$user_id]);
+$user = $userStmt->fetch(PDO::FETCH_ASSOC);
 
 ?>
 <!DOCTYPE html>
@@ -327,6 +485,40 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       margin-bottom: 1rem;
       color: #666;
     }
+
+    /* Add these styles to your existing CSS */
+    #idPreviewModal .modal-content {
+      max-width: 600px;
+    }
+
+    #idPreviewModal .form-group {
+      margin-bottom: 1rem;
+    }
+
+    #idPreviewModal .form-group label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 500;
+    }
+
+    #idPreviewModal .form-group input {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+    }
+
+    #idPreviewModal .preview-container {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    #idPreviewModal .preview-container img {
+      max-width: 100%;
+      max-height: 300px;
+      border-radius: 4px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    }
   </style>
 </head>
 
@@ -420,7 +612,25 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       </script>
     <?php endif; ?>
 
-    <form class="account-form" action="" method="POST">
+    <?php if (!empty($id_expiration_warning)): ?>
+      <div class="alert alert-warning" style="margin-bottom: 20px; padding: 15px; border-radius: 5px; background-color: #fff3cd; border: 1px solid #ffeeba; color: #856404;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <i class="fas fa-exclamation-triangle" style="font-size: 1.2em;"></i>
+          <span><?php echo htmlspecialchars($id_expiration_warning); ?></span>
+        </div>
+      </div>
+      <script>
+        // Also show a modal alert for better visibility
+        Swal.fire({
+          icon: 'warning',
+          title: 'ID Expiration Notice',
+          text: <?php echo json_encode($id_expiration_warning); ?>,
+          confirmButtonText: 'I Understand'
+        });
+      </script>
+    <?php endif; ?>
+
+    <form class="account-form" action="" method="POST" enctype="multipart/form-data">
         <!-- Add a hidden input to identify form submission -->
         <input type="hidden" name="update_account" value="1">
 
@@ -558,22 +768,69 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                   style="max-width: 100%; max-height: 300px; display: block; margin: 0 auto; cursor: pointer;"
                   onclick="openImageModal(this.src)">
                 <p style="text-align: center; margin-top: 8px; font-size: 0.9em; color: #666;">Click on image to enlarge</p>
+                
+                <!-- ID Details Display -->
+                <?php if (!empty($user['id_type']) || !empty($user['id_number']) || !empty($user['id_expiration_date'])): ?>
+                  <div class="id-details" style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                    <?php if (!empty($user['id_type'])): ?>
+                      <p><strong>ID Type:</strong> <?php echo htmlspecialchars($user['id_type']); ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($user['id_number'])): ?>
+                      <p><strong>ID Number:</strong> <?php echo htmlspecialchars($user['id_number']); ?></p>
+                    <?php endif; ?>
+                    <?php if (!empty($user['id_expiration_date'])): ?>
+                      <p><strong>Expiry Date:</strong> <?php echo date('F d, Y', strtotime($user['id_expiration_date'])); ?></p>
+                    <?php endif; ?>
+                  </div>
+                <?php endif; ?>
               </div>
             <?php else: ?>
               <p>No government ID uploaded.</p>
             <?php endif; ?>
+            
+            <!-- Add file input for uploading new ID -->
+            <div class="upload-new-id" style="margin-top: 1rem;">
+              <label for="govt_id" class="upload-label">
+                <i class="fas fa-upload"></i> Upload New Government ID
+              </label>
+              <input type="file" id="govt_id" name="govt_id" accept="image/jpeg,image/png,image/jpg" style="display: none;" onchange="processNewId(this)">
+            </div>
           </div>
         </div>
       </div>
 
-      <!-- Modal for Enlarged Image -->
-      <div id="imageModal" style="display: none; position: fixed; z-index: 1000; left: 0; top: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.9); overflow: auto;">
-        <span style="position: absolute; top: 15px; right: 25px; color: #f1f1f1; font-size: 35px; font-weight: bold; cursor: pointer;" onclick="closeImageModal()">&times;</span>
-        <img id="modalImage" style="display: block; margin: 60px auto; max-width: 90%; max-height: 90%;">
+      <!-- ID Preview Modal -->
+      <div id="idPreviewModal" class="modal">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h2>Verify ID Information</h2>
+            <button type="button" class="close" onclick="closeIdPreviewModal()">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="preview-container">
+              <img id="previewImage" src="" alt="ID Preview" style="max-width: 100%; max-height: 300px; margin-bottom: 20px;">
+            </div>
+            <form id="idInfoForm">
+              <div class="form-group">
+                <label for="extracted_id_type">ID Type</label>
+                <input type="text" id="extracted_id_type" name="extracted_id_type" required>
+              </div>
+              <div class="form-group">
+                <label for="extracted_id_number">ID Number</label>
+                <input type="text" id="extracted_id_number" name="extracted_id_number" required>
+              </div>
+              <div class="form-group">
+                <label for="extracted_expiry">Expiry Date</label>
+                <input type="date" id="extracted_expiry" name="extracted_expiry" required>
+              </div>
+              <div class="form-actions">
+                <button type="button" class="btn secondary-btn" onclick="closeIdPreviewModal()">Cancel</button>
+                <button type="button" class="btn cta-button" onclick="confirmIdUpdate()">Confirm Update</button>
+              </div>
+            </form>
+          </div>
+        </div>
       </div>
-
-
-      
 
       <!-- Editable Section: Personal Details -->
       <div class="form-section">
@@ -609,6 +866,91 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
               </option>
             <?php endforeach; ?>
           </select>
+        </div>
+      </div>
+
+      <!-- Present Address Section -->
+      <div class="form-section">
+        <h3>Present Address</h3>
+        <div class="form-group">
+          <label for="household_number">Household Number</label>
+          <input type="text" id="household_number" name="household_number" value="<?php echo htmlspecialchars($user['household_number'] ?? ''); ?>" readonly>
+        </div>
+        <div class="form-group">
+          <label for="purok">Purok</label>
+          <input type="text" id="purok" name="purok" value="<?php echo htmlspecialchars($user['purok_name'] ?? ''); ?>" readonly>
+        </div>
+        <div class="form-group">
+          <label for="present_house_no">House Number</label>
+          <input type="text" id="present_house_no" name="present_house_no" value="<?php echo htmlspecialchars($user['house_no'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="present_street">Street</label>
+          <input type="text" id="present_street" name="present_street" value="<?php echo htmlspecialchars($user['street'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="present_municipality">City/Municipality</label>
+          <input type="text" id="present_municipality" name="present_municipality" value="<?php echo htmlspecialchars($user['municipality'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="present_province">Province</label>
+          <input type="text" id="present_province" name="present_province" value="<?php echo htmlspecialchars($user['province'] ?? ''); ?>">
+        </div>
+      </div>
+
+      <!-- Permanent Address Section -->
+      <div class="form-section">
+        <h3>Permanent Address</h3>
+        <div id="permanent_address_fields">
+          <div class="form-group">
+            <label for="permanent_house_no">House Number</label>
+            <input type="text" id="permanent_house_no" name="permanent_house_no" value="<?php echo htmlspecialchars($user['permanent_house_no'] ?? ''); ?>">
+          </div>
+          <div class="form-group">
+            <label for="permanent_street">Street</label>
+            <input type="text" id="permanent_street" name="permanent_street" value="<?php echo htmlspecialchars($user['permanent_street'] ?? ''); ?>">
+          </div>
+          <div class="form-group">
+            <label for="permanent_municipality">City/Municipality</label>
+            <input type="text" id="permanent_municipality" name="permanent_municipality" value="<?php echo htmlspecialchars($user['permanent_municipality'] ?? ''); ?>">
+          </div>
+          <div class="form-group">
+            <label for="permanent_province">Province</label>
+            <input type="text" id="permanent_province" name="permanent_province" value="<?php echo htmlspecialchars($user['permanent_province'] ?? ''); ?>">
+          </div>
+        </div>
+      </div>
+
+      <!-- ID Details Section -->
+      <div class="form-section">
+        <h3>ID Details</h3>
+        <div class="form-group">
+          <label for="osca_id">OSCA ID</label>
+          <input type="text" id="osca_id" name="osca_id" value="<?php echo htmlspecialchars($user['osca_id'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="gsis_id">GSIS ID</label>
+          <input type="text" id="gsis_id" name="gsis_id" value="<?php echo htmlspecialchars($user['gsis_id'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="sss_id">SSS ID</label>
+          <input type="text" id="sss_id" name="sss_id" value="<?php echo htmlspecialchars($user['sss_id'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="tin_id">TIN ID</label>
+          <input type="text" id="tin_id" name="tin_id" value="<?php echo htmlspecialchars($user['tin_id'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="philhealth_id">PhilHealth ID</label>
+          <input type="text" id="philhealth_id" name="philhealth_id" value="<?php echo htmlspecialchars($user['philhealth_id'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="other_id_type">Other ID Type</label>
+          <input type="text" id="other_id_type" name="other_id_type" value="<?php echo htmlspecialchars($user['other_id_type'] ?? ''); ?>">
+        </div>
+        <div class="form-group">
+          <label for="other_id_number">Other ID Number</label>
+          <input type="text" id="other_id_number" name="other_id_number" value="<?php echo htmlspecialchars($user['other_id_number'] ?? ''); ?>">
         </div>
       </div>
 
@@ -699,11 +1041,29 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       }, 200);
     }
 
+    // Image Modal Functions
+    function openImageModal(src) {
+      const modal = document.getElementById('imageModal');
+      const modalImg = document.getElementById('modalImage');
+      modal.style.display = "block";
+      modalImg.src = src;
+    }
+
+    function closeImageModal() {
+      const modal = document.getElementById('imageModal');
+      modal.style.display = "none";
+    }
+
     // Close modal when clicking outside
     window.onclick = function(event) {
-      const modal = document.getElementById('documentModal');
-      if (event.target == modal) {
+      const documentModal = document.getElementById('documentModal');
+      const imageModal = document.getElementById('imageModal');
+      
+      if (event.target == documentModal) {
         closeDocumentModal();
+      }
+      if (event.target == imageModal) {
+        closeImageModal();
       }
     }
 
@@ -869,50 +1229,231 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
       });
     }
 
-    function updatePassword() {
-      const newPassword = document.getElementById('modal_new_password').value;
-      const confirmPassword = document.getElementById('modal_confirm_password').value;
-      
-      if (newPassword !== confirmPassword) {
+function updatePassword() {
+  const newPassword = document.getElementById('modal_new_password').value;
+  const confirmPassword = document.getElementById('modal_confirm_password').value;
+  
+  // Client-side password strength validation
+  function validatePasswordStrength(password) {
+    const errors = [];
+    
+    // Minimum length
+    if (password.length < 8) {
+      errors.push('Password must be at least 8 characters long');
+    }
+    
+    // Must contain uppercase letter
+    if (!/[A-Z]/.test(password)) {
+      errors.push('Password must contain at least one uppercase letter');
+    }
+    
+    // Must contain lowercase letter
+    if (!/[a-z]/.test(password)) {
+      errors.push('Password must contain at least one lowercase letter');
+    }
+    
+    // Must contain number
+    if (!/\d/.test(password)) {
+      errors.push('Password must contain at least one number');
+    }
+    
+    // Must contain special character
+    if (!/[!@#$%^&*()_+\-=\[\]{}|;:,.<>?]/.test(password)) {
+      errors.push('Password must contain at least one special character (!@#$%^&*()_+-=[]{}|;:,.<>?)');
+    }
+    
+    return errors;
+  }
+  
+  // Validate password strength
+  const strengthErrors = validatePasswordStrength(newPassword);
+  if (strengthErrors.length > 0) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Weak Password',
+      html: strengthErrors.join('<br>')
+    });
+    return;
+  }
+  
+  // Check if passwords match
+  if (newPassword !== confirmPassword) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'Passwords do not match'
+    });
+    return;
+  }
+  
+  // Show loading
+  Swal.fire({
+    title: 'Updating Password...',
+    text: 'Please wait while we update your password',
+    allowOutsideClick: false,
+    didOpen: () => {
+      Swal.showLoading();
+    }
+  });
+  
+  fetch('../functions/update_password.php', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `new_password=${encodeURIComponent(newPassword)}`
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success) {
+      Swal.fire({
+        icon: 'success',
+        title: 'Success',
+        text: data.message
+      }).then(() => {
+        closePasswordChangeModal();
+        // Clear the form
+        document.getElementById('modal_old_password').value = '';
+        document.getElementById('modal_new_password').value = '';
+        document.getElementById('modal_confirm_password').value = '';
+        document.getElementById('verification_code').value = '';
+      });
+    } else {
+      Swal.fire({
+        icon: 'error',
+        title: 'Error',
+        text: data.message
+      });
+    }
+  })
+  .catch(error => {
+    console.error('Error:', error);
+    Swal.fire({
+      icon: 'error',
+      title: 'Error',
+      text: 'An error occurred. Please try again.'
+    });
+  });
+}
+
+    let currentFile = null;
+
+    function processNewId(input) {
+      if (input.files && input.files[0]) {
+        currentFile = input.files[0];
+        const formData = new FormData();
+        formData.append('govt_id', currentFile);
+        formData.append('debug', 'true'); // Enable debug mode
+
+        // Show loading state
         Swal.fire({
-          icon: 'error',
-          title: 'Error',
-          text: 'Passwords do not match'
+          title: 'Processing ID...',
+          text: 'Please wait while we extract information from your ID',
+          allowOutsideClick: false,
+          didOpen: () => {
+            Swal.showLoading();
+          }
         });
-        return;
-      }
-      
-      fetch('../functions/update_password.php', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `new_password=${encodeURIComponent(newPassword)}`
-      })
-      .then(response => response.json())
-      .then(data => {
-        if (data.success) {
-          Swal.fire({
-            icon: 'success',
-            title: 'Success',
-            text: 'Password has been updated successfully'
-          }).then(() => {
-            closePasswordChangeModal();
-          });
-        } else {
+
+        // Send to Document AI processor
+        fetch('../scripts/process_id.php', {
+          method: 'POST',
+          body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+          if (data.success) {
+            // Display preview modal with extracted data
+            const modal = document.getElementById('idPreviewModal');
+            const previewImage = document.getElementById('previewImage');
+            const reader = new FileReader();
+            
+            reader.onload = function(e) {
+              previewImage.src = e.target.result;
+              
+              // Fill in extracted data
+              document.getElementById('extracted_id_type').value = data.data.type_of_id || '';
+              document.getElementById('extracted_id_number').value = data.data.id_number || '';
+              
+              // Format and set expiry date if available
+              if (data.data.expiration_date) {
+                const expiryDate = new Date(data.data.expiration_date);
+                document.getElementById('extracted_expiry').value = expiryDate.toISOString().split('T')[0];
+              }
+              
+              modal.style.display = 'block';
+              modal.offsetHeight; // Trigger reflow
+              modal.classList.add('show');
+            };
+            
+            reader.readAsDataURL(currentFile);
+            Swal.close();
+          } else {
+            throw new Error(data.error || 'Failed to process ID');
+          }
+        })
+        .catch(error => {
+          console.error('Error:', error);
           Swal.fire({
             icon: 'error',
             title: 'Error',
-            text: 'Failed to update password'
+            text: error.message || 'Failed to process ID. Please try again.'
           });
+        });
+      }
+    }
+
+    function closeIdPreviewModal() {
+      const modal = document.getElementById('idPreviewModal');
+      modal.classList.remove('show');
+      setTimeout(() => {
+        modal.style.display = 'none';
+      }, 200);
+      
+      // Reset file input
+      document.getElementById('govt_id').value = '';
+      currentFile = null;
+    }
+
+    function confirmIdUpdate() {
+      const formData = new FormData();
+      formData.append('govt_id', currentFile);
+      formData.append('id_type', document.getElementById('extracted_id_type').value);
+      formData.append('id_number', document.getElementById('extracted_id_number').value);
+      formData.append('id_expiration_date', document.getElementById('extracted_expiry').value);
+      formData.append('update_account', '1');
+
+      // Show loading state
+      Swal.fire({
+        title: 'Updating ID...',
+        text: 'Please wait while we update your ID information',
+        allowOutsideClick: false,
+        didOpen: () => {
+          Swal.showLoading();
         }
+      });
+
+      // Submit the form with the new data
+      fetch(window.location.href, {
+        method: 'POST',
+        body: formData
+      })
+      .then(response => response.text())
+      .then(() => {
+        Swal.fire({
+          icon: 'success',
+          title: 'Success',
+          text: 'Your ID information has been updated successfully'
+        }).then(() => {
+          window.location.reload();
+        });
       })
       .catch(error => {
         console.error('Error:', error);
         Swal.fire({
           icon: 'error',
           title: 'Error',
-          text: 'An error occurred. Please try again.'
+          text: 'Failed to update ID information. Please try again.'
         });
       });
     }

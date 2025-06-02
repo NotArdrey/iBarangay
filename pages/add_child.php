@@ -32,6 +32,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $household_id = $_POST['household_id'] ?? '';
     $relationship = $_POST['relationship'] ?? '';
     $is_household_head = isset($_POST['is_household_head']) ? 1 : 0;
+
+    // ID Information
+    $id_type = trim($_POST['id_type'] ?? '');
+    $id_number = trim($_POST['id_number'] ?? '');
+
     // Household Information
     $region = trim($_POST['region'] ?? '');
     $barangay = trim($_POST['barangay'] ?? '');
@@ -91,7 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'Last Name' => $last_name,
         'Birth Date' => $birth_date,
         'Gender' => $gender,
-        // Household ID is optional
+        'Purok' => $_POST['purok_id'] ?? '',
+        'Household Number' => $_POST['household_id'] ?? ''
     ];
     foreach ($required as $label => $val) {
         if (!$val) $add_error .= "$label is required.<br>";
@@ -102,7 +108,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $birth_date_obj = new DateTime($birth_date);
         $today = new DateTime();
         $age = $today->diff($birth_date_obj)->y;
-        
+
         if ($age < 0 || $age > 17) {
             $add_error .= "Only children aged 0-17 years old are allowed.<br>";
         }
@@ -138,6 +144,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $person_id = $pdo->lastInsertId();
 
+            // Insert ID information if provided
+            if (!empty($id_type) || !empty($id_number)) {
+                $stmt = $pdo->prepare("INSERT INTO person_identification 
+                    (person_id, other_id_type, other_id_number)
+                    VALUES (?, ?, ?)");
+                $stmt->execute([
+                    $person_id,
+                    $id_type,
+                    $id_number
+                ]);
+            }
+
             // Insert address information
             $stmt = $pdo->prepare("INSERT INTO addresses 
                 (person_id, barangay_id, house_no, street, phase, municipality, province, region, is_primary)
@@ -160,7 +178,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmt = $pdo->prepare("SELECT id FROM relationship_types WHERE name = ?");
                 $stmt->execute([$relationship]);
                 $relationship_type = $stmt->fetch(PDO::FETCH_ASSOC);
-                
+
                 if ($relationship_type) {
                     $stmt = $pdo->prepare("INSERT INTO household_members 
                         (household_id, person_id, relationship_type_id, is_household_head)
@@ -316,6 +334,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </a>
             <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+            <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Temporary Records
+            </a>
         </div>
         <section id="add-child" class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800">CHILDREN 0-17 YEARS OLD</h2>
@@ -342,8 +363,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <select name="household_id" id="household_select" class="mt-1 block w-full border rounded p-2">
                             <option value="">-- SELECT HOUSEHOLD --</option>
                             <?php foreach ($households as $household): ?>
-                                <option value="<?= htmlspecialchars($household['household_id']) ?>" 
-                                        data-purok="<?= htmlspecialchars($household['purok_id']) ?>">
+                                <option value="<?= htmlspecialchars($household['household_id']) ?>"
+                                    data-purok="<?= htmlspecialchars($household['purok_id']) ?>">
                                     <?= htmlspecialchars($household['household_number'] ?? $household['household_id']) ?>
                                 </option>
                             <?php endforeach; ?>
@@ -452,6 +473,56 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                             </div>
                         </div>
+
+                        <!-- ID Upload Section -->
+                        <div class="md:col-span-2 mt-6 border-t pt-4">
+                            <h4 class="text-lg font-semibold mb-4">Guardian Government ID Information</h4>
+                            <div class="grid grid-cols-1 gap-4">
+                                <div>
+                                    <label class="block text-md font-semibold">Upload Guardian Government ID</label>
+                                    <div class="mt-2 flex items-center space-x-4">
+                                        <input type="file" name="govt_id" id="govt_id" accept="image/*,.pdf" class="hidden">
+                                        <button type="button" onclick="document.getElementById('govt_id').click()" 
+                                            class="inline-flex items-center px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors duration-200">
+                                            <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12"/>
+                                            </svg>
+                                            Choose File
+                                        </button>
+                                        <span id="selected_file" class="text-gray-600">No file chosen</span>
+                                    </div>
+                                    <p class="text-sm text-gray-500 mt-1">Supported formats: JPG, PNG, PDF</p>
+                                    
+                                    <!-- ID Preview Section -->
+                                    <div id="id_preview_container" class="mt-4 hidden">
+                                        <label class="block text-md font-semibold mb-2">ID Preview</label>
+                                        <div class="relative border rounded-lg p-2 bg-gray-50">
+                                            <div id="id_preview" class="max-w-full h-48 flex items-center justify-center">
+                                                <p class="text-gray-500">Preview will appear here</p>
+                                            </div>
+                                            <button type="button" id="clear_preview_btn" onclick="clearIdPreview()" 
+                                                class="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors duration-200">
+                                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+                                                </svg>
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                    <div>
+                                        <label class="block text-md font-semibold">ID Type</label>
+                                        <input type="text" name="id_type" id="id_type" class="mt-1 block w-full border rounded-lg p-2">
+                                        <p class="text-sm text-gray-500 mt-1">You can edit this field if needed</p>
+                                    </div>
+                                    <div>
+                                        <label class="block text-md font-semibold">ID Number</label>
+                                        <input type="text" name="id_number" id="id_number" class="mt-1 block w-full border rounded-lg p-2">
+                                        <p class="text-sm text-gray-500 mt-1">You can edit this field if needed</p>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 </div>
 
@@ -482,7 +553,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="ALS" class="form-radio">
-                                    <span class="ml-2">ALS</span>
+                                    <span class="ml-2">ALS (Alternative Learning System)</span>
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="Day Care" class="form-radio">
@@ -490,11 +561,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                                 <label class="inline-flex items-center">
                                     <input type="radio" name="school_type" value="SNP" class="form-radio">
-                                    <span class="ml-2">SNP</span>
-                                </label>
-                                <label class="inline-flex items-center">
-                                    <input type="radio" name="school_type" value="Not Attending" class="form-radio">
-                                    <span class="ml-2">Not Attending</span>
+                                    <span class="ml-2">SNP (Special Needs Program)</span>
                                 </label>
                             </div>
                         </div>
@@ -904,7 +971,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             function updateHouseholdOptions() {
                 const selectedPurokId = purokSelect.value;
-                
+
                 // Clear current options except the first one
                 householdSelect.innerHTML = '';
                 householdSelect.appendChild(originalHouseholdOption.cloneNode(true));
@@ -958,11 +1025,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 const today = new Date();
                 const minDate = new Date(today.getFullYear() - 17, today.getMonth(), today.getDate());
                 const maxDate = new Date(today.getFullYear(), today.getMonth(), today.getDate());
-                return { minDate, maxDate };
+                return {
+                    minDate,
+                    maxDate
+                };
             }
 
             // Set date input constraints
-            const { minDate, maxDate } = getDateRange();
+            const {
+                minDate,
+                maxDate
+            } = getDateRange();
             birthDateInput.min = minDate.toISOString().split('T')[0];
             birthDateInput.max = maxDate.toISOString().split('T')[0];
 
@@ -989,8 +1062,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Add form validation
             const form = document.querySelector('form');
             form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Get the selected values
+                const selectedPurok = purokSelect.value;
+                const selectedHousehold = householdSelect.value;
+                
+                // Validate purok and household selection
+                if (!selectedPurok) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Missing Information',
+                        text: 'Please select a Purok.',
+                        confirmButtonColor: '#3085d6'
+                    });
+                    purokSelect.focus();
+                    return;
+                }
+                
+                if (!selectedHousehold) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Missing Information',
+                        text: 'Please select a Household.',
+                        confirmButtonColor: '#3085d6'
+                    });
+                    householdSelect.focus();
+                    return;
+                }
+
                 if (birthDateInput.value && !validateAge(birthDateInput.value)) {
-                    e.preventDefault();
                     Swal.fire({
                         icon: 'error',
                         title: 'Invalid Age',
@@ -998,44 +1099,45 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         confirmButtonColor: '#3085d6'
                     });
                     birthDateInput.focus();
-                } else {
-                    e.preventDefault();
-                    Swal.fire({
-                        title: 'Saving Child Data',
-                        text: 'Please wait while we save the child information...',
-                        allowOutsideClick: false,
-                        allowEscapeKey: false,
-                        showConfirmButton: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
-                    });
-                    
-                    // Submit the form after showing the loading message
-                    setTimeout(() => {
-                        form.submit();
-                    }, 500);
+                    return;
                 }
+
+                Swal.fire({
+                    title: 'Saving Child Data',
+                    text: 'Please wait while we save the child information...',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                // Submit the form after showing the loading message
+                setTimeout(() => {
+                    form.submit();
+                }, 500);
             });
 
             // Show success message if PHP indicates success
             <?php if ($add_success): ?>
-            Swal.fire({
-                icon: 'success',
-                title: 'Success!',
-                text: '<?php echo $add_success; ?>',
-                confirmButtonColor: '#3085d6'
-            });
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Success!',
+                    text: '<?php echo $add_success; ?>',
+                    confirmButtonColor: '#3085d6'
+                });
             <?php endif; ?>
 
             // Show error message if PHP indicates error
             <?php if ($add_error): ?>
-            Swal.fire({
-                icon: 'error',
-                title: 'Error!',
-                text: '<?php echo $add_error; ?>',
-                confirmButtonColor: '#3085d6'
-            });
+                const errorMessages = `<?php echo str_replace("\n", "<br>", $add_error); ?>`.split('<br>').filter(msg => msg.trim() !== '');
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Please fix the following:',
+                    html: errorMessages.map(msg => `<div class="text-left mb-2">• ${msg}</div>`).join(''),
+                    confirmButtonColor: '#3085d6'
+                });
             <?php endif; ?>
 
             // Make all text inputs uppercase while typing
@@ -1070,6 +1172,115 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         }
                     });
                 }
+            });
+
+            // ID Upload and Processing
+            document.getElementById('govt_id').addEventListener('change', function(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    // Update selected file name
+                    document.getElementById('selected_file').textContent = file.name;
+                    
+                    // Show preview
+                    const previewContainer = document.getElementById('id_preview_container');
+                    const preview = document.getElementById('id_preview');
+                    previewContainer.classList.remove('hidden');
+                    
+                    if (file.type === 'application/pdf') {
+                        preview.innerHTML = `
+                            <div class="flex flex-col items-center justify-center p-4">
+                                <svg class="w-16 h-16 text-gray-400 mb-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                </svg>
+                                <p class="text-gray-600">PDF Document</p>
+                                <p class="text-sm text-gray-500">${file.name}</p>
+                            </div>`;
+                    } else {
+                        const reader = new FileReader();
+                        reader.onload = function(e) {
+                            preview.innerHTML = `<img src="${e.target.result}" class="max-h-full object-contain" alt="ID Preview">`;
+                        }
+                        reader.readAsDataURL(file);
+                    }
+                    
+                    // Show loading state
+                    Swal.fire({
+                        title: 'Processing ID...',
+                        text: 'Please wait while we extract information from your ID',
+                        allowOutsideClick: false,
+                        didOpen: () => {
+                            Swal.showLoading();
+                        }
+                    });
+
+                    // Create form data
+                    const formData = new FormData();
+                    formData.append('govt_id', file);
+                    formData.append('debug', 'true');
+
+                    // Send to server for processing
+                    fetch('../scripts/process_id.php', {
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                        if (data.error) {
+                            Swal.fire({
+                                icon: 'error',
+                                title: 'Error',
+                                text: data.error
+                            });
+                            return;
+                        }
+
+                        if (data.success) {
+                            // Fill in the extracted data
+                            document.getElementById('id_type').value = data.data.type_of_id || '';
+                            document.getElementById('id_number').value = data.data.id_number || '';
+                            
+                            Swal.fire({
+                                icon: 'success',
+                                title: 'Success',
+                                text: 'ID information extracted successfully. You can edit the fields if needed.'
+                            });
+                        }
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: 'An error occurred while processing the document'
+                        });
+                    });
+                }
+            });
+
+            // Add this to your JavaScript section
+            function clearIdPreview() {
+                // Clear the file input
+                const fileInput = document.getElementById('govt_id');
+                fileInput.value = '';
+                
+                // Reset the file name display
+                document.getElementById('selected_file').textContent = 'No file chosen';
+                
+                // Hide the preview container
+                document.getElementById('id_preview_container').classList.add('hidden');
+                
+                // Clear the extracted data fields
+                document.getElementById('id_type').value = '';
+                document.getElementById('id_number').value = '';
+                
+                // Reset the preview content
+                document.getElementById('id_preview').innerHTML = '<p class="text-gray-500">Preview will appear here</p>';
+            }
+
+            // Add event listener for the clear button
+            document.getElementById('clear_preview_btn').addEventListener('click', function(e) {
+                e.preventDefault();
+                clearIdPreview();
             });
         });
     </script>

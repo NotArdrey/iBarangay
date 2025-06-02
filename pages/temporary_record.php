@@ -247,6 +247,25 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <div class="container mx-auto px-4 py-8">
+    <div class="flex flex-wrap gap-4 mb-6">
+        <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+            Add Resident
+        </a>
+        <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+            Add Child
+        </a>
+        <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+            Census Records
+        </a>
+        <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+            Manage Households
+        </a>
+        <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
+               font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+        <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+            Temporary Records
+        </a>
+    </div>
     <!-- Tabs -->
     <div class="mb-6 flex space-x-2">
         <button id="tabForm" class="tab-btn px-4 py-2 rounded-t bg-blue-600 text-white font-semibold focus:outline-none">Add Temporary Record</button>
@@ -318,34 +337,34 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                     <div>
                         <label for="barangay_name" class="block text-sm font-medium text-gray-700">Barangay</label>
                         <input type="text" name="barangay_name" id="barangay_name" value="<?php
-                            $barangayName = '';
-                            foreach ($barangays as $b) {
-                                if ($b['id'] == $barangay_id) {
-                                    $barangayName = $b['name'];
-                                    break;
-                                }
-                            }
-                            echo htmlspecialchars(strtoupper($barangayName));
-                        ?>" readonly
+                                                                                            $barangayName = '';
+                                                                                            foreach ($barangays as $b) {
+                                                                                                if ($b['id'] == $barangay_id) {
+                                                                                                    $barangayName = $b['name'];
+                                                                                                    break;
+                                                                                                }
+                                                                                            }
+                                                                                            echo htmlspecialchars(strtoupper($barangayName));
+                                                                                            ?>" readonly
                             class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Municipality -->
                     <div>
                         <label for="municipality" class="block text-sm font-medium text-gray-700">Municipality *</label>
-                        <input type="text" name="municipality" id="municipality" value="III" readonly
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
+                        <input type="text" name="municipality" id="municipality" value="SAN RAFAEL" readonly
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Province -->
                     <div>
                         <label for="province" class="block text-sm font-medium text-gray-700">Province *</label>
-                        <input type="text" name="province" id="province" value="SAN RAFAEL" readonly
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
+                        <input type="text" name="province" id="province" value="BULACAN" readonly
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Region -->
                     <div>
                         <label for="region" class="block text-sm font-medium text-gray-700">Region *</label>
                         <input type="text" name="region" id="region" value="III" readonly
-                        class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
+                            class="mt-1 block w-full rounded-md border-gray-300 shadow-sm bg-gray-100 focus:border-blue-500 focus:ring-blue-500">
                     </div>
                     <!-- Type of ID -->
                     <div class="relative">
@@ -423,13 +442,13 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                 <tbody class="bg-white divide-y divide-gray-200" id="temporaryRecordsTableBody">
                     <?php foreach ($records as $record): ?>
                         <?php
-                            $barangayName = '';
-                            foreach ($barangays as $b) {
-                                if ($b['id'] == $record['barangay_id']) {
-                                    $barangayName = $b['name'];
-                                    break;
-                                }
+                        $barangayName = '';
+                        foreach ($barangays as $b) {
+                            if ($b['id'] == $record['barangay_id']) {
+                                $barangayName = $b['name'];
+                                break;
                             }
+                        }
                         ?>
                         <tr
                             data-id="<?= htmlspecialchars($record['id']) ?>"
@@ -801,52 +820,52 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
 
                 // Send AJAX request
                 fetch(window.location.href, {
-                    method: 'POST',
-                    body: formData
-                })
-                .then(response => {
-                    if (!response.ok) {
-                        throw new Error('Network response was not ok');
-                    }
-                    return response.text();
-                })
-                .then(() => {
-                    // Show success message
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Success!',
-                        text: formData.get('record_id') ? 'Temporary record has been updated successfully.' : 'Temporary record has been added successfully.',
-                        confirmButtonColor: '#3085d6',
-                        confirmButtonText: 'OK',
-                        customClass: {
-                            confirmButton: 'swal2-confirm-button'
+                        method: 'POST',
+                        body: formData
+                    })
+                    .then(response => {
+                        if (!response.ok) {
+                            throw new Error('Network response was not ok');
                         }
-                    }).then(() => {
-                        // Reset form and button state
-                        form.reset();
+                        return response.text();
+                    })
+                    .then(() => {
+                        // Show success message
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Success!',
+                            text: formData.get('record_id') ? 'Temporary record has been updated successfully.' : 'Temporary record has been added successfully.',
+                            confirmButtonColor: '#3085d6',
+                            confirmButtonText: 'OK',
+                            customClass: {
+                                confirmButton: 'swal2-confirm-button'
+                            }
+                        }).then(() => {
+                            // Reset form and button state
+                            form.reset();
+                            submitBtn.textContent = originalBtnText;
+                            submitBtn.disabled = false;
+                            document.getElementById('record_id').value = '';
+
+                            // Reload the page to show updated data
+                            window.location.reload();
+                        });
+                    })
+                    .catch(error => {
+                        console.error('Error:', error);
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error!',
+                            text: 'An error occurred while processing your request.',
+                            confirmButtonColor: '#3085d6',
+                            customClass: {
+                                confirmButton: 'swal2-confirm-button'
+                            }
+                        });
+                        // Reset button state
                         submitBtn.textContent = originalBtnText;
                         submitBtn.disabled = false;
-                        document.getElementById('record_id').value = '';
-                        
-                        // Reload the page to show updated data
-                        window.location.reload();
                     });
-                })
-                .catch(error => {
-                    console.error('Error:', error);
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error!',
-                        text: 'An error occurred while processing your request.',
-                        confirmButtonColor: '#3085d6',
-                        customClass: {
-                            confirmButton: 'swal2-confirm-button'
-                        }
-                    });
-                    // Reset button state
-                    submitBtn.textContent = originalBtnText;
-                    submitBtn.disabled = false;
-                });
             } else {
                 Swal.fire({
                     icon: 'error',

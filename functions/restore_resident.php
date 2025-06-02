@@ -7,8 +7,8 @@ if (!isset($_SESSION['user_id'])) {
     exit;
 }
 
-// Check if request method is DELETE
-if ($_SERVER['REQUEST_METHOD'] !== 'DELETE') {
+// Check if request method is POST
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
     echo json_encode(['success' => false, 'message' => 'Invalid request method']);
     exit;
 }
@@ -47,53 +47,53 @@ try {
     $resident = $check_stmt->fetch(PDO::FETCH_ASSOC);
     
     if (!$resident) {
-        throw new Exception('Resident not found or unauthorized to archive');
+        throw new Exception('Resident not found or unauthorized to restore');
     }
 
-    // Archive the resident
-    $stmt = $pdo->prepare("UPDATE persons SET is_archived = TRUE WHERE id = ?");
+    // Restore the resident
+    $stmt = $pdo->prepare("UPDATE persons SET is_archived = FALSE WHERE id = ?");
     $stmt->execute([$resident_id]);
 
-    // If the resident has a user account, archive it as well
+    // If the resident has a user account, restore it as well
     if ($resident['user_id']) {
-        $stmt = $pdo->prepare("UPDATE users SET is_active = FALSE WHERE id = ?");
+        $stmt = $pdo->prepare("UPDATE users SET is_active = TRUE WHERE id = ?");
         $stmt->execute([$resident['user_id']]);
 
-        // Log the user account archiving in audit trail
+        // Log the user account restoration in audit trail
         $stmt = $pdo->prepare("
             INSERT INTO audit_trails (
                 user_id, action, table_name, record_id, description
             ) VALUES (
-                :user_id, 'ARCHIVE', 'users', :record_id, :description
+                :user_id, 'RESTORE', 'users', :record_id, :description
             )
         ");
         
         $stmt->execute([
             ':user_id' => $_SESSION['user_id'],
             ':record_id' => $resident['user_id'],
-            ':description' => "Archived user account for resident: {$resident['first_name']} {$resident['last_name']}"
+            ':description' => "Restored user account for resident: {$resident['first_name']} {$resident['last_name']}"
         ]);
     }
 
-    // Log the resident archiving in audit trail
+    // Log the resident restoration in audit trail
     $stmt = $pdo->prepare("
         INSERT INTO audit_trails (
             user_id, action, table_name, record_id, description
         ) VALUES (
-            :user_id, 'ARCHIVE', 'persons', :record_id, :description
+            :user_id, 'RESTORE', 'persons', :record_id, :description
         )
     ");
     
     $stmt->execute([
         ':user_id' => $_SESSION['user_id'],
         ':record_id' => $resident_id,
-        ':description' => "Archived resident: {$resident['first_name']} {$resident['last_name']}"
+        ':description' => "Restored resident: {$resident['first_name']} {$resident['last_name']}"
     ]);
 
     // Commit transaction
     $pdo->commit();
 
-    echo json_encode(['success' => true, 'message' => 'Resident and associated user account have been archived successfully']);
+    echo json_encode(['success' => true, 'message' => 'Resident and associated user account have been restored successfully']);
 
 } catch (Exception $e) {
     // Rollback transaction on error
@@ -103,7 +103,7 @@ try {
     
     echo json_encode([
         'success' => false, 
-        'message' => 'Error archiving resident: ' . $e->getMessage()
+        'message' => 'Error restoring resident: ' . $e->getMessage()
     ]);
 }
 ?> 
