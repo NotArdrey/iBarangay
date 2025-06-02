@@ -360,12 +360,14 @@ function captain_loadData(PDO $pdo, $bid) {
     $off = $allowed;
     $ph = str_repeat('?,',count($off)-1).'?';
     $stm = $pdo->prepare("
-      SELECT u.*,r.name role_name,
-             CASE WHEN u.is_active=1 THEN 'Active' ELSE 'Inactive' END status_text
+      SELECT u.*, r.name role_name,
+             CASE WHEN u.is_active=1 THEN 'Active' ELSE 'Inactive' END status_text,
+             p.first_name, p.last_name
         FROM users u
         LEFT JOIN roles r ON u.role_id=r.id
+        LEFT JOIN persons p ON u.id = p.user_id
        WHERE u.barangay_id=? AND u.role_id IN($ph)
-       ORDER BY u.role_id,u.last_name,u.first_name
+       ORDER BY u.role_id, p.last_name, p.first_name
     ");
     $stm->execute(array_merge([$bid],$off));
     $users = $stm->fetchAll(PDO::FETCH_ASSOC);

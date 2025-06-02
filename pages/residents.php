@@ -50,9 +50,6 @@ SELECT
     u.phone,
     u.role_id,
     u.barangay_id,
-    u.first_name AS user_first_name,
-    u.last_name AS user_last_name,
-    u.gender AS user_gender,
     u.is_active,
     u.last_login,
     u.govt_id_image,
@@ -725,11 +722,11 @@ require_once __DIR__ . "/../components/header.php";
             document.querySelectorAll('.viewBtn').forEach(btn => {
                 btn.addEventListener('click', () => {
                     const resident = JSON.parse(btn.dataset.res);
-                    document.getElementById('viewFirstName').textContent = resident.user_first_name || '—';
-                    document.getElementById('viewLastName').textContent = resident.user_last_name || '—';
+                    document.getElementById('viewFirstName').textContent = resident.person_first_name || resident.first_name || '—';
+                    document.getElementById('viewLastName').textContent = resident.person_last_name || resident.last_name || '—';
                     document.getElementById('viewEmail').textContent = resident.email || '—';
                     document.getElementById('viewPhone').textContent = resident.phone || '—';
-                    document.getElementById('viewGender').textContent = resident.user_gender || '—';
+                    document.getElementById('viewGender').textContent = resident.person_gender || resident.gender || '—';
                     document.getElementById('viewHouseholdNumber').textContent = resident.household_number || '—';
                     document.getElementById('viewPurok').textContent = resident.purok_name || '—';
                     document.getElementById('viewPhase').textContent = resident.phase || '—';

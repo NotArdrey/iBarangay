@@ -180,10 +180,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stmt = $pdo->prepare("
     SELECT 
         e.*, 
-        u.first_name AS creator_first_name, 
-        u.last_name AS creator_last_name
+        p.first_name AS creator_first_name, 
+        p.last_name AS creator_last_name
     FROM events e
     LEFT JOIN users u ON e.created_by_user_id = u.id
+    LEFT JOIN persons p ON u.id = p.user_id
     WHERE e.barangay_id = :bid 
     ORDER BY e.start_datetime DESC
 ");

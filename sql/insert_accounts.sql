@@ -7,20 +7,20 @@ DELETE FROM barangay_settings WHERE barangay_id IN (2, 4, 5, 8, 9);
 
 -- Insert additional admin accounts for different barangays
 -- Barangay Captains
-INSERT INTO users (email, password, role_id, barangay_id, first_name, last_name, gender, email_verified_at, is_active) VALUES
-    ('captain.banca@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 2, 'ANTONIO', 'CRUZ', 'Male', NOW(), TRUE),
-    ('captain.capihan@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 4, 'JOSE', 'SANTOS', 'Male', NOW(), TRUE),
-    ('captain.coral@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 5, 'MARIA', 'GARCIA', 'Female', NOW(), TRUE),
-    ('captain.diliman1@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 8, 'PEDRO', 'REYES', 'Male', NOW(), TRUE),
-    ('captain.diliman2@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 9, 'JUAN', 'DELA CRUZ', 'Male', NOW(), TRUE);
+INSERT INTO users (email, password, role_id, barangay_id, email_verified_at, is_active) VALUES
+    ('captain.banca@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 2, NOW(), TRUE),
+    ('captain.capihan@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 4, NOW(), TRUE),
+    ('captain.coral@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 5, NOW(), TRUE),
+    ('captain.diliman1@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 8, NOW(), TRUE),
+    ('captain.diliman2@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 3, 9, NOW(), TRUE);
 
 -- Barangay Secretaries
-INSERT INTO users (email, password, role_id, barangay_id, first_name, last_name, gender, email_verified_at, is_active) VALUES
-    ('secretary.banca@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 2, 'ANA', 'CRUZ', 'Female', NOW(), TRUE),
-    ('secretary.capihan@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 4, 'LUCIA', 'SANTOS', 'Female', NOW(), TRUE),
-    ('secretary.coral@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 5, 'ROSA', 'GARCIA', 'Female', NOW(), TRUE),
-    ('secretary.diliman1@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 8, 'SUSAN', 'REYES', 'Female', NOW(), TRUE),
-    ('secretary.diliman2@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 9, 'MARIA', 'DELA CRUZ', 'Female', NOW(), TRUE);
+INSERT INTO users (email, password, role_id, barangay_id, email_verified_at, is_active) VALUES
+    ('secretary.banca@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 2, NOW(), TRUE),
+    ('secretary.capihan@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 4, NOW(), TRUE),
+    ('secretary.coral@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 5, NOW(), TRUE),
+    ('secretary.diliman1@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 8, NOW(), TRUE),
+    ('secretary.diliman2@barangay.com', '$2y$10$aGiCCPg3BGBTV2cVVF2hNeLvvHD25/laK2w61P/RFv/yxPwmIuF3a', 4, 9, NOW(), TRUE);
 
 -- Insert corresponding person records for the admins
 INSERT INTO persons (user_id, first_name, last_name, birth_date, birth_place, gender, civil_status, citizenship, religion, education_level, occupation, contact_number) VALUES
