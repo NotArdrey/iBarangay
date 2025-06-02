@@ -32,6 +32,19 @@ $services = $stmt->fetchAll();
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+    <style>
+        .photo-required {
+            border-color: #fca5a5 !important;
+            background-color: #fef2f2 !important;
+        }
+        .photo-valid {
+            border-color: #86efac !important;
+            background-color: #f0fdf4 !important;
+        }
+        body {
+            font-family: 'Poppins', sans-serif;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
@@ -57,18 +70,19 @@ $services = $stmt->fetchAll();
                                 <h3 class="text-lg font-medium"><?php echo htmlspecialchars($service['name']); ?></h3>
                                 <?php if (!empty($service['service_photo'])): ?>
                                     <span class="text-xs text-green-600"><i class="fas fa-image mr-1"></i>Photo attached</span>
+                                <?php else: ?>
+                                    <span class="text-xs text-red-600"><i class="fas fa-exclamation-triangle mr-1"></i>No photo</span>
                                 <?php endif; ?>
                             </div>
                         </div>
                         <div class="flex space-x-2">
-                       
-                            <button onclick="viewService(<?php echo $service['id']; ?>)" class="text-blue-500">
+                            <button onclick="viewService(<?php echo $service['id']; ?>)" class="text-blue-500 hover:text-blue-700" title="View Details">
                                 <i class="fas fa-eye"></i>
                             </button>
-                            <button onclick="editService(<?php echo $service['id']; ?>)" class="text-yellow-500">
+                            <button onclick="editService(<?php echo $service['id']; ?>)" class="text-yellow-500 hover:text-yellow-700" title="Edit Service">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button onclick="deleteService(<?php echo $service['id']; ?>)" class="text-red-500">
+                            <button onclick="deleteService(<?php echo $service['id']; ?>)" class="text-red-500 hover:text-red-700" title="Delete Service">
                                 <i class="fas fa-trash"></i>
                             </button>
                         </div>
@@ -164,21 +178,23 @@ $services = $stmt->fetchAll();
                             <label class="block text-gray-700 text-sm font-bold mb-2" for="servicePhoto">
                                 Service Photo <span class="text-red-500">*</span>
                             </label>
-                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                            <div id="photoContainer" class="border-2 border-dashed border-gray-300 rounded-lg p-4">
                                 <input type="file" id="servicePhoto" name="service_photo" accept="image/*" required
                                        class="hidden" onchange="handlePhotoUpload(this)">
                                 <div id="photoUploadArea" class="text-center cursor-pointer" onclick="document.getElementById('servicePhoto').click()">
                                     <i class="fas fa-cloud-upload-alt text-4xl text-gray-400 mb-2"></i>
                                     <p class="text-gray-500">Click to upload service photo</p>
                                     <p class="text-xs text-gray-400">PNG, JPG, JPEG up to 5MB</p>
+                                    <p class="text-xs text-red-500 mt-1">* This field is required</p>
                                 </div>
                                 <div id="photoPreview" class="hidden mt-4">
                                     <img id="previewImage" src="" alt="Preview" class="w-full h-32 object-cover rounded">
-                                    <button type="button" onclick="removePhoto()" class="mt-2 text-red-500 text-sm">
+                                    <button type="button" onclick="removePhoto()" class="mt-2 text-red-500 text-sm hover:text-red-700">
                                         <i class="fas fa-times mr-1"></i>Remove Photo
                                     </button>
                                 </div>
                             </div>
+                            <div id="photoValidationMessage" class="text-xs mt-1 hidden"></div>
                         </div>
                     </div>
 
@@ -257,8 +273,8 @@ $services = $stmt->fetchAll();
                 </div>
 
                 <div class="flex justify-end mt-6">
-                    <button type="submit" class="w-full px-4 py-3 bg-blue-500 text-white rounded-md text-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
-                        Add Service
+                    <button type="submit" id="submitServiceBtn" class="w-full px-4 py-3 bg-blue-500 text-white rounded-md text-lg font-semibold hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed">
+                        <i class="fas fa-plus-circle mr-2"></i>Add Service
                     </button>
                 </div>
             </form>
@@ -358,7 +374,7 @@ $services = $stmt->fetchAll();
                                 <option value="fa-heart">❤️ Health</option>
                                 <option value="fa-graduation-cap">🎓 Education</option>
                                 <option value="fa-hands-helping">🤝 Social Services</option>
-                                <option value="fa-users">👥 community</option>
+                                <option value="fa-users">👥 Community</option>
                                 <option value="fa-home">🏠 Housing</option>
                                 <option value="fa-briefcase">💼 Employment</option>
                                 <option value="fa-seedling">🌱 Environment</option>
@@ -366,6 +382,10 @@ $services = $stmt->fetchAll();
                                 <option value="fa-palette">🎨 Arts & Culture</option>
                                 <option value="fa-tools">🔧 Technical</option>
                                 <option value="fa-hand-holding-usd">💰 Financial</option>
+                                <option value="fa-gavel">⚖️ Legal</option>
+                                <option value="fa-ambulance">🚑 Emergency</option>
+                                <option value="fa-building">🏢 Business</option>
+                                <option value="fa-file-alt">📄 Documentation</option>
                             </select>
                         </div>
                         
@@ -373,7 +393,7 @@ $services = $stmt->fetchAll();
                             <label class="block text-gray-700 text-sm font-bold mb-2" for="editServicePhoto">
                                 Update Service Photo (Optional)
                             </label>
-                            <div class="border-2 border-dashed border-gray-300 rounded-lg p-4">
+                            <div id="editPhotoContainer" class="border-2 border-dashed border-gray-300 rounded-lg p-4">
                                 <input type="file" id="editServicePhoto" name="service_photo" accept="image/*"
                                        class="hidden" onchange="handleEditPhotoUpload(this)">
                                 <div id="editPhotoUploadArea" class="text-center cursor-pointer" onclick="document.getElementById('editServicePhoto').click()">
@@ -383,7 +403,7 @@ $services = $stmt->fetchAll();
                                 </div>
                                 <div id="editPhotoPreview" class="hidden mt-4">
                                     <img id="editPreviewImage" src="" alt="Preview" class="w-full h-32 object-cover rounded">
-                                    <button type="button" onclick="removeEditPhoto()" class="mt-2 text-red-500 text-sm">
+                                    <button type="button" onclick="removeEditPhoto()" class="mt-2 text-red-500 text-sm hover:text-red-700">
                                         <i class="fas fa-times mr-1"></i>Remove Photo
                                     </button>
                                 </div>
@@ -434,7 +454,7 @@ $services = $stmt->fetchAll();
 
                 <div class="flex justify-end mt-6">
                     <button type="submit" class="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline">
-                        Update Service
+                        <i class="fas fa-save mr-2"></i>Update Service
                     </button>
                 </div>
             </form>
@@ -442,33 +462,35 @@ $services = $stmt->fetchAll();
     </div>
 
     <script>
-    // Photo Upload Functions
+    // Enhanced Photo Upload Functions with Comprehensive Validation
     function handlePhotoUpload(input) {
         const file = input.files[0];
+        const photoContainer = document.getElementById('photoContainer');
+        const validationMessage = document.getElementById('photoValidationMessage');
+        
         if (file) {
+            // Reset previous validation states
+            clearValidationState();
+            
             // Validate file size (5MB limit)
             if (file.size > 5 * 1024 * 1024) {
-                Swal.fire({
-                    title: 'Error!',
-                    text: 'File size must be less than 5MB',
-                    icon: 'error',
-                    confirmButtonText: 'OK'
-                });
+                showValidationError('File size must be less than 5MB', true); // Show popup for upload errors
                 input.value = '';
-                return;
+                return false;
             }
             
             // Validate file type
-            if (!file.type.startsWith('image/')) {
-                Swal.fire({
-                    title: 'Error!',
-                    text: 'Please select a valid image file',
-                    icon: 'error',
-                    confirmButtonText: 'OK'
-                });
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+            if (!allowedTypes.includes(file.type)) {
+                showValidationError('Please select a valid image file (PNG, JPG, or JPEG only)', true); // Show popup for upload errors
                 input.value = '';
-                return;
+                return false;
             }
+            
+            // Show success state
+            photoContainer.classList.remove('photo-required');
+            photoContainer.classList.add('photo-valid');
+            showValidationSuccess('Valid image selected');
             
             const reader = new FileReader();
             reader.onload = function(e) {
@@ -477,7 +499,12 @@ $services = $stmt->fetchAll();
                 document.getElementById('photoPreview').classList.remove('hidden');
             };
             reader.readAsDataURL(file);
+            
+            // Enable submit button
+            updateSubmitButton();
+            return true;
         }
+        return false;
     }
 
     function removePhoto() {
@@ -485,6 +512,19 @@ $services = $stmt->fetchAll();
         document.getElementById('photoUploadArea').style.display = 'block';
         document.getElementById('photoPreview').classList.add('hidden');
         document.getElementById('previewImage').src = '';
+        
+        // Reset validation state without popup
+        const photoContainer = document.getElementById('photoContainer');
+        photoContainer.classList.remove('photo-valid');
+        photoContainer.classList.add('photo-required');
+        
+        // Only show visual indication, no popup
+        const validationMessage = document.getElementById('photoValidationMessage');
+        validationMessage.textContent = 'Service photo is required';
+        validationMessage.className = 'text-xs mt-1 text-red-500';
+        validationMessage.classList.remove('hidden');
+        
+        updateSubmitButton();
     }
 
     function handleEditPhotoUpload(input) {
@@ -499,19 +539,20 @@ $services = $stmt->fetchAll();
                     confirmButtonText: 'OK'
                 });
                 input.value = '';
-                return;
+                return false;
             }
             
             // Validate file type
-            if (!file.type.startsWith('image/')) {
+            const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+            if (!allowedTypes.includes(file.type)) {
                 Swal.fire({
                     title: 'Error!',
-                    text: 'Please select a valid image file',
+                    text: 'Please select a valid image file (PNG, JPG, or JPEG only)',
                     icon: 'error',
                     confirmButtonText: 'OK'
                 });
                 input.value = '';
-                return;
+                return false;
             }
             
             const reader = new FileReader();
@@ -522,7 +563,9 @@ $services = $stmt->fetchAll();
                 document.getElementById('editPhotoPreview').classList.remove('hidden');
             };
             reader.readAsDataURL(file);
+            return true;
         }
+        return false;
     }
 
     function removeEditPhoto() {
@@ -533,15 +576,83 @@ $services = $stmt->fetchAll();
         document.getElementById('editPreviewImage').src = '';
     }
 
+    // Validation Helper Functions
+    function showValidationError(message, showPopup = true) {
+        const validationMessage = document.getElementById('photoValidationMessage');
+        const photoContainer = document.getElementById('photoContainer');
+        
+        validationMessage.textContent = message;
+        validationMessage.className = 'text-xs mt-1 text-red-500';
+        validationMessage.classList.remove('hidden');
+        
+        photoContainer.classList.add('photo-required');
+        photoContainer.classList.remove('photo-valid');
+        
+        // Only show popup if explicitly requested (during file upload errors)
+        if (showPopup) {
+            Swal.fire({
+                title: 'Validation Error!',
+                text: message,
+                icon: 'error',
+                confirmButtonText: 'OK',
+                timer: 3000,
+                timerProgressBar: true
+            });
+        }
+    }
+
+    function showValidationSuccess(message) {
+        const validationMessage = document.getElementById('photoValidationMessage');
+        
+        validationMessage.textContent = message;
+        validationMessage.className = 'text-xs mt-1 text-green-500';
+        validationMessage.classList.remove('hidden');
+    }
+
+    function clearValidationState() {
+        const validationMessage = document.getElementById('photoValidationMessage');
+        const photoContainer = document.getElementById('photoContainer');
+        
+        validationMessage.classList.add('hidden');
+        photoContainer.classList.remove('photo-required', 'photo-valid');
+    }
+
+    function updateSubmitButton() {
+        const submitBtn = document.getElementById('submitServiceBtn');
+        const photoInput = document.getElementById('servicePhoto');
+        
+        if (!photoInput.files || photoInput.files.length === 0) {
+            submitBtn.disabled = true;
+            submitBtn.classList.add('opacity-50', 'cursor-not-allowed');
+            submitBtn.innerHTML = '<i class="fas fa-exclamation-triangle mr-2"></i>Photo Required';
+        } else {
+            submitBtn.disabled = false;
+            submitBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+            submitBtn.innerHTML = '<i class="fas fa-plus-circle mr-2"></i>Add Service';
+        }
+    }
+
     // Modal Functions
     function showAddServiceModal() {
         document.getElementById('addServiceModal').style.display = 'flex';
+        // Initialize validation state without showing error popup
+        setTimeout(() => {
+            const photoContainer = document.getElementById('photoContainer');
+            photoContainer.classList.add('photo-required');
+            // Only show visual indication, no popup
+            const validationMessage = document.getElementById('photoValidationMessage');
+            validationMessage.textContent = 'Service photo is required';
+            validationMessage.className = 'text-xs mt-1 text-red-500';
+            validationMessage.classList.remove('hidden');
+            updateSubmitButton();
+        }, 100);
     }
 
     function closeAddServiceModal() {
         document.getElementById('addServiceModal').style.display = 'none';
         document.getElementById('addServiceForm').reset();
         removePhoto();
+        clearValidationState();
     }
 
     function closeViewServiceModal() {
@@ -553,9 +664,62 @@ $services = $stmt->fetchAll();
         removeEditPhoto();
     }
 
-    // Form Submissions
+    // Enhanced Form Submission with Comprehensive Validation
     function submitService(event) {
         event.preventDefault();
+        
+        // Validate photo is uploaded
+        const photoInput = document.getElementById('servicePhoto');
+        if (!photoInput.files || photoInput.files.length === 0) {
+            Swal.fire({
+                title: 'Photo Required!',
+                text: 'Please upload a service photo before submitting.',
+                icon: 'warning',
+                confirmButtonText: 'OK'
+            });
+            // Scroll to photo upload area
+            document.getElementById('servicePhoto').closest('.space-y-4').scrollIntoView({ 
+                behavior: 'smooth' 
+            });
+            return false;
+        }
+        
+        // Validate file size and type one more time before submission
+        const file = photoInput.files[0];
+        if (file.size > 5 * 1024 * 1024) {
+            showValidationError('File size must be less than 5MB', true);
+            return false;
+        }
+        
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
+        if (!allowedTypes.includes(file.type)) {
+            showValidationError('Please select a valid image file (PNG, JPG, or JPEG only)', true);
+            return false;
+        }
+        
+        // Validate other required fields
+        const requiredFields = [
+            { id: 'serviceName', name: 'Service Name' },
+            { id: 'serviceDescription', name: 'Description' },
+            { id: 'serviceRequirements', name: 'Requirements' },
+            { id: 'serviceGuide', name: 'Step-by-Step Guide' },
+            { id: 'serviceProcessingTime', name: 'Processing Time' },
+            { id: 'serviceFees', name: 'Fees' }
+        ];
+        
+        for (let field of requiredFields) {
+            const element = document.getElementById(field.id);
+            if (!element.value.trim()) {
+                Swal.fire({
+                    title: 'Missing Information!',
+                    text: `${field.name} is required.`,
+                    icon: 'warning',
+                    confirmButtonText: 'OK'
+                });
+                element.focus();
+                return false;
+            }
+        }
         
         const formData = new FormData(event.target);
         
@@ -565,12 +729,25 @@ $services = $stmt->fetchAll();
         formData.append('availability', document.getElementById('serviceAvailability').value);
         formData.append('additional_notes', document.getElementById('additionalNotes').value);
 
+        // Show loading indicator
+        Swal.fire({
+            title: 'Uploading...',
+            text: 'Please wait while we save your service.',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+
         fetch('../functions/add_service.php', {
             method: 'POST',
             body: formData
         })
         .then(response => response.json())
         .then(data => {
+            Swal.close(); // Close loading indicator
             if (data.success) {
                 Swal.fire({
                     title: 'Success!',
@@ -590,6 +767,7 @@ $services = $stmt->fetchAll();
             }
         })
         .catch(error => {
+            Swal.close(); // Close loading indicator
             console.error('Error:', error);
             Swal.fire({
                 title: 'Error!',
@@ -783,12 +961,25 @@ $services = $stmt->fetchAll();
         event.preventDefault();
         const formData = new FormData(event.target);
         
+        // Show loading indicator
+        Swal.fire({
+            title: 'Updating...',
+            text: 'Please wait while we update your service.',
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            showConfirmButton: false,
+            didOpen: () => {
+                Swal.showLoading();
+            }
+        });
+        
         fetch('../functions/update_service.php', {
             method: 'POST',
             body: formData
         })
         .then(response => response.json())
         .then(data => {
+            Swal.close(); // Close loading indicator
             if (data.success) {
                 Swal.fire({
                     title: 'Success!',
@@ -808,6 +999,7 @@ $services = $stmt->fetchAll();
             }
         })
         .catch(error => {
+            Swal.close(); // Close loading indicator
             console.error('Error:', error);
             Swal.fire({
                 title: 'Error!',
@@ -830,6 +1022,18 @@ $services = $stmt->fetchAll();
             confirmButtonText: 'Yes, delete it!'
         }).then((result) => {
             if (result.isConfirmed) {
+                // Show loading indicator
+                Swal.fire({
+                    title: 'Deleting...',
+                    text: 'Please wait while we delete the service.',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+                
                 fetch('../functions/delete_service.php', {
                     method: 'POST',
                     headers: {
@@ -839,6 +1043,7 @@ $services = $stmt->fetchAll();
                 })
                 .then(response => response.json())
                 .then(data => {
+                    Swal.close(); // Close loading indicator
                     if (data.success) {
                         Swal.fire(
                             'Deleted!',
@@ -856,6 +1061,7 @@ $services = $stmt->fetchAll();
                     }
                 })
                 .catch(error => {
+                    Swal.close(); // Close loading indicator
                     console.error('Error:', error);
                     Swal.fire(
                         'Error!',
@@ -866,6 +1072,48 @@ $services = $stmt->fetchAll();
             }
         });
     }
+
+    // Initialize page
+    document.addEventListener('DOMContentLoaded', function() {
+        console.log('Manage Services page loaded');
+        
+        // Add event listeners for photo input
+        const servicePhoto = document.getElementById('servicePhoto');
+        if (servicePhoto) {
+            servicePhoto.addEventListener('change', function() {
+                updateSubmitButton();
+            });
+        }
+        
+        // Initialize submit button state
+        updateSubmitButton();
+    });
+
+    // Close modals when clicking outside
+    window.addEventListener('click', function(event) {
+        const addModal = document.getElementById('addServiceModal');
+        const viewModal = document.getElementById('viewServiceModal');
+        const editModal = document.getElementById('editServiceModal');
+        
+        if (event.target === addModal) {
+            closeAddServiceModal();
+        }
+        if (event.target === viewModal) {
+            closeViewServiceModal();
+        }
+        if (event.target === editModal) {
+            closeEditServiceModal();
+        }
+    });
+
+    // Escape key to close modals
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape') {
+            closeAddServiceModal();
+            closeViewServiceModal();
+            closeEditServiceModal();
+        }
+    });
     </script>
 </body>
 </html>

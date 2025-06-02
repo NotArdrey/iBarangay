@@ -803,7 +803,7 @@ $completedRequests = $stmtHist->fetchAll();
   </div>
 
   <!-- Document Prices Modal -->
-  <div id="pricesModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); overflow-y: auto;">
+  <div id="pricesModal" class="hidden" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background-color: rgba(0, 0, 0, 0.5); z-index: 9999; overflow-y: auto;">
     <div class="flex items-center justify-center min-h-screen px-4 py-8">
       <div class="relative w-full max-w-4xl bg-white rounded-lg shadow-xl">
         <div class="p-6">
@@ -1226,11 +1226,10 @@ $completedRequests = $stmtHist->fetchAll();
             .then(data => {
               if (data.success) {
                 const r = data.request;
-                // Show modal with request details
                 Swal.fire({
                   title: 'Document Request Details',
                   html: `
-                    <div class="text-left">
+                    <div class='text-left'>
                       <p><strong>Name:</strong> ${r.full_name}</p>
                       <p><strong>Document:</strong> ${r.document_name}</p>
                       <p><strong>Contact:</strong> ${r.contact_number || 'N/A'}</p>
@@ -1247,6 +1246,9 @@ $completedRequests = $stmtHist->fetchAll();
               } else {
                 Swal.fire('Error', data.message || 'Unable to load details.', 'error');
               }
+            })
+            .catch(error => {
+              Swal.fire('Error', 'An error occurred while fetching the details.', 'error');
             });
         });
       });
