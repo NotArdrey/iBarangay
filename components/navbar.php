@@ -381,7 +381,7 @@ if (!isset($user_info) || !$user_info) {
       </div>
       <div class="dropdown">
         <a href="../pages/edit_account.php">Edit Account</a>
-        <a href="../functions/logout.php">Logout</a>
+        <a href="#" onclick="confirmLogout(event)">Logout</a>
       </div>
     </div>
     <div id="scheduleNotif" style="position: relative;">
@@ -425,6 +425,25 @@ if (!isset($user_info) || !$user_info) {
       });
     }
   });
+  
+  // Logout confirmation function
+  function confirmLogout(event) {
+    event.preventDefault();
+    Swal.fire({
+      title: 'Ready to leave?',
+      text: "Select 'Logout' below if you are ready to end your current session.",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#d33',
+      cancelButtonColor: '#3085d6',
+      confirmButtonText: 'Logout',
+      cancelButtonText: 'Cancel'
+    }).then((result) => {
+      if (result.isConfirmed) {
+        window.location.href = '../functions/logout.php';
+      }
+    });
+  }
   
   // Example AJAX to fetch schedule notifications count
   function updateScheduleNotif(){
