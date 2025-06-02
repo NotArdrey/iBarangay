@@ -11,10 +11,9 @@ $barangay_name = "Barangay";
 $barangay_id = 32; 
 
 if ($user_id) {
-    // Use persons for name fields
     $sql = "SELECT p.first_name, p.last_name, u.barangay_id, b.name as barangay_name 
-            FROM users u
-            LEFT JOIN persons p ON p.user_id = u.id
+            FROM users u 
+            LEFT JOIN persons p ON u.id = p.user_id
             LEFT JOIN barangay b ON u.barangay_id = b.id 
             WHERE u.id = ?";
     $stmt = $conn->prepare($sql);
@@ -75,10 +74,10 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 }
 $stmt = null;
 
-// Update council query to use persons for names
+
 $sql = "SELECT p.first_name, p.last_name, r.name as role
-        FROM users u
-        JOIN persons p ON p.user_id = u.id
+        FROM users u 
+        JOIN persons p ON u.id = p.user_id
         JOIN roles r ON u.role_id = r.id 
         WHERE u.barangay_id = ? 
           AND r.name IN ('barangay_captain','barangay_secretary','barangay_treasurer','barangay_councilor')
