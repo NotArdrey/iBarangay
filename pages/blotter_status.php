@@ -49,14 +49,15 @@ require "../components/navbar.php";
 $columnCheck = $pdo->query("SHOW COLUMNS FROM blotter_cases LIKE 'hearing_attempts'");
 $hasNewColumns = $columnCheck->rowCount() > 0;
 
-// Modified SQL query to fix GROUP BY issues and get user cases properly
+// Fetch all cases where the user is a participant (either as person or external)
 $sql = "
     SELECT bc.*, 
            GROUP_CONCAT(DISTINCT cc.name SEPARATOR ', ') AS categories,
            bp.role,
-           u.email as user_email";
-
-// Add conditional columns if they exist
+           p.id AS person_id,
+           ep.id AS external_id,
+           u.email as user_email
+";
 if ($hasNewColumns) {
     $sql .= ",
            bc.hearing_attempts,
@@ -70,20 +71,19 @@ if ($hasNewColumns) {
            FALSE as is_cfa_eligible,
            NULL as cfa_reason";
 }
-
 $sql .= "
     FROM blotter_cases bc
     JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
-    JOIN persons p ON bp.person_id = p.id
+    LEFT JOIN persons p ON bp.person_id = p.id
+    LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
     LEFT JOIN users u ON p.user_id = u.id
     LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
     LEFT JOIN case_categories cc ON bcc.category_id = cc.id
-    WHERE p.user_id = ?
+    WHERE (p.user_id = ? OR ep.id IS NOT NULL)
       AND bc.status != 'deleted'
-    GROUP BY bc.id, bp.role, u.email
+    GROUP BY bc.id, bp.id
     ORDER BY bc.created_at DESC
 ";
-
 try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$user_id]);
@@ -103,10 +103,11 @@ foreach ($cases as &$case) {
     // Fetch latest schedule proposal for this case
     $stmt2 = $pdo->prepare("
         SELECT sp.*, 
-            COALESCE(CONCAT(u.first_name, ' ', u.last_name), 'System') as proposed_by_name,
+            COALESCE(CONCAT(p.first_name, ' ', p.last_name), 'System') as proposed_by_name,
             sp.proposed_by_role_id as confirmed_by_role
         FROM schedule_proposals sp
         LEFT JOIN users u ON sp.proposed_by_user_id = u.id
+        LEFT JOIN persons p ON u.id = p.user_id
         WHERE sp.blotter_case_id = ?
         ORDER BY sp.created_at DESC
         LIMIT 1
@@ -128,26 +129,29 @@ foreach ($cases as &$case) {
         $case['conflict_reason'] = $proposal['conflict_reason'];
         $case['confirmed_by_role'] = $proposal['confirmed_by_role'] ?? null;
     }
-    
-    // Check if user has email for summons delivery method
     $case['has_email'] = !empty($case['user_email']);
-    
-    // Fetch participant notifications/summons for users without email
-    if (!$case['has_email'] && isset($case['current_proposal_id'])) {
+
+    // Fetch participant notification for this participant (person or external)
+    $participant_id = null;
+    if (!empty($case['person_id'])) {
+        $stmt_pid = $pdo->prepare("SELECT id FROM blotter_participants WHERE blotter_case_id = ? AND person_id = ?");
+        $stmt_pid->execute([$case['id'], $case['person_id']]);
+        $participant_id = $stmt_pid->fetchColumn();
+    } elseif (!empty($case['external_id'])) {
+        $stmt_pid = $pdo->prepare("SELECT id FROM blotter_participants WHERE blotter_case_id = ? AND external_participant_id = ?");
+        $stmt_pid->execute([$case['id'], $case['external_id']]);
+        $participant_id = $stmt_pid->fetchColumn();
+    }
+    if ($participant_id) {
         $stmt3 = $pdo->prepare("
             SELECT pn.*, bp.role 
             FROM participant_notifications pn
             JOIN blotter_participants bp ON pn.participant_id = bp.id
-            WHERE pn.blotter_case_id = ? AND bp.person_id = (
-                SELECT person_id FROM blotter_participants 
-                WHERE blotter_case_id = ? AND person_id IN (
-                    SELECT id FROM persons WHERE user_id = ?
-                )
-            )
+            WHERE pn.blotter_case_id = ? AND pn.participant_id = ?
             ORDER BY pn.created_at DESC
             LIMIT 1
         ");
-        $stmt3->execute([$case['id'], $case['id'], $user_id]);
+        $stmt3->execute([$case['id'], $participant_id]);
         $case['summons_info'] = $stmt3->fetch(PDO::FETCH_ASSOC);
     }
 }
@@ -1329,6 +1333,9 @@ unset($case);
                     break;
                 case 'database_error':
                     text = 'A database error occurred. Please try again later.';
+                    break;
+                case 'already_confirmed':
+                    text = 'This schedule has already been confirmed by all parties. No further action is needed.';
                     break;
                 default:
                     text = 'An error occurred while processing your request.';
