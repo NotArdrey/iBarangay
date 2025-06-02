@@ -1042,7 +1042,7 @@ CREATE TABLE blotter_cases (
     incident_date DATETIME,
     location VARCHAR(200),
     description TEXT,
-    status ENUM('pending', 'open', 'closed', 'completed', 'transferred', 'solved', 'endorsed_to_court', 'cfa_eligible', 'deleted') DEFAULT 'pending',
+    status ENUM('pending', 'open', 'closed', 'completed', 'transferred', 'solved', 'endorsed_to_court', 'cfa_eligible', 'dismissed', 'deleted') DEFAULT 'pending',
     scheduling_status ENUM('none', 'pending_schedule', 'schedule_proposed', 'schedule_confirmed', 'scheduled', 'completed', 'cancelled') DEFAULT 'none',
     barangay_id INT,
     reported_by_person_id INT,
@@ -1275,12 +1275,15 @@ CREATE TABLE schedule_proposals (
     user_remarks TEXT,
     captain_remarks TEXT,
     conflict_reason TEXT,
+    complainant_confirmed  BOOLEAN DEFAULT FALSE,
+    respondent_confirmed  BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id),
     FOREIGN KEY (proposed_by_user_id) REFERENCES users(id),
     FOREIGN KEY (confirmed_by_role) REFERENCES roles(id)
 );
+
 
 -- Email logs
 CREATE TABLE email_logs (
@@ -1537,132 +1540,7 @@ CREATE INDEX idx_events_barangay_date ON events(barangay_id, start_datetime);
 CREATE INDEX idx_audit_trails_user_action ON audit_trails(user_id, action, action_timestamp);
 CREATE INDEX idx_notifications_user_read ON notifications(user_id, is_read);
 
-/*-------------------------------------------------------------
-  SECTION 9: ADDITIONAL VIEWS FOR COMMON QUERIES
-  -------------------------------------------------------------*/
 
--- View for person summary with address
-CREATE VIEW person_summary AS
-SELECT 
-    p.id,
-    p.first_name,
-    p.middle_name,
-    p.last_name,
-    p.suffix,
-    p.birth_date,
-    p.gender,
-    p.civil_status,
-    p.contact_number,
-    a.house_no,
-    a.street,
-    a.subdivision,
-    b.name as barangay_name,
-    a.residency_type,
-    p.occupation,
-    p.monthly_income
-FROM persons p
-LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
-LEFT JOIN barangay b ON a.barangay_id = b.id;
-
--- View for active document requests with person and document info
-CREATE VIEW active_document_requests AS
-SELECT 
-    dr.id,
-    dr.request_date,
-    dr.status,
-    dr.price,
-    p.first_name,
-    p.last_name,
-    dt.name as document_type,
-    b.name as barangay_name,
-    dr.remarks
-FROM document_requests dr
-JOIN persons p ON dr.person_id = p.id
-JOIN document_types dt ON dr.document_type_id = dt.id
-JOIN barangay b ON dr.barangay_id = b.id
-WHERE dr.status NOT IN ('completed', 'cancelled');
-
--- View for household information
-CREATE VIEW household_info AS
-SELECT 
-    h.id as household_id,
-    h.household_number,
-    b.name as barangay_name,
-    p.first_name as head_first_name,
-    p.last_name as head_last_name,
-    h.household_size,
-    COUNT(hm.person_id) as actual_members
-FROM households h
-LEFT JOIN barangay b ON h.barangay_id = b.id
-LEFT JOIN persons p ON h.household_head_person_id = p.id
-LEFT JOIN household_members hm ON h.id = hm.household_id
-GROUP BY h.id, h.household_number, b.name, p.first_name, p.last_name, h.household_size;
-
--- View for blotter case summary
-CREATE VIEW blotter_case_summary AS
-SELECT 
-    bc.id,
-    bc.case_number,
-    bc.incident_date,
-    bc.status,
-    bc.scheduling_status,
-    b.name as barangay_name,
-    GROUP_CONCAT(cc.name SEPARATOR ', ') as categories,
-    COUNT(DISTINCT bp.id) as participant_count
-FROM blotter_cases bc
-LEFT JOIN barangay b ON bc.barangay_id = b.id
-LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
-LEFT JOIN case_categories cc ON bcc.category_id = cc.id
-LEFT JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
-GROUP BY bc.id, bc.case_number, bc.incident_date, bc.status, bc.scheduling_status, b.name;
-
-
--- Add missing participant_notifications table
-CREATE TABLE participant_notifications (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    blotter_case_id INT NOT NULL,
-    participant_id INT NOT NULL,
-    email_address VARCHAR(255),
-    phone_number VARCHAR(20),
-    notification_type ENUM('summons', 'hearing_notice', 'reminder') DEFAULT 'summons',
-    sent_at DATETIME,
-    confirmed BOOLEAN DEFAULT FALSE,
-    confirmed_at DATETIME NULL,
-    confirmation_token VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
-    FOREIGN KEY (participant_id) REFERENCES blotter_participants(id) ON DELETE CASCADE,
-    UNIQUE KEY uk_case_participant_type (blotter_case_id, participant_id, notification_type),
-    INDEX idx_confirmation_token (confirmation_token),
-    INDEX idx_sent_confirmed (sent_at, confirmed)
-);
-
--- Insert sample data for existing blotter cases to prevent errors
--- This assumes you have blotter cases with IDs 1-4 and corresponding participants
-INSERT INTO participant_notifications (blotter_case_id, participant_id, email_address, notification_type, confirmed)
-SELECT 
-    bp.blotter_case_id,
-    bp.id as participant_id,
-    CASE 
-        WHEN p.user_id IS NOT NULL THEN u.email
-        ELSE CONCAT('external_', ep.id, '@placeholder.com')
-    END as email_address,
-    'summons' as notification_type,
-    CASE 
-        WHEN RAND() > 0.3 THEN TRUE 
-        ELSE FALSE 
-    END as confirmed
-FROM blotter_participants bp
-LEFT JOIN persons p ON bp.person_id = p.id
-LEFT JOIN users u ON p.user_id = u.id
-LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
-WHERE bp.blotter_case_id IN (
-    SELECT id FROM blotter_cases 
-    WHERE status IN ('pending', 'open') 
-    AND scheduling_status IN ('none', 'pending_schedule', 'schedule_proposed')
-)
-ON DUPLICATE KEY UPDATE confirmed = VALUES(confirmed);
 
 
 
@@ -1691,63 +1569,11 @@ ADD COLUMN notification_sent BOOLEAN DEFAULT FALSE AFTER status,
 ADD COLUMN notification_sent_at DATETIME NULL AFTER notification_sent,
 ADD FOREIGN KEY (proposed_by_role_id) REFERENCES roles(id) ON DELETE CASCADE;
 
--- Add new table for schedule notifications
-CREATE TABLE schedule_notifications (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    schedule_proposal_id INT NOT NULL,
-    notified_user_id INT NOT NULL,
-    notification_type ENUM('proposal', 'confirmation', 'rejection') NOT NULL,
-    is_read BOOLEAN DEFAULT FALSE,
-    read_at DATETIME NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (schedule_proposal_id) REFERENCES schedule_proposals(id) ON DELETE CASCADE,
-    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
-);
-CREATE TABLE case_notifications (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    blotter_case_id INT NOT NULL,
-    notified_user_id INT NOT NULL,
-    notification_type ENUM('case_filed', 'case_accepted', 'hearing_scheduled', 'signature_required') NOT NULL,
-    is_read BOOLEAN DEFAULT FALSE,
-    read_at DATETIME NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
-    FOREIGN KEY (notified_user_id) REFERENCES users(id) ON DELETE CASCADE
-);
 -- Add indexes for better performance
 CREATE INDEX idx_schedule_proposals_status ON schedule_proposals(status);
-CREATE INDEX idx_schedule_notifications_user ON schedule_notifications(notified_user_id, is_read);
 CREATE INDEX idx_blotter_cases_dismissed ON blotter_cases(dismissed_by_user_id, dismissal_date);
 
 
--- Add missing columns to document_requests table
-ALTER TABLE document_requests 
-ADD COLUMN user_id INT AFTER person_id,
-ADD COLUMN first_name VARCHAR(50) AFTER user_id,
-ADD COLUMN middle_name VARCHAR(50) AFTER first_name,
-ADD COLUMN last_name VARCHAR(50) AFTER middle_name,
-ADD COLUMN suffix VARCHAR(10) AFTER last_name,
-ADD COLUMN gender ENUM('Male', 'Female', 'Others') AFTER suffix,
-ADD COLUMN civil_status VARCHAR(50) AFTER gender,
-ADD COLUMN citizenship VARCHAR(50) DEFAULT 'Filipino' AFTER civil_status,
-ADD COLUMN birth_date DATE AFTER citizenship,
-ADD COLUMN birth_place VARCHAR(100) AFTER birth_date,
-ADD COLUMN religion VARCHAR(50) AFTER birth_place,
-ADD COLUMN education_level VARCHAR(100) AFTER religion,
-ADD COLUMN occupation VARCHAR(100) AFTER education_level,
-ADD COLUMN monthly_income DECIMAL(10,2) AFTER occupation,
-ADD COLUMN contact_number VARCHAR(20) AFTER monthly_income,
-ADD COLUMN address_no VARCHAR(50) AFTER contact_number,
-ADD COLUMN street VARCHAR(100) AFTER address_no,
-ADD COLUMN business_name VARCHAR(100) AFTER street,
-ADD COLUMN business_location VARCHAR(200) AFTER business_name,
-ADD COLUMN business_nature VARCHAR(200) AFTER business_location,
-ADD COLUMN business_type VARCHAR(100) AFTER business_nature,
-ADD COLUMN purpose TEXT AFTER business_type,
-ADD COLUMN ctc_number VARCHAR(100) AFTER purpose,
-ADD COLUMN or_number VARCHAR(100) AFTER ctc_number,
-ADD FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;
 ALTER TABLE blotter_cases 
 ADD COLUMN accepted_by_user_id INT NULL AFTER assigned_to_user_id,
 ADD COLUMN accepted_by_role_id INT NULL AFTER accepted_by_user_id,
@@ -1759,20 +1585,179 @@ ADD COLUMN captain_signature_date DATETIME NULL AFTER requires_dual_signature,
 ADD COLUMN chief_signature_date DATETIME NULL AFTER captain_signature_date,
 ADD FOREIGN KEY (accepted_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
 ADD FOREIGN KEY (accepted_by_role_id) REFERENCES roles(id) ON DELETE SET NULL;
+
 ALTER TABLE custom_services 
 ADD COLUMN service_photo VARCHAR(255) AFTER additional_notes;
 
 ALTER TABLE barangay.users ADD COLUMN chief_officer_esignature_path LONGBLOB NULL;
-ALTER TABLE barangay.case_notifications
-MODIFY COLUMN notification_type ENUM(
-    'case_filed',
-    'case_accepted',
-    'hearing_scheduled',
-    'signature_required',
-    'schedule_confirmation',
-    'schedule_approved',
-    'schedule_rejected'
-) NOT NULL;
-
 
 CREATE INDEX idx_users_esignature ON users(esignature_path);
+
+ALTER TABLE users 
+DROP COLUMN first_name,
+DROP COLUMN last_name,
+DROP COLUMN gender;
+ALTER TABLE users 
+MODIFY COLUMN chief_officer_esignature_path VARCHAR(255) NULL;
+
+-- Update schedule_proposals to match the PHP expectations
+ALTER TABLE schedule_proposals 
+ADD COLUMN hearing_number INT DEFAULT 1 AFTER presiding_officer_position;
+
+-- Ensure blotter_cases has the expected scheduling columns
+ALTER TABLE blotter_cases 
+MODIFY COLUMN scheduled_hearing VARCHAR(255) NULL;
+ALTER TABLE blotter_cases 
+ADD COLUMN hearing_attempts INT DEFAULT 0 AFTER hearing_count,
+ADD COLUMN max_hearing_attempts INT DEFAULT 3 AFTER hearing_attempts,
+ADD COLUMN cfa_reason TEXT NULL AFTER is_cfa_eligible;
+
+-- Create participant_notifications table for summons delivery
+CREATE TABLE IF NOT EXISTS participant_notifications (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    participant_id INT NOT NULL,
+    delivery_method ENUM('email', 'physical', 'phone') DEFAULT 'physical',
+    delivery_status ENUM('pending', 'sent', 'delivered', 'failed') DEFAULT 'pending',
+    delivered_at DATETIME NULL,
+    delivery_address VARCHAR(255),
+    delivery_notes TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (participant_id) REFERENCES blotter_participants(id) ON DELETE CASCADE
+);
+
+-- Add indexes for better performance
+CREATE INDEX idx_participant_notifications_case ON participant_notifications(blotter_case_id);
+CREATE INDEX idx_participant_notifications_participant ON participant_notifications(participant_id);
+CREATE INDEX idx_participant_notifications_status ON participant_notifications(delivery_status);
+
+
+
+-- Insert some sample participant notifications for testing
+INSERT INTO participant_notifications (blotter_case_id, participant_id, delivery_method, delivery_status, delivery_address)
+SELECT 
+    bc.id,
+    bp.id,
+    CASE 
+        WHEN u.email IS NOT NULL THEN 'email'
+
+        ELSE 'physical'
+    END,
+    'pending',
+    COALESCE(
+        CONCAT(a.house_no, ' ', a.street, ', ', b.name),
+        'Address not provided'
+    )
+FROM blotter_cases bc
+JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+LEFT JOIN persons p ON bp.person_id = p.id
+LEFT JOIN users u ON p.user_id = u.id
+LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+LEFT JOIN barangay b ON a.barangay_id = b.id
+WHERE NOT EXISTS (
+    SELECT 1 FROM participant_notifications pn 
+    WHERE pn.blotter_case_id = bc.id AND pn.participant_id = bp.id
+);
+
+/*-------------------------------------------------------------
+  SECTION 4: BLOTTER/CASE MANAGEMENT SYSTEM (IMPROVED)
+  -------------------------------------------------------------*/
+
+-- Add hearing reschedule tracking
+CREATE TABLE IF NOT EXISTS hearing_reschedules (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    hearing_id INT NOT NULL,
+    requested_by_user_id INT NOT NULL,
+    requested_by_role_id INT NOT NULL,
+    old_hearing_date DATETIME NOT NULL,
+    new_hearing_date DATETIME NOT NULL,
+    reason TEXT,
+    status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+    approved_by_user_id INT NULL,
+    approved_at DATETIME NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (hearing_id) REFERENCES case_hearings(id) ON DELETE CASCADE,
+    FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (requested_by_role_id) REFERENCES roles(id) ON DELETE SET NULL,
+    FOREIGN KEY (approved_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Add audit trail for blotter actions
+CREATE TABLE IF NOT EXISTS blotter_case_audits (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    blotter_case_id INT NOT NULL,
+    action ENUM('filed', 'accepted', 'scheduled', 'rescheduled', 'hearing_conducted', 'resolved', 'dismissed', 'endorsed', 'cfa_issued', 'notification_sent', 'notification_delivered') NOT NULL,
+    performed_by_user_id INT,
+    performed_by_role_id INT,
+    remarks TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (blotter_case_id) REFERENCES blotter_cases(id) ON DELETE CASCADE,
+    FOREIGN KEY (performed_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (performed_by_role_id) REFERENCES roles(id) ON DELETE SET NULL
+);
+
+-- Add explicit status history for participant notifications
+CREATE TABLE IF NOT EXISTS participant_notification_logs (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    notification_id INT NOT NULL,
+    status ENUM('pending', 'sent', 'delivered', 'failed') NOT NULL,
+    changed_by_user_id INT NULL,
+    remarks TEXT,
+    changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (notification_id) REFERENCES participant_notifications(id) ON DELETE CASCADE,
+    FOREIGN KEY (changed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+);
+
+-- Add index for hearing_reschedules
+CREATE INDEX idx_hearing_reschedules_hearing ON hearing_reschedules(hearing_id);
+
+-- Add index for blotter_case_audits
+CREATE INDEX idx_blotter_case_audits_case ON blotter_case_audits(blotter_case_id);
+
+/*-------------------------------------------------------------
+  SECTION 7: SAMPLE DATA INSERTION (IMPROVED)
+  -------------------------------------------------------------*/
+
+-- Insert sample data for new tables and columns
+INSERT INTO user_availability_confirmations (blotter_case_id, schedule_proposal_id, user_id, participant_type, confirmation_status) VALUES
+    (1, 1, 10, 'complainant', 'confirmed'),
+    (1, 1, 11, 'respondent', 'pending'),
+    (2, 2, 11, 'complainant', 'reschedule_requested'),
+    (2, 2, 12, 'respondent', 'confirmed');
+
+INSERT INTO reschedule_requests (blotter_case_id, schedule_proposal_id, requested_by_user_id, requested_by_role_id, request_type, reason) VALUES
+    (2, 2, 11, 3, 'user_unavailable', 'Requested by the user due to personal reasons'),
+    (4, 4, 12, 3, 'official_unavailable', 'Barangay official unavailable on the proposed date');
+
+-- Update sample data to test new logic
+UPDATE blotter_cases 
+SET hearing_attempts = 1, max_hearing_attempts = 3, consumed_hearings = 0, user_initiated_reschedules = 0, official_reschedules = 0
+WHERE id IN (1, 2, 3, 4);
+
+UPDATE schedule_proposals 
+SET status = 'scheduled', all_participants_confirmed = TRUE, complainant_confirmation_count = 1, respondent_confirmation_count = 1, total_complainants = 1, total_respondents = 1, confirmation_deadline = DATE_ADD(NOW(), INTERVAL 3 DAY)
+WHERE id IN (1, 2);
+
+UPDATE participant_notifications 
+SET delivery_status = 'pending', delivery_address = '123 Barangay St., San Rafael'
+WHERE id IN (1, 2);
+
+-- Reschedule request sample
+INSERT INTO hearing_reschedules (hearing_id, requested_by_user_id, requested_by_role_id, old_hearing_date, new_hearing_date, reason) VALUES
+    (1, 11, 3, '2024-01-20 09:15:00', '2024-01-22 09:15:00', 'Requested by the user due to conflict with another appointment');
+
+-- Blotter case audit sample
+INSERT INTO blotter_case_audits (blotter_case_id, action, performed_by_user_id, performed_by_role_id, remarks) VALUES
+    (1, 'filed', 3, 1, 'Blotter case filed by the barangay captain'),
+    (1, 'scheduled', 3, 1, 'Hearing scheduled on 2024-01-20'),
+    (1, 'resolved', 3, 1, 'Case resolved through mediation'),
+    (1, 'dismissed', 3, 1, 'Case dismissed due to lack of evidence');
+
+-- Participant notification status change sample
+INSERT INTO participant_notification_logs (notification_id, status, changed_by_user_id, remarks) VALUES
+    (1, 'sent', 3, 'Notification email sent to the participant'),
+    (1, 'delivered', 3, 'Notification delivered to the participant'),
+    (2, 'failed', 3, 'Failed to deliver notification, no valid email');
