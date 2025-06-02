@@ -59,7 +59,6 @@ function captain_handleActions(PDO $pdo, $bid) {
             echo json_encode(['success'=>false,'message'=>'Invalid CSRF token']); 
             exit;
         }
-        
         $uid = (int)$_GET['delete_id'];
         
         // Validate user ID
@@ -67,23 +66,23 @@ function captain_handleActions(PDO $pdo, $bid) {
             echo json_encode(['success'=>false,'message'=>'Invalid user ID']);
             exit;
         }
-        
         // Check if user exists and belongs to current barangay
-        $chk = $pdo->prepare("SELECT barangay_id, role_id, first_name, last_name FROM users WHERE id=?");
+        $chk = $pdo->prepare("
+            SELECT u.barangay_id, u.role_id, p.id as person_id
+            FROM users u
+            LEFT JOIN persons p ON p.user_id = u.id
+            WHERE u.id=?
+        ");
         $chk->execute([$uid]);
         $row = $chk->fetch(PDO::FETCH_ASSOC);
-        
         if (!$row) {
             echo json_encode(['success'=>false,'message'=>'User not found']);
             exit;
         }
-        
         if ($row['barangay_id'] != $bid) {
             echo json_encode(['success'=>false,'message'=>'Access denied - User not in your barangay']);
             exit;
         }
-        
-        // Prevent deletion of captains and chiefs
         if (in_array((int)$row['role_id'], [ROLE_CAPTAIN, ROLE_CHIEF])) {
             echo json_encode(['success'=>false,'message'=>'Cannot delete Captain or Kagawad Chief']);
             exit;
@@ -177,15 +176,16 @@ function captain_handleActions(PDO $pdo, $bid) {
         }
         
         $stmt = $pdo->prepare("
-            SELECT u.id, u.first_name, u.last_name, u.email, u.phone, u.role_id, u.is_active,
-                   r.name as role_name
+            SELECT u.id, u.email, u.phone, u.role_id, u.is_active,
+                   r.name as role_name,
+                   p.id as person_id, p.first_name, p.last_name, p.middle_name, p.suffix, p.birth_date, p.gender, p.civil_status, p.citizenship, p.religion, p.occupation, p.contact_number
               FROM users u
          LEFT JOIN roles r ON u.role_id = r.id
+         LEFT JOIN persons p ON p.user_id = u.id
              WHERE u.id = ? AND u.barangay_id = ?
         ");
         $stmt->execute([$uid, $bid]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
-        
         if (!$user) {
             echo json_encode(['success'=>false,'message'=>'User not found or access denied']);
             exit;
@@ -241,17 +241,8 @@ function captain_handleActions(PDO $pdo, $bid) {
             }
             exit;
         }
-        // collect new fields
-        $fn    = trim($_POST['first_name'] ?? '');
-        $ln    = trim($_POST['last_name']  ?? '');
         $email = trim($_POST['email']      ?? '');
         $phone = trim($_POST['phone']      ?? '');
-        // validate
-        if (!preg_match("/^[A-Za-z\s'-]{2,50}$/",$fn) ||
-            !preg_match("/^[A-Za-z\s'-]{2,50}$/",$ln)) {
-            echo json_encode(['success'=>false,'message'=>'Invalid name']);
-            exit;
-        }
         if (!filter_var($email,FILTER_VALIDATE_EMAIL)) {
             echo json_encode(['success'=>false,'message'=>'Invalid email']);
             exit;
@@ -260,7 +251,6 @@ function captain_handleActions(PDO $pdo, $bid) {
             echo json_encode(['success'=>false,'message'=>'Invalid phone']);
             exit;
         }
-        // role limit
         $limits = [ROLE_SECRETARY=>1,ROLE_TREASURER=>1,ROLE_CHIEF=>1,ROLE_COUNCILOR=>7];
         if (isset($limits[$role])) {
             $cnt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role_id=? AND barangay_id=?");
@@ -270,7 +260,6 @@ function captain_handleActions(PDO $pdo, $bid) {
                 exit;
             }
         }
-        // password
         $pwd  = $_POST['password']         ?? '';
         $pwd2 = $_POST['confirm_password'] ?? '';
         if ($pwd!==$pwd2) {
@@ -282,13 +271,13 @@ function captain_handleActions(PDO $pdo, $bid) {
             exit;
         }
         $passHash = password_hash($pwd,PASSWORD_DEFAULT);
-        // insert
+        // insert user (no first_name/last_name)
         $ins = $pdo->prepare("
             INSERT INTO users 
-              (first_name,last_name,email,phone,role_id,barangay_id,password)
-            VALUES (?,?,?,?,?,?,?)
+              (email,phone,role_id,barangay_id,password)
+            VALUES (?,?,?,?,?)
         ");
-        if ($ins->execute([$fn,$ln,$email,$phone,$role,$bid,$passHash])) {
+        if ($ins->execute([$email,$phone,$role,$bid,$passHash])) {
             $uid = $pdo->lastInsertId();
             $pdo->prepare("UPDATE persons SET user_id=? WHERE id=?")
                 ->execute([$uid,$pid]);
@@ -306,25 +295,20 @@ function captain_handleActions(PDO $pdo, $bid) {
             exit;
         }
         $eid   = (int)($_POST['user_id']    ?? 0);
-        $fn    = trim($_POST['first_name']  ?? '');
-        $ln    = trim($_POST['last_name']   ?? '');
         $email = trim($_POST['email']       ?? '');
         $phone = trim($_POST['phone']       ?? '');
         $role  = (int)($_POST['role_id']    ?? 0);
-        // validate
-        if (!preg_match("/^[A-Za-z\s'-]{2,50}$/",$fn) ||
-            !preg_match("/^[A-Za-z\s'-]{2,50}$/",$ln) ||
-            !filter_var($email,FILTER_VALIDATE_EMAIL) ||
+        if (!filter_var($email,FILTER_VALIDATE_EMAIL) ||
             !preg_match('/^(?:\+63|0)9\d{9}$/',$phone)) {
             echo json_encode(['success'=>false,'message'=>'Invalid input']);
             exit;
         }
         $upd = $pdo->prepare("
             UPDATE users 
-               SET first_name=?, last_name=?, email=?, phone=?, role_id=? 
+               SET email=?, phone=?, role_id=? 
              WHERE id=? AND barangay_id=?
         ");
-        if ($upd->execute([$fn,$ln,$email,$phone,$role,$eid,$bid])) {
+        if ($upd->execute([$email,$phone,$role,$eid,$bid])) {
             echo json_encode(['success'=>true,'message'=>'User updated']);
         } else {
             echo json_encode(['success'=>false,'message'=>'Update failed']);
@@ -361,13 +345,13 @@ function captain_loadData(PDO $pdo, $bid) {
     $ph = str_repeat('?,',count($off)-1).'?';
     $stm = $pdo->prepare("
       SELECT u.*, r.name role_name,
-             CASE WHEN u.is_active=1 THEN 'Active' ELSE 'Inactive' END status_text,
-             p.first_name, p.last_name
+             p.id as person_id, p.first_name, p.last_name, p.middle_name, p.suffix, p.birth_date, p.gender, p.civil_status, p.citizenship, p.religion, p.occupation, p.contact_number,
+             CASE WHEN u.is_active=1 THEN 'Active' ELSE 'Inactive' END status_text
         FROM users u
         LEFT JOIN roles r ON u.role_id=r.id
-        LEFT JOIN persons p ON u.id = p.user_id
+        LEFT JOIN persons p ON p.user_id = u.id
        WHERE u.barangay_id=? AND u.role_id IN($ph)
-       ORDER BY u.role_id, p.last_name, p.first_name
+       ORDER BY p.last_name, p.first_name
     ");
     $stm->execute(array_merge([$bid],$off));
     $users = $stm->fetchAll(PDO::FETCH_ASSOC);

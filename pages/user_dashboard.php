@@ -74,6 +74,7 @@ while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
 }
 $stmt = null;
 
+
 $sql = "SELECT p.first_name, p.last_name, r.name as role
         FROM users u 
         JOIN persons p ON u.id = p.user_id
@@ -2183,7 +2184,7 @@ $stmt = null;
         // Rotate the icon
         toggleIcon.classList.add('expanded');
       } else {
-        // Hide the grid
+       // Hide the grid
         grid.classList.remove('show');
         toggleIcon.classList.remove('expanded');
         

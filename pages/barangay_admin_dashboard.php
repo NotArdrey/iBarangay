@@ -148,13 +148,12 @@ $stmt->execute([':bid' => $barangay_id]);
 $urgentCases = (int) $stmt->fetchColumn();
 
 // Gender distribution (existing)
-$sql = "SELECT p.gender, COUNT(*) AS count 
-        FROM persons p 
-        JOIN users u ON p.user_id = u.id 
-        WHERE u.role_id = 8 AND u.barangay_id = :bid 
+$sql = "SELECT p.gender, COUNT(*) as total
+        FROM users u
+        LEFT JOIN persons p ON p.user_id = u.id
         GROUP BY p.gender";
 $stmt = $pdo->prepare($sql);
-$stmt->execute([':bid' => $barangay_id]);
+$stmt->execute();
 $genderData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $genderLabels = [];
@@ -162,7 +161,7 @@ $genderCounts = [];
 foreach ($genderData as $g) {
     if (!empty($g['gender'])) {
         $genderLabels[] = $g['gender'];
-        $genderCounts[] = (int) $g['count'];
+        $genderCounts[] = (int) $g['total'];
     }
 }
 if (empty($genderLabels)) {
