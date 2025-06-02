@@ -31,11 +31,37 @@ function logAuditTrail(PDO $pdo, int $adminId, string $action,
 
 function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type): void
 {
-    $stmt = $pdo->prepare("SELECT email FROM users WHERE barangay_id = ?");
+    // Get all users in the barangay
+    $stmt = $pdo->prepare("SELECT id, email FROM users WHERE barangay_id = ? AND status = 'active'");
     $stmt->execute([$barangayId]);
-    $recipients = $stmt->fetchAll(PDO::FETCH_COLUMN);
-    if (!$recipients) return;
+    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    if (!$users) return;
 
+    // Create notifications for all users
+    $user_ids = array_column($users, 'id');
+    $notification_title = $type === 'new' ? "New Event: {$event['title']}" : "Event Postponed: {$event['title']}";
+    $notification_message = $type === 'new' 
+        ? "A new event has been scheduled:\n\n" 
+        : "The following event has been postponed:\n\n";
+    $notification_message .= "Title: {$event['title']}\n";
+    $notification_message .= "Description: {$event['description']}\n";
+    $notification_message .= "Start: " . date('M d, Y h:i A', strtotime($event['start_datetime'])) . "\n";
+    $notification_message .= "End: " . date('M d, Y h:i A', strtotime($event['end_datetime'])) . "\n";
+    $notification_message .= "Location: {$event['location']}\n";
+    if ($event['organizer']) $notification_message .= "Organizer: {$event['organizer']}\n";
+
+    createNotificationsForUsers(
+        $user_ids,
+        'event',
+        $notification_title,
+        $notification_message,
+        'high',
+        'events',
+        $event['id'],
+        "../pages/event_details.php?id={$event['id']}"
+    );
+
+    // Send email notifications
     $mail = new PHPMailer(true);
     try {
         $mail->isSMTP();
@@ -48,23 +74,15 @@ function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type):
         $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
         $mail->isHTML(false);
 
-        foreach ($recipients as $email) {
+        foreach ($users as $user) {
+            if (empty($user['email'])) continue;
+            
             $mail->clearAddresses();
-            $mail->addAddress($email);
-            $mail->Subject = $type === 'new'
-                ? "New Event: {$event['title']}"
-                : "Event Postponed: {$event['title']}";
+            $mail->addAddress($user['email']);
+            $mail->Subject = $notification_title;
 
             $body  = "Dear Resident,\n\n";
-            $body .= $type === 'new'
-                ? "A new event has been scheduled:\n\n"
-                : "The following event has been postponed:\n\n";
-            $body .= "Title: {$event['title']}\n";
-            $body .= "Description: {$event['description']}\n";
-            $body .= "Start: " . date('M d, Y h:i A', strtotime($event['start_datetime'])) . "\n";
-            $body .= "End:   " . date('M d, Y h:i A', strtotime($event['end_datetime'])) . "\n";
-            $body .= "Location: {$event['location']}\n";
-            if ($event['organizer']) $body .= "Organizer: {$event['organizer']}\n";
+            $body .= $notification_message;
             $body .= "\nThank you,\nBarangay Management";
 
             $mail->Body = $body;
@@ -180,10 +198,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 $stmt = $pdo->prepare("
     SELECT 
         e.*, 
-        u.first_name AS creator_first_name, 
-        u.last_name AS creator_last_name
+        p.first_name AS creator_first_name, 
+        p.last_name AS creator_last_name
     FROM events e
     LEFT JOIN users u ON e.created_by_user_id = u.id
+    LEFT JOIN persons p ON u.id = p.user_id
     WHERE e.barangay_id = :bid 
     ORDER BY e.start_datetime DESC
 ");

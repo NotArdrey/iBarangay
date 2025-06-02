@@ -18,10 +18,11 @@ $bid = $_SESSION['barangay_id'];
 /* ── fetch audit-trail rows + role names ────────────────────────── */
 $stmt = $pdo->prepare("
     SELECT a.*,
-           CONCAT(u.first_name,' ',u.last_name) AS admin_name,
+           CONCAT(p.first_name,' ',p.last_name) AS admin_name,
            r.name AS role_name
     FROM   audit_trails a
     JOIN   users u ON u.id  = a.user_id
+    JOIN   persons p ON p.user_id = u.id
     JOIN   roles r ON r.id  = u.role_id
     WHERE  u.barangay_id = :bid
     ORDER  BY a.action_timestamp DESC

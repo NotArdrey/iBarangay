@@ -842,14 +842,14 @@ $user = $userStmt->fetch(PDO::FETCH_ASSOC);
 
       <!-- Editable Section: Personal Details -->
       <div class="form-section">
-        <h3>Personal Details (Editable)</h3>
+        <h3>Personal Details</h3>
         <div class="form-group">
           <label for="first_name">First Name *</label>
-          <input type="text" id="first_name" name="first_name" value="<?php echo htmlspecialchars($user['first_name'] ?? ''); ?>" required>
+          <input type="text" id="first_name" name="first_name" value="<?php echo htmlspecialchars($user['first_name'] ?? ''); ?>" readonly>
         </div>
         <div class="form-group">
           <label for="last_name">Last Name *</label>
-          <input type="text" id="last_name" name="last_name" value="<?php echo htmlspecialchars($user['last_name'] ?? ''); ?>" required>
+          <input type="text" id="last_name" name="last_name" value="<?php echo htmlspecialchars($user['last_name'] ?? ''); ?>" readonly>
         </div>
         <div class="form-group">
           <label for="gender">Gender</label>
@@ -857,18 +857,20 @@ $user = $userStmt->fetch(PDO::FETCH_ASSOC);
         </div>
         <div class="form-group">
           <label for="contact_number">Contact Number</label>
-          <input type="text" id="contact_number" name="contact_number" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>">
+          <input type="text" id="contact_number" name="contact_number" value="<?php echo htmlspecialchars($user['phone'] ?? ''); ?>" readonly>
         </div>
         <div class="form-group">
           <label for="barangay_id">Barangay</label>
-          <select name="barangay_id" id="barangay_id">
-            <option value="">Select Barangay</option>
-            <?php foreach ($barangays as $barangay): ?>
-              <option value="<?php echo $barangay['id']; ?>" <?php echo (isset($user['barangay_id']) && $user['barangay_id'] == $barangay['id']) ? 'selected' : ''; ?>>
-                <?php echo htmlspecialchars($barangay['name']); ?>
-              </option>
-            <?php endforeach; ?>
-          </select>
+          <input type="text" id="barangay_id" name="barangay_id" value="<?php 
+            $barangay_name = '';
+            foreach ($barangays as $barangay) {
+              if (isset($user['barangay_id']) && $user['barangay_id'] == $barangay['id']) {
+                $barangay_name = $barangay['name'];
+                break;
+              }
+            }
+            echo htmlspecialchars($barangay_name);
+          ?>" readonly>
         </div>
       </div>
 
@@ -885,19 +887,19 @@ $user = $userStmt->fetch(PDO::FETCH_ASSOC);
         </div>
         <div class="form-group">
           <label for="present_house_no">House Number</label>
-          <input type="text" id="present_house_no" name="present_house_no" value="<?php echo htmlspecialchars($user['house_no'] ?? ''); ?>">
+          <input type="text" id="present_house_no" name="present_house_no" value="<?php echo htmlspecialchars($user['house_no'] ?? ''); ?>" readonly>
         </div>
         <div class="form-group">
           <label for="present_street">Street</label>
-          <input type="text" id="present_street" name="present_street" value="<?php echo htmlspecialchars($user['street'] ?? ''); ?>">
+          <input type="text" id="present_street" name="present_street" value="<?php echo htmlspecialchars($user['street'] ?? ''); ?>" readonly>
         </div>
         <div class="form-group">
           <label for="present_municipality">City/Municipality</label>
-          <input type="text" id="present_municipality" name="present_municipality" value="<?php echo htmlspecialchars($user['municipality'] ?? ''); ?>">
+          <input type="text" id="present_municipality" name="present_municipality" value="<?php echo htmlspecialchars($user['municipality'] ?? ''); ?>" readonly>
         </div>
         <div class="form-group">
           <label for="present_province">Province</label>
-          <input type="text" id="present_province" name="present_province" value="<?php echo htmlspecialchars($user['province'] ?? ''); ?>">
+          <input type="text" id="present_province" name="present_province" value="<?php echo htmlspecialchars($user['province'] ?? ''); ?>" readonly>
         </div>
       </div>
 
@@ -907,19 +909,19 @@ $user = $userStmt->fetch(PDO::FETCH_ASSOC);
         <div id="permanent_address_fields">
           <div class="form-group">
             <label for="permanent_house_no">House Number</label>
-            <input type="text" id="permanent_house_no" name="permanent_house_no" value="<?php echo htmlspecialchars($user['permanent_house_no'] ?? ''); ?>">
+            <input type="text" id="permanent_house_no" name="permanent_house_no" value="<?php echo htmlspecialchars($user['permanent_house_no'] ?? ''); ?>" readonly>
           </div>
           <div class="form-group">
             <label for="permanent_street">Street</label>
-            <input type="text" id="permanent_street" name="permanent_street" value="<?php echo htmlspecialchars($user['permanent_street'] ?? ''); ?>">
+            <input type="text" id="permanent_street" name="permanent_street" value="<?php echo htmlspecialchars($user['permanent_street'] ?? ''); ?>" readonly>
           </div>
           <div class="form-group">
             <label for="permanent_municipality">City/Municipality</label>
-            <input type="text" id="permanent_municipality" name="permanent_municipality" value="<?php echo htmlspecialchars($user['permanent_municipality'] ?? ''); ?>">
+            <input type="text" id="permanent_municipality" name="permanent_municipality" value="<?php echo htmlspecialchars($user['permanent_municipality'] ?? ''); ?>" readonly>
           </div>
           <div class="form-group">
             <label for="permanent_province">Province</label>
-            <input type="text" id="permanent_province" name="permanent_province" value="<?php echo htmlspecialchars($user['permanent_province'] ?? ''); ?>">
+            <input type="text" id="permanent_province" name="permanent_province" value="<?php echo htmlspecialchars($user['permanent_province'] ?? ''); ?>" readonly>
           </div>
         </div>
       </div>
