@@ -12,8 +12,9 @@ $barangay_name = "Barangay";
 $barangay_id = 32;
 
 if ($user_id) {
-    $sql = "SELECT u.first_name, u.last_name, u.barangay_id, b.name as barangay_name 
-            FROM users u 
+    $sql = "SELECT p.first_name, p.last_name, u.barangay_id, b.name as barangay_name 
+            FROM users u
+            LEFT JOIN persons p ON p.user_id = u.id
             LEFT JOIN barangay b ON u.barangay_id = b.id 
             WHERE u.id = ?";
     $stmt = $conn->prepare($sql);
@@ -748,7 +749,7 @@ unset($case);
 
             <div class="case-header">
                 <h2><i class="fas fa-gavel"></i> My Cases & Schedules</h2>
-                <a href="../pages/dashboard.php" class="back-button">
+                <a href="../pages/user_dashboard.php" class="back-button">
                     <i class="fas fa-arrow-left"></i> Back to Dashboard
                 </a>
             </div>

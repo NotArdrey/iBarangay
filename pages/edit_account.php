@@ -11,7 +11,14 @@ if (!isset($_SESSION['user_id'])) {
 $user_id = $_SESSION['user_id'];
 
 // Retrieve all columns from Users table for the logged-in user
-$query = "SELECT * FROM users WHERE id = ?";  // Changed from user_id to id
+$query = "SELECT u.*, p.first_name, p.middle_name, p.last_name, p.suffix, p.birth_date, 
+          p.birth_place, p.gender, p.civil_status, p.citizenship, p.religion, 
+          p.education_level, p.occupation, p.monthly_income, p.contact_number, 
+          p.resident_type, p.years_of_residency, p.nhts_pr_listahanan, 
+          p.indigenous_people, p.pantawid_beneficiary
+          FROM users u
+          INNER JOIN persons p ON u.id = p.user_id
+          WHERE u.id = ?";
 $stmt = $pdo->prepare($query);
 $stmt->execute([$user_id]);
 $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -239,6 +246,7 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
 
 // Get user's complete information including addresses and IDs
 $userQuery = "SELECT u.*, 
+                    p.first_name, p.middle_name, p.last_name, p.suffix, p.birth_date, p.birth_place, p.gender, p.civil_status, p.citizenship, p.religion, p.education_level, p.occupation, p.monthly_income, p.contact_number, p.resident_type, p.years_of_residency, p.nhts_pr_listahanan, p.indigenous_people, p.pantawid_beneficiary,
                     a.house_no, a.street, a.municipality, a.province,
                     pa.house_no as permanent_house_no, pa.street as permanent_street,
                     pa.municipality as permanent_municipality, pa.province as permanent_province,
@@ -247,11 +255,11 @@ $userQuery = "SELECT u.*,
                     h.household_number, pu.name as purok_name,
                     u.id_type, u.id_number, u.id_expiration_date
              FROM users u
-             LEFT JOIN persons per ON u.id = per.user_id
-             LEFT JOIN addresses a ON per.id = a.person_id AND a.is_primary = 1
-             LEFT JOIN addresses pa ON per.id = pa.person_id AND pa.is_permanent = 1
-             LEFT JOIN person_identification pi ON per.id = pi.person_id
-             LEFT JOIN household_members hm ON per.id = hm.person_id
+             INNER JOIN persons p ON u.id = p.user_id
+             LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
+             LEFT JOIN addresses pa ON p.id = pa.person_id AND pa.is_permanent = 1
+             LEFT JOIN person_identification pi ON p.id = pi.person_id
+             LEFT JOIN household_members hm ON p.id = hm.person_id
              LEFT JOIN households h ON hm.household_id = h.id
              LEFT JOIN purok pu ON h.purok_id = pu.id
              WHERE u.id = ?";
@@ -845,12 +853,7 @@ $user = $userStmt->fetch(PDO::FETCH_ASSOC);
         </div>
         <div class="form-group">
           <label for="gender">Gender</label>
-          <select name="gender" id="gender">
-            <option value="">Select Gender</option>
-            <option value="Male" <?php echo (isset($user['gender']) && $user['gender'] === "Male") ? 'selected' : ''; ?>>Male</option>
-            <option value="Female" <?php echo (isset($user['gender']) && $user['gender'] === "Female") ? 'selected' : ''; ?>>Female</option>
-            <option value="Others" <?php echo (isset($user['gender']) && $user['gender'] === "Others") ? 'selected' : ''; ?>>Others</option>
-          </select>
+          <input type="text" id="gender" name="gender" value="<?php echo htmlspecialchars(ucfirst(strtolower($user['gender'] ?? ''))); ?>" readonly>
         </div>
         <div class="form-group">
           <label for="contact_number">Contact Number</label>
