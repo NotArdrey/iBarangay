@@ -3,7 +3,7 @@
  * audit_trail.php ― role filter added
  *  ▸ live global search, column sorting
  *  ▸ automatic filters (table name, role, user, date range)
- *  ▸ table renamed to #auditTrailTable, “Table” → “Table Name”
+ *  ▸ table renamed to #auditTrailTable, "Table" → "Table Name"
  */
 require_once "../components/header.php";
 require "../config/dbconn.php";

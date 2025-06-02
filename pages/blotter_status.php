@@ -44,33 +44,66 @@ if (isset($_GET['action']) && isset($_GET['case_id'])) {
 // NOW INCLUDE NAVBAR AFTER VARIABLES ARE SET
 require "../components/navbar.php";
 
-// Modified SQL query to remove references to "blotter_schedule_proposals"
-$stmt = $pdo->prepare("
+// Check if the new columns exist before using them
+$columnCheck = $pdo->query("SHOW COLUMNS FROM blotter_cases LIKE 'hearing_attempts'");
+$hasNewColumns = $columnCheck->rowCount() > 0;
+
+// Modified SQL query to fix GROUP BY issues and get user cases properly
+$sql = "
     SELECT bc.*, 
-           GROUP_CONCAT(cc.name SEPARATOR ', ') AS categories,
-           bp.role
+           GROUP_CONCAT(DISTINCT cc.name SEPARATOR ', ') AS categories,
+           bp.role,
+           u.email as user_email";
+
+// Add conditional columns if they exist
+if ($hasNewColumns) {
+    $sql .= ",
+           bc.hearing_attempts,
+           bc.max_hearing_attempts,
+           bc.is_cfa_eligible,
+           bc.cfa_reason";
+} else {
+    $sql .= ",
+           0 as hearing_attempts,
+           3 as max_hearing_attempts,
+           FALSE as is_cfa_eligible,
+           NULL as cfa_reason";
+}
+
+$sql .= "
     FROM blotter_cases bc
     JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
     JOIN persons p ON bp.person_id = p.id
+    LEFT JOIN users u ON p.user_id = u.id
     LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
     LEFT JOIN case_categories cc ON bcc.category_id = cc.id
     WHERE p.user_id = ?
       AND bc.status != 'deleted'
-    GROUP BY bc.id, bp.role
+    GROUP BY bc.id, bp.role, u.email
     ORDER BY bc.created_at DESC
-");
-$stmt->execute([$user_id]);
-$cases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+";
 
-// Debug: Uncomment to check what cases are fetched
-// echo "<pre>"; print_r($cases); echo "</pre>";
+try {
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([$user_id]);
+    $cases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    // table not found → proceed with empty list and show a notice
+    if (strpos($e->getMessage(), '1146') !== false) {
+        $cases = [];
+        $_SESSION['error_message'] = 'Scheduling data unavailable. Please run the latest migrations.';
+    } else {
+        throw $e;
+    }
+}
 
-// For each case, fetch the latest schedule proposal and its status for this user
+// For each case, fetch hearing information and summons details
 foreach ($cases as &$case) {
     // Fetch latest schedule proposal for this case
     $stmt2 = $pdo->prepare("
         SELECT sp.*, 
-            COALESCE(CONCAT(u.first_name, ' ', u.last_name), 'System') as proposed_by_name
+            COALESCE(CONCAT(u.first_name, ' ', u.last_name), 'System') as proposed_by_name,
+            sp.proposed_by_role_id as confirmed_by_role
         FROM schedule_proposals sp
         LEFT JOIN users u ON sp.proposed_by_user_id = u.id
         WHERE sp.blotter_case_id = ?
@@ -92,6 +125,29 @@ foreach ($cases as &$case) {
         $case['user_remarks'] = $proposal['user_remarks'];
         $case['captain_remarks'] = $proposal['captain_remarks'];
         $case['conflict_reason'] = $proposal['conflict_reason'];
+        $case['confirmed_by_role'] = $proposal['confirmed_by_role'] ?? null;
+    }
+    
+    // Check if user has email for summons delivery method
+    $case['has_email'] = !empty($case['user_email']);
+    
+    // Fetch participant notifications/summons for users without email
+    if (!$case['has_email'] && isset($case['current_proposal_id'])) {
+        $stmt3 = $pdo->prepare("
+            SELECT pn.*, bp.role 
+            FROM participant_notifications pn
+            JOIN blotter_participants bp ON pn.participant_id = bp.id
+            WHERE pn.blotter_case_id = ? AND bp.person_id = (
+                SELECT person_id FROM blotter_participants 
+                WHERE blotter_case_id = ? AND person_id IN (
+                    SELECT id FROM persons WHERE user_id = ?
+                )
+            )
+            ORDER BY pn.created_at DESC
+            LIMIT 1
+        ");
+        $stmt3->execute([$case['id'], $case['id'], $user_id]);
+        $case['summons_info'] = $stmt3->fetch(PDO::FETCH_ASSOC);
     }
 }
 unset($case);
@@ -683,173 +739,185 @@ unset($case);
 <body>
     <div class="page-wrapper">
         <div class="container">
-            <a href="../pages/user_dashboard.php" class="back-button">
-                <i class="fas fa-arrow-left"></i>
-                Back to Dashboard
-            </a>
-            
-            <h2>
-                <i class="fas fa-gavel"></i>
-                My Cases & Hearing Schedules
-            </h2>
-
             <?php if ($action_message): ?>
-            <div class="conflict-alert">
-                <i class="fas fa-exclamation-triangle"></i>
-                <?= htmlspecialchars($action_message) ?>
-            </div>
+                <div class="alert alert-info">
+                    <i class="fas fa-info-circle"></i>
+                    <?= htmlspecialchars($action_message) ?>
+                </div>
             <?php endif; ?>
-            
-            <?php if (!empty($cases)): ?>
-                <?php foreach ($cases as $case): ?>
-                <div class="case-card" data-case-id="<?= $case['id'] ?>">
-                    <div class="case-header">
-                        <div>
-                            <div class="case-title">Case: <?= htmlspecialchars($case['case_number'] ?? 'N/A') ?></div>
-                            <div class="case-number">Filed on <?= $case['incident_date'] ? date('M d, Y', strtotime($case['incident_date'])) : 'Unknown' ?></div>
-                        </div>
-                        <span class="status-badge status-<?= str_replace('_', '-', strtolower($case['status'])) ?>">
-                            <i class="fas fa-circle"></i>
-                            <?= ucfirst(str_replace('_', ' ', $case['status'])) ?>
-                        </span>
-                    </div>
 
-                    <div class="case-meta">
-                        <div class="meta-item">
-                            <i class="fas fa-map-marker-alt"></i>
-                            <span><?= htmlspecialchars($case['location']) ?></span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-tags"></i>
-                            <span><?= htmlspecialchars($case['categories'] ?: 'No categories') ?></span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-user-tag"></i>
-                            <span>You are the <?= ucfirst($case['role']) ?></span>
-                        </div>
-                        <div class="meta-item">
-                            <i class="fas fa-calendar-alt"></i>
-                            <span>Status: <?= ucfirst(str_replace('_', ' ', $case['scheduling_status'] ?? 'no_schedule')) ?></span>
-                        </div>
-                    </div>
+            <div class="case-header">
+                <h2><i class="fas fa-gavel"></i> My Cases & Schedules</h2>
+                <a href="../pages/dashboard.php" class="back-button">
+                    <i class="fas fa-arrow-left"></i> Back to Dashboard
+                </a>
+            </div>
 
-                    <!-- Enhanced Scheduling Section -->
-                    <?php if (isset($case['current_proposal_id']) && $case['current_proposal_id']): ?>
-                    <div class="scheduling-status">
-                        <div class="scheduling-header">
-                            <div class="scheduling-title">
-                                <i class="fas fa-calendar-check"></i>
-                                Hearing Schedule Status
-                            </div>
-                        </div>
-
-                        <div class="schedule-info">
-                            <div class="schedule-datetime">
-                                <div class="datetime-item">
-                                    <i class="fas fa-calendar"></i>
-                                    <?= date('F j, Y', strtotime($case['proposed_date'])) ?>
-                                </div>
-                                <div class="datetime-item">
-                                    <i class="fas fa-clock"></i>
-                                    <?= date('g:i A', strtotime($case['proposed_time'])) ?>
-                                </div>
-                                <div class="datetime-item">
-                                    <i class="fas fa-map-marker-alt"></i>
-                                    <?= htmlspecialchars($case['hearing_location'] ?? 'Barangay Hall') ?>
-                                </div>
-                            </div>
-
-                            <?php if ($case['presiding_officer']): ?>
-                            <div class="meta-item">
-                                <i class="fas fa-user-tie"></i>
-                                <span>Presiding Officer: <?= htmlspecialchars($case['presiding_officer']) ?></span>
-                            </div>
-                            <?php endif; ?>
-
-                            <!-- Proposal Status and Actions -->
-                            <?php if ($case['proposal_status'] === 'proposed' && !$case['captain_confirmed']): ?>
-                            <div class="alert alert-info">
-                                <i class="fas fa-info-circle"></i>
-                                A hearing schedule has been proposed. Waiting for Captain's confirmation.
-                            </div>
-                            <?php elseif ($case['proposal_status'] === 'captain_confirmed' && !$case['user_confirmed']): ?>
-                            <div class="schedule-actions">
-                                <button type="button" class="btn btn-success confirm-availability-btn" 
-                                        data-proposal-id="<?= $case['current_proposal_id'] ?>" 
-                                        data-case-id="<?= $case['id'] ?>">
-                                    <i class="fas fa-check"></i> Confirm Availability
-                                </button>
-                                
-                                <button type="button" class="btn btn-danger cant-attend-btn" 
-                                        data-proposal-id="<?= $case['current_proposal_id'] ?>" 
-                                        data-case-id="<?= $case['id'] ?>">
-                                    <i class="fas fa-times"></i> Can't Attend
-                                </button>
-                            </div>
-                            <?php elseif ($case['user_confirmed'] && !$case['captain_confirmed']): ?>
-                            <div class="alert alert-info">You have confirmed. Waiting for Captain's final confirmation.</div>
-                            <?php elseif ($case['proposal_status'] === 'both_confirmed'): ?>
-                            <div style="background: #ecfdf5; color: #059669; padding: 1rem; border-radius: 6px; margin-top: 1rem;">
-                                <i class="fas fa-check-circle"></i>
-                                Hearing schedule confirmed by both parties. Please arrive 15 minutes early.
-                            </div>
-                            <?php elseif ($case['proposal_status'] === 'conflict'): ?>
-                            <div class="conflict-alert">
-                                <i class="fas fa-exclamation-triangle"></i>
-                                <strong>Scheduling Conflict:</strong> <?= htmlspecialchars($case['conflict_reason'] ?? 'There was a conflict with the proposed schedule.') ?>
-                                <br><small>The captain will propose alternative dates.</small>
-                            </div>
-                            <?php endif; ?>
-
-                            <!-- Remarks Section -->
-                            <?php if ($case['user_remarks'] || $case['captain_remarks']): ?>
-                            <div style="margin-top: 1rem; padding-top: 1rem; border-top: 1px solid var(--border-light);">
-                                <?php if ($case['user_remarks']): ?>
-                                <div style="margin-bottom: 0.5rem;">
-                                    <strong>Your remarks:</strong> <?= htmlspecialchars($case['user_remarks']) ?>
-                                </div>
-                                <?php endif; ?>
-                                <?php if ($case['captain_remarks']): ?>
-                                <div>
-                                    <strong>Captain's remarks:</strong> <?= htmlspecialchars($case['captain_remarks']) ?>
-                                </div>
-                                <?php endif; ?>
-                            </div>
-                            <?php endif; ?>
-                        </div>
-                    </div>
-                    <?php endif; ?>
-
-                    <!-- Schedule History -->
-                    <?php if (!empty($case['all_proposals']) && count($case['all_proposals']) > 1): ?>
-                    <div class="schedule-history">
-                        <h4 style="margin-bottom: 1rem; color: var(--text-dark);">
-                            <i class="fas fa-history"></i>
-                            Schedule History
-                        </h4>
-                        <?php foreach (array_slice($case['all_proposals'], 1) as $proposal): ?>
-                        <div class="history-item <?= $proposal['status'] ?>">
-                            <div class="history-meta">
-                                Proposed by <?= htmlspecialchars($proposal['proposed_by_name']) ?> on 
-                                <?= date('M j, Y \a\t g:i A', strtotime($proposal['created_at'])) ?>
-                            </div>
-                            <div>
-                                <strong>Date:</strong> <?= date('F j, Y \a\t g:i A', strtotime($proposal['proposed_date'] . ' ' . $proposal['proposed_time'])) ?>
-                                <br>
-                                <strong>Status:</strong> <?= ucfirst(str_replace('_', ' ', $proposal['status'])) ?>
-                            </div>
-                        </div>
-                        <?php endforeach; ?>
-                    </div>
-                    <?php endif; ?>
-                </div>
-                <?php endforeach; ?>
-            <?php else: ?>
+            <?php if (empty($cases)): ?>
                 <div class="empty-state">
-                    <i class="fas fa-gavel"></i>
+                    <i class="fas fa-inbox"></i>
                     <h3>No Cases Found</h3>
-                    <p>You haven't filed any blotter cases yet. When you do, they'll appear here with scheduling information.</p>
+                    <p>You don't have any blotter cases at this time.</p>
                 </div>
+            <?php else: ?>
+                <?php foreach ($cases as $case): ?>
+                    <div class="case-card">
+                        <div class="case-header">
+                            <div class="case-title">
+                                <h3>Case #<?= htmlspecialchars($case['case_number']) ?></h3>
+                                <span class="case-number"><?= ucfirst($case['role']) ?></span>
+                            </div>
+                            <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $case['status'])) ?>">
+                                <?= ucfirst(str_replace('_', ' ', $case['status'])) ?>
+                            </span>
+                        </div>
+
+                        <div class="case-meta">
+                            <div class="meta-item">
+                                <i class="fas fa-calendar-alt"></i>
+                                Filed: <?= date('M d, Y', strtotime($case['created_at'])) ?>
+                            </div>
+                            <div class="meta-item">
+                                <i class="fas fa-map-marker-alt"></i>
+                                Location: <?= htmlspecialchars($case['location']) ?>
+                            </div>
+                            <div class="meta-item">
+                                <i class="fas fa-tags"></i>
+                                Categories: <?= htmlspecialchars($case['categories'] ?: 'None specified') ?>
+                            </div>
+                        </div>
+
+                        <div class="case-description">
+                            <p><?= nl2br(htmlspecialchars($case['description'])) ?></p>
+                        </div>
+
+                        <?php if (isset($case['current_proposal_id'])): ?>
+                            <div class="scheduling-status">
+                                <div class="scheduling-header">
+                                    <h4 class="scheduling-title">
+                                        <i class="fas fa-clock"></i>
+                                        Hearing Schedule
+                                    </h4>
+                                    <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $case['proposal_status'])) ?>">
+                                        <?= ucfirst(str_replace('_', ' ', $case['proposal_status'])) ?>
+                                    </span>
+                                </div>
+
+                                <div class="schedule-info">
+                                    <div class="schedule-datetime">
+                                        <div class="datetime-item">
+                                            <i class="fas fa-calendar"></i>
+                                            <span><?= date('F d, Y', strtotime($case['proposed_date'])) ?></span>
+                                        </div>
+                                        <div class="datetime-item">
+                                            <i class="fas fa-clock"></i>
+                                            <span><?= date('g:i A', strtotime($case['proposed_time'])) ?></span>
+                                        </div>
+                                        <div class="datetime-item">
+                                            <i class="fas fa-map-marker-alt"></i>
+                                            <span><?= htmlspecialchars($case['hearing_location'] ?? 'Barangay Hall') ?></span>
+                                        </div>
+                                        <div class="datetime-item">
+                                            <i class="fas fa-user-tie"></i>
+                                            <span><?= htmlspecialchars($case['presiding_officer'] ?? 'Barangay Captain') ?></span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <?php 
+                                $needsResponse = false;
+                                $showApprovalButtons = false;
+                                $confirmButtonText = '';
+                                $rejectButtonText = '';
+                                
+                                // Determine if user needs to respond and what buttons to show
+                                if ($case['proposal_status'] === 'proposed' || $case['proposal_status'] === 'pending') {
+                                    if (!$case['user_confirmed'] && !$case['captain_confirmed']) {
+                                        // Neither confirmed yet
+                                        $needsResponse = true;
+                                        $showApprovalButtons = true;
+                                        $confirmButtonText = 'Confirm Availability';
+                                        $rejectButtonText = 'Request Different Time';
+                                    }
+                                } elseif ($case['proposal_status'] === 'conflict') {
+                                    // Show conflict reason
+                                    if (!empty($case['conflict_reason'])) {
+                                        echo '<div class="conflict-alert">';
+                                        echo '<i class="fas fa-exclamation-triangle"></i>';
+                                        echo '<strong>Schedule Conflict:</strong> ' . htmlspecialchars($case['conflict_reason']);
+                                        echo '</div>';
+                                    }
+                                } elseif ($case['proposal_status'] === 'confirmed' || $case['proposal_status'] === 'both_confirmed') {
+                                    // Show confirmation details
+                                    echo '<div class="schedule-confirmed">';
+                                    echo '<i class="fas fa-check-circle"></i>';
+                                    echo '<span>Schedule confirmed. Please attend on the scheduled date and time.</span>';
+                                    echo '</div>';
+                                }
+                                
+                                if ($showApprovalButtons): ?>
+                                    <div class="schedule-actions">
+                                        <button onclick="respondToProposal(<?= $case['current_proposal_id'] ?>, 'confirm')" 
+                                                class="btn btn-success">
+                                            <i class="fas fa-check"></i> <?= $confirmButtonText ?>
+                                        </button>
+                                        <button onclick="respondToProposal(<?= $case['current_proposal_id'] ?>, 'reject')" 
+                                                class="btn btn-warning">
+                                            <i class="fas fa-times"></i> <?= $rejectButtonText ?>
+                                        </button>
+                                    </div>
+                                <?php endif; ?>
+
+                                <?php 
+                                // Add debugging info only for development - remove in production
+                                if (isset($case['confirmed_by_role']) && $case['confirmed_by_role']): ?>
+                                    <div class="schedule-history">
+                                        <div class="history-item confirmed">
+                                            <strong>Confirmed by:</strong> 
+                                            <?php
+                                            $roleNames = [
+                                                3 => 'Barangay Captain',
+                                                7 => 'Chief Officer',
+                                                8 => 'Resident'
+                                            ];
+                                            echo $roleNames[$case['confirmed_by_role']] ?? 'Unknown Role';
+                                            ?>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php else: ?>
+                            <div class="scheduling-status">
+                                <div class="scheduling-header">
+                                    <h4 class="scheduling-title">
+                                        <i class="fas fa-clock"></i>
+                                        Hearing Schedule
+                                    </h4>
+                                    <span class="status-badge status-pending">
+                                        Pending Schedule
+                                    </span>
+                                </div>
+                                <p class="text-muted">No hearing schedule has been proposed yet. Please wait for the barangay officials to schedule your hearing.</p>
+                            </div>
+                        <?php endif; ?>
+
+                        <?php if (!$case['has_email'] && isset($case['summons_info'])): ?>
+                            <div class="summons-info">
+                                <h4><i class="fas fa-envelope"></i> Summons Delivery</h4>
+                                <p>Since you don't have an email address on file, summons will be delivered physically.</p>
+                                <?php if ($case['summons_info']): ?>
+                                    <div class="summons-status">
+                                        <strong>Status:</strong> <?= ucfirst($case['summons_info']['delivery_status']) ?><br>
+                                        <strong>Method:</strong> <?= ucfirst($case['summons_info']['delivery_method']) ?><br>
+                                        <?php if ($case['summons_info']['delivered_at']): ?>
+                                            <strong>Delivered:</strong> <?= date('M d, Y g:i A', strtotime($case['summons_info']['delivered_at'])) ?>
+                                        <?php endif; ?>
+                                    </div>
+                                <?php endif; ?>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                <?php endforeach; ?>
             <?php endif; ?>
         </div>
     </div>
@@ -946,6 +1014,16 @@ unset($case);
             submitBtn.disabled = true;
             
             try {
+                // Show loading state
+                Swal.fire({
+                    title: 'Processing...',
+                    text: 'Submitting your response...',
+                    allowOutsideClick: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
                 const response = await fetch('../api/scheduling_api.php', {
                     method: 'POST',
                     body: new URLSearchParams({
