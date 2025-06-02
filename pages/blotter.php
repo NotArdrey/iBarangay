@@ -1366,135 +1366,157 @@ if (!empty($_GET['action'])) {
                   break;
 
             case 'approve_schedule':
-                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
-                    echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can approve schedules']);
-                    exit;
-                }
-                
-                try {
-                    $pdo->beginTransaction();
-                    
-                    // Determine which status to look for based on current role
-                    $pendingStatus = ($role === ROLE_CAPTAIN) ? 'pending_user_confirmation' : 'pending_officer_confirmation';
-                    
-                    // Get the proposal details - note we're checking for the specific pending status
-                    $stmt = $pdo->prepare("
-                        SELECT sp.*, bc.id as case_id, bc.hearing_count
-                        FROM schedule_proposals sp
-                        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
-                        WHERE sp.blotter_case_id = ? 
-                          AND bc.barangay_id = ?
-                          AND sp.status = ?
-                        ORDER BY sp.id DESC LIMIT 1
-                    ");
-                    $stmt->execute([$id, $bid, $pendingStatus]);
-                    $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    if (!$proposal) {
-                        echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
-                        exit;
-                    }
-                    
-                    // Create a hearing since we have approval
-                    $stmt = $pdo->prepare("
-                        INSERT INTO case_hearings
-                        (blotter_case_id, hearing_date, hearing_type, hearing_outcome, 
-                         presiding_officer_name, presiding_officer_position, hearing_number)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    ");
-                    $stmt->execute([
-                        $id,
-                        $proposal['proposed_date'] . ' ' . $proposal['proposed_time'],
-                        ($proposal['hearing_count'] === 0) ? 'initial' : 'mediation',
-                        'scheduled',
-                        $proposal['presiding_officer'],
-                        $proposal['presiding_officer_position'],
-                        ($proposal['hearing_count'] ?? 0) + 1
-                    ]);
-                    
-                    // Update proposal status to approved
-                    $pdo->prepare("
-                        UPDATE schedule_proposals
-                        SET status = 'both_confirmed' 
-                        WHERE blotter_case_id = ? AND id = ?
-                    ")->execute([$id, $proposal['id']]);
-                    
-                    // Update the case status
-                    $pdo->prepare("
-                        UPDATE blotter_cases
-                        SET status = 'open', 
-                            scheduling_status = 'scheduled',
-                            scheduled_hearing = CONCAT(?, ' '),
-                            hearing_count = COALESCE(hearing_count, 0) + 1
-                        WHERE id = ?
-                    ")->execute([$proposal['proposed_date'], $id]);
-                    
-                    $pdo->commit();
-                    
-                    echo json_encode(['success'=>true,'message'=>'Schedule approved successfully']);
-                } catch (Exception $e) {
-                    $pdo->rollBack();
-                    echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
-                }
-                break;
+    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+        echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can approve schedules']);
+        exit;
+    }
+    try {
+        $pdo->beginTransaction();
+        
+        // Fetch the proposal
+        $stmt = $pdo->prepare("
+            SELECT sp.*, bc.id as case_id, bc.hearing_count 
+            FROM schedule_proposals sp
+            JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+            WHERE sp.blotter_case_id = ? 
+              AND bc.barangay_id = ?
+            ORDER BY sp.id DESC LIMIT 1
+        ");
+        $stmt->execute([$id, $bid]);
+        $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$proposal) {
+            echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
+            exit;
+        }
 
-            case 'reject_schedule':
-                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
-                    echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can reject schedules']);
-                    exit;
-                }
-                
-                $data = json_decode(file_get_contents('php://input'), true);
-                $reason = $data['reason'] ?? 'No reason provided';
-                
-                try {
-                    $pdo->beginTransaction();
-                    
-                    // Determine which status to look for based on current role
-                    $pendingStatus = ($role === ROLE_CAPTAIN) ? 'pending_user_confirmation' : 'pending_officer_confirmation';
-                    
-                    // Get the proposal details - note we're checking for the specific pending status
-                    $stmt = $pdo->prepare("
-                        SELECT sp.*, bc.id as case_id
-                        FROM schedule_proposals sp
-                        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
-                        WHERE sp.blotter_case_id = ? 
-                          AND bc.barangay_id = ?
-                          AND sp.status = ?
-                        ORDER BY sp.id DESC LIMIT 1
-                    ");
-                    $stmt->execute([$id, $bid, $pendingStatus]);
-                    $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    if (!$proposal) {
-                        echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
-                        exit;
-                    }
-                    
-                    // Update proposal status as rejected
-                    $stmt = $pdo->prepare("
-                        UPDATE schedule_proposals
-                        SET status = 'conflict', conflict_reason = ?
-                        WHERE blotter_case_id = ? AND id = ?
-                    ");
-                    $stmt->execute([$reason, $id, $proposal['id']]);
-                    
-                    // Reset the case scheduling status
-                    $stmt = $pdo->prepare("
-                        UPDATE blotter_cases
-                        SET scheduling_status = 'pending_schedule'
-                        WHERE id = ?
-                    ");
-                    $stmt->execute([$id]);
-                    
-                    $pdo->commit();
-                    
-                    echo json_encode(['success'=>true,'message'=>'Schedule rejected successfully']);
-                } catch (Exception $e) {
-                    $pdo->rollBack();
-                    echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
-                }
-                break;
+        // Update only the captain confirmation
+        $pdo->prepare("
+            UPDATE schedule_proposals
+            SET captain_confirmed = 1,
+                captain_confirmed_at = NOW()
+            WHERE id = ?
+        ")->execute([$proposal['id']]);
+
+        // Check if BOTH parties have confirmed
+        $checkStmt = $pdo->prepare("
+            SELECT complainant_confirmed, respondent_confirmed, captain_confirmed
+            FROM schedule_proposals
+            WHERE id = ?
+        ");
+        $checkStmt->execute([$proposal['id']]);
+        $confirmations = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+        // Only finalize if ALL THREE are confirmed
+        if ($confirmations['complainant_confirmed'] && 
+            $confirmations['respondent_confirmed'] && 
+            $confirmations['captain_confirmed']) {
+            
+            // Insert into case_hearings
+            $pdo->prepare("
+                INSERT INTO case_hearings
+                (blotter_case_id, hearing_date, hearing_type, hearing_outcome,
+                 presiding_officer_name, presiding_officer_position, hearing_number)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+            ")->execute([
+                $id,
+                $proposal['proposed_date'] . ' ' . $proposal['proposed_time'],
+                ($proposal['hearing_count'] === 0) ? 'initial' : 'mediation',
+                'scheduled',
+                $proposal['presiding_officer'],
+                $proposal['presiding_officer_position'],
+                ($proposal['hearing_count'] ?? 0) + 1
+            ]);
+            
+            // Update statuses
+            $pdo->prepare("
+                UPDATE schedule_proposals
+                SET status = 'both_confirmed'
+                WHERE id = ?
+            ")->execute([$proposal['id']]);
+            
+            $pdo->prepare("
+                UPDATE blotter_cases
+                SET status = 'open',
+                    scheduling_status = 'scheduled',
+                    hearing_count = COALESCE(hearing_count, 0) + 1
+                WHERE id = ?
+            ")->execute([$id]);
+            
+            $pdo->commit();
+            echo json_encode(['success'=>true,'message'=>'All parties confirmed. Hearing scheduled.']);
+        } else {
+            $pdo->commit();
+            $missing = [];
+            if (!$confirmations['complainant_confirmed']) $missing[] = 'complainant';
+            if (!$confirmations['respondent_confirmed']) $missing[] = 'respondent';
+            
+            echo json_encode([
+                'success'=>true,
+                'message'=>'Your approval is recorded. Still waiting for: ' . implode(' and ', $missing)
+            ]);
+        }
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
+    }
+    break;
+
+               case 'reject_schedule':
+    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+        echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can reject schedules']);
+        exit;
+    }
+    
+    $data = json_decode(file_get_contents('php://input'), true);
+    $reason = $data['reason'] ?? 'Schedule conflict with officer availability';
+    
+    try {
+        $pdo->beginTransaction();
+        
+        // Get the latest proposal
+        $stmt = $pdo->prepare("
+            SELECT sp.*, bc.id as case_id
+            FROM schedule_proposals sp
+            JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+            WHERE sp.blotter_case_id = ? 
+              AND bc.barangay_id = ?
+            ORDER BY sp.id DESC LIMIT 1
+        ");
+        $stmt->execute([$id, $bid]);
+        $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$proposal) {
+            echo json_encode(['success'=>false,'message'=>'No valid proposal found']);
+            exit;
+        }
+        
+        // Mark as officer conflict (not participant conflict)
+        $stmt = $pdo->prepare("
+            UPDATE schedule_proposals
+            SET status = 'officer_conflict', 
+                conflict_reason = ?,
+                captain_confirmed = 0
+            WHERE id = ?
+        ");
+        $stmt->execute([$reason, $proposal['id']]);
+        
+        // Reset scheduling status to allow new proposal
+        $stmt = $pdo->prepare("
+            UPDATE blotter_cases
+            SET scheduling_status = 'pending_schedule'
+            WHERE id = ?
+        ");
+        $stmt->execute([$id]);
+        
+        $pdo->commit();
+        
+        echo json_encode(['success'=>true,'message'=>'Schedule rejected by officer. A new schedule can be proposed.']);
+    } catch (Exception $e) {
+        $pdo->rollBack();
+        echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
+    }
+    break;
 
             case 'get_available_slots':
                 header('Content-Type: application/json');
@@ -2024,6 +2046,11 @@ require_once "../components/header.php";
 <div id="addBlotterModal" tabindex="-1"
      class="hidden fixed top-0 left-0 right-0 z-50 w-full p-4 overflow-x-hidden overflow-y-auto md:inset-0 h-[calc(100%-1rem)] max-h-full">
   <div class="relative w-full max-w-2xl max-h-full mx-auto">
+    <div class="relative bg-white rounded-lg shadow">
+      <!-- Header -->
+      <div class="flex items-start justify-between p-5 border-b rounded-t">
+        <h3 class="text-xl font-semibold text-gray-900">Add New Case</h3>
+        <button type="button" onclick="toggleAddBlotterModal()"
     <div class="relative bg-white rounded-lg shadow">
       <!-- Header -->
       <div class="flex items-start justify-between p-5 border-b rounded-t">
