@@ -87,6 +87,7 @@ if (isset($_GET['action'])) {
             exit;
 
         } elseif ($action === 'view_doc_request') {
+            // Updated query to work with new structure
             $stmt = $pdo->prepare("
                 SELECT 
                     dr.id AS document_request_id, 
@@ -95,6 +96,11 @@ if (isset($_GET['action'])) {
                     dr.proof_image_path,
                     dr.remarks AS request_remarks,
                     dr.price,
+                    dr.purpose,
+                    dr.business_name,
+                    dr.business_location,
+                    dr.business_nature,
+                    dr.business_type,
                     dt.name AS document_name,
                     dt.code AS document_code,
                     -- Person information
@@ -113,19 +119,16 @@ if (isset($_GET['action'])) {
                     ec.contact_name AS emergency_contact_name,
                     ec.contact_number AS emergency_contact_number,
                     ec.contact_address AS emergency_contact_address,
-                    -- ID image
-                    pi.id_image_path,
                     -- User information (if linked)
                     u.email,
                     u.id AS user_id
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
-                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN users u ON dr.user_id = u.id
                 LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
                 LEFT JOIN barangay b ON dr.barangay_id = b.id
                 LEFT JOIN emergency_contacts ec ON p.id = ec.person_id
-                LEFT JOIN person_identification pi ON p.id = pi.person_id
                 WHERE dr.barangay_id = :bid
                   AND dr.id = :id
                   AND LOWER(dr.status) = 'pending'
@@ -142,7 +145,7 @@ if (isset($_GET['action'])) {
             }
 
         } elseif ($action === 'get_requests') {
-            // Get pending requests
+            // Get pending requests - Updated query
             $stmtPending = $pdo->prepare("
                 SELECT 
                     dr.id AS document_request_id,
@@ -150,9 +153,11 @@ if (isset($_GET['action'])) {
                     dr.status,
                     dr.price,
                     dr.proof_image_path,
+                    dr.purpose,
+                    dr.business_name,
                     dt.name AS document_name,
                     dt.code AS document_code,
-                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+                    CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
                     p.contact_number,
                     p.birth_date,
                     p.gender,
@@ -162,7 +167,7 @@ if (isset($_GET['action'])) {
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
-                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN users u ON dr.user_id = u.id
                 WHERE dr.barangay_id = :bid
                   AND LOWER(dr.status) = 'pending'
                   AND (u.is_active IS NULL OR u.is_active = TRUE)
@@ -179,7 +184,7 @@ if (isset($_GET['action'])) {
                     dr.status,
                     dr.completed_at,
                     dt.name AS document_name,
-                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name
+                    CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
@@ -197,55 +202,55 @@ if (isset($_GET['action'])) {
             if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $remarks = $_POST['remarks'] ?? '';
         
-                // 1) Ban in DB
-                $stmtBan = $pdo->prepare("
-                    UPDATE users
-                       SET is_active = FALSE
-                     WHERE id = :id
-                ");
-                
-                // First get the user ID from the person_id if needed
+                // Get the user ID from the document request
                 $getUserStmt = $pdo->prepare("
-                    SELECT u.id, u.email, CONCAT(p.first_name, ' ', p.last_name) AS name
-                    FROM users u
-                    JOIN persons p ON u.id = p.user_id
-                    WHERE u.id = :id OR p.id = :id
+                    SELECT u.id, u.email, CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS name
+                    FROM document_requests dr
+                    JOIN users u ON dr.user_id = u.id
+                    JOIN persons p ON dr.person_id = p.id
+                    WHERE dr.id = :id
                     LIMIT 1
                 ");
                 $getUserStmt->execute([':id'=>$reqId]);
                 $userInfo = $getUserStmt->fetch();
                 
-                if ($userInfo && $stmtBan->execute([':id'=>$userInfo['id']])) {
-                    // Send notification email
-                    if (!empty($userInfo['email'])) {
-                        try {
-                            $mail = new PHPMailer(true);
-                            $mail->isSMTP();
-                            $mail->Host       = 'smtp.gmail.com';
-                            $mail->SMTPAuth   = true;
-                            $mail->Username   = 'barangayhub2@gmail.com';
-                            $mail->Password   = 'eisy hpjz rdnt bwrp';
-                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                            $mail->Port       = 587;
-                            $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
-                            $mail->addAddress($userInfo['email'], $userInfo['name']);
-                            $mail->Subject = 'Your account has been suspended';
-                            $mail->Body    = "Hello {$userInfo['name']},\n\nYour account has been suspended for the following reason: {$remarks}";
-                            $mail->send();
-                        } catch (Exception $e) {
-                            error_log('Mailer Error: ' . $mail->ErrorInfo);
+                if ($userInfo) {
+                    $stmtBan = $pdo->prepare("UPDATE users SET is_active = FALSE WHERE id = :id");
+                    
+                    if ($stmtBan->execute([':id'=>$userInfo['id']])) {
+                        // Send notification email
+                        if (!empty($userInfo['email'])) {
+                            try {
+                                $mail = new PHPMailer(true);
+                                $mail->isSMTP();
+                                $mail->Host       = 'smtp.gmail.com';
+                                $mail->SMTPAuth   = true;
+                                $mail->Username   = 'barangayhub2@gmail.com';
+                                $mail->Password   = 'eisy hpjz rdnt bwrp';
+                                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                                $mail->Port       = 587;
+                                $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
+                                $mail->addAddress($userInfo['email'], $userInfo['name']);
+                                $mail->Subject = 'Your account has been suspended';
+                                $mail->Body    = "Hello {$userInfo['name']},\n\nYour account has been suspended for the following reason: {$remarks}";
+                                $mail->send();
+                            } catch (Exception $e) {
+                                error_log('Mailer Error: ' . $mail->ErrorInfo);
+                            }
                         }
+             
+                        logAuditTrail(
+                          $pdo, $current_admin_id,
+                          'UPDATE','users',$userInfo['id'],
+                          'Banned user: '.$remarks
+                        );
+                        $response['success'] = true;
+                        $response['message'] = 'User banned and notified.';
+                    } else {
+                        $response['message'] = 'Unable to ban user.';
                     }
-         
-                    logAuditTrail(
-                      $pdo, $current_admin_id,
-                      'UPDATE','users',$userInfo['id'],
-                      'Banned user: '.$remarks
-                    );
-                    $response['success'] = true;
-                    $response['message'] = 'User banned and notified.';
                 } else {
-                    $response['message'] = 'Unable to ban user or user not found.';
+                    $response['message'] = 'User not found.';
                 }
             } else {
                 $response['message'] = 'Invalid request method.';
@@ -273,12 +278,12 @@ if (isset($_GET['action'])) {
                 SELECT 
                     dr.id AS document_request_id,
                     dt.name AS document_name,
-                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+                    CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
                     u.email
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
-                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN users u ON dr.user_id = u.id
                 WHERE dr.id = :id
                   AND dr.barangay_id = :bid
             ");
@@ -365,12 +370,12 @@ if (isset($_GET['action'])) {
                     dr.id AS document_request_id,
                     dt.name AS document_name,
                     dt.code AS document_code,
-                    CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+                    CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
                     u.email
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
-                LEFT JOIN users u ON p.user_id = u.id
+                LEFT JOIN users u ON dr.user_id = u.id
                 WHERE dr.id = :id
                   AND dr.barangay_id = :bid
             ");
@@ -455,7 +460,7 @@ if (isset($_GET['action'])) {
 // Only include header + HTML if no specific action
 require_once "../components/header.php";
 
-// 1) Fetch all "Pending" doc requests (FIFO => earliest date first)
+// 1) Fetch all "Pending" doc requests (FIFO => earliest date first) - Updated query
 $stmt = $pdo->prepare("
     SELECT 
         dr.id AS document_request_id,
@@ -463,9 +468,11 @@ $stmt = $pdo->prepare("
         dr.status,
         dr.proof_image_path,
         dr.price,
+        dr.purpose,
+        dr.business_name,
         dt.name AS document_name,
         dt.code AS document_code,
-        CONCAT(p.first_name, ' ', p.last_name) AS requester_name,
+        CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
         p.contact_number,
         p.birth_date,
         p.gender,
@@ -476,7 +483,7 @@ $stmt = $pdo->prepare("
     FROM document_requests dr
     JOIN document_types dt ON dr.document_type_id = dt.id
     JOIN persons p ON dr.person_id = p.id
-    LEFT JOIN users u ON p.user_id = u.id
+    LEFT JOIN users u ON dr.user_id = u.id
     JOIN barangay b ON dr.barangay_id = b.id
     WHERE dr.barangay_id = :bid
       AND LOWER(dr.status) = 'pending'
@@ -494,7 +501,7 @@ $stmtHist = $pdo->prepare("
         dr.status,
         dr.completed_at,
         dt.name AS document_name,
-        CONCAT(p.first_name, ' ', p.last_name) AS requester_name
+        CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name
     FROM document_requests dr
     JOIN document_types dt ON dr.document_type_id = dt.id
     JOIN persons p ON dr.person_id = p.id
@@ -610,6 +617,16 @@ $completedRequests = $stmtHist->fetchAll();
     .fade-in {
       animation: fadeIn 0.5s ease-out;
     }
+
+    .restriction-warning {
+      background: #fef3c7;
+      border: 1px solid #f59e0b;
+      color: #92400e;
+      padding: 0.75rem;
+      border-radius: 0.375rem;
+      margin: 0.5rem 0;
+      font-size: 0.875rem;
+    }
   </style>
 </head>
 <body class="bg-gray-100">
@@ -677,9 +694,20 @@ $completedRequests = $stmtHist->fetchAll();
                 <tr class="hover:bg-gray-50 transition-colors">
                   <td class="px-4 py-3 text-sm text-gray-900 border-b">
                     <?= htmlspecialchars($req['requester_name']) ?>
+                    <?php if ($req['document_code'] === 'first_time_job_seeker'): ?>
+                      <div class="restriction-warning">
+                        <i class="fas fa-info-circle"></i> First Time Job Seeker - One time only
+                      </div>
+                    <?php endif; ?>
                   </td>
                   <td class="px-4 py-3 text-sm text-gray-900 border-b">
                     <?= htmlspecialchars($req['document_name']) ?>
+                    <?php if (!empty($req['purpose'])): ?>
+                      <br><small class="text-gray-600">Purpose: <?= htmlspecialchars($req['purpose']) ?></small>
+                    <?php endif; ?>
+                    <?php if (!empty($req['business_name'])): ?>
+                      <br><small class="text-blue-600">Business: <?= htmlspecialchars($req['business_name']) ?></small>
+                    <?php endif; ?>
                   </td>
                   <td class="px-4 py-3 text-sm text-gray-900 border-b">
                     <?= htmlspecialchars($req['contact_number'] ?? 'N/A') ?>
@@ -852,12 +880,10 @@ $completedRequests = $stmtHist->fetchAll();
       const tabContents = document.querySelectorAll('.tab-content');
 
       function switchTab(tabId) {
-        // Update tab buttons
         tabButtons.forEach(button => {
           button.classList.toggle('active', button.dataset.tab === tabId);
         });
 
-        // Update tab contents
         tabContents.forEach(content => {
           if (content.id === tabId) {
             content.classList.add('active');
@@ -1226,6 +1252,21 @@ $completedRequests = $stmtHist->fetchAll();
             .then(data => {
               if (data.success) {
                 const r = data.request;
+                let additionalInfo = '';
+                
+                // Add business information if available
+                if (r.business_name) {
+                  additionalInfo += `<p><strong>Business:</strong> ${r.business_name}</p>`;
+                  additionalInfo += `<p><strong>Business Location:</strong> ${r.business_location || 'N/A'}</p>`;
+                  additionalInfo += `<p><strong>Business Type:</strong> ${r.business_type || 'N/A'}</p>`;
+                  additionalInfo += `<p><strong>Business Nature:</strong> ${r.business_nature || 'N/A'}</p>`;
+                }
+                
+                // Add purpose if available
+                if (r.purpose) {
+                  additionalInfo += `<p><strong>Purpose:</strong> ${r.purpose}</p>`;
+                }
+
                 // Show modal with request details
                 Swal.fire({
                   title: 'Document Request Details',
@@ -1238,6 +1279,7 @@ $completedRequests = $stmtHist->fetchAll();
                       <p><strong>Request Date:</strong> ${r.request_date}</p>
                       <p><strong>Status:</strong> ${r.status}</p>
                       <p><strong>Price:</strong> ₱${parseFloat(r.price || 0).toFixed(2)}</p>
+                      ${additionalInfo}
                     </div>
                   `,
                   showCloseButton: true,
