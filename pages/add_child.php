@@ -96,7 +96,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         'Last Name' => $last_name,
         'Birth Date' => $birth_date,
         'Gender' => $gender,
-        // Household ID is optional
+        'Purok' => $_POST['purok_id'] ?? '',
+        'Household Number' => $_POST['household_id'] ?? ''
     ];
     foreach ($required as $label => $val) {
         if (!$val) $add_error .= "$label is required.<br>";
@@ -1061,8 +1062,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             // Add form validation
             const form = document.querySelector('form');
             form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                // Get the selected values
+                const selectedPurok = purokSelect.value;
+                const selectedHousehold = householdSelect.value;
+                
+                // Validate purok and household selection
+                if (!selectedPurok) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Missing Information',
+                        text: 'Please select a Purok.',
+                        confirmButtonColor: '#3085d6'
+                    });
+                    purokSelect.focus();
+                    return;
+                }
+                
+                if (!selectedHousehold) {
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Missing Information',
+                        text: 'Please select a Household.',
+                        confirmButtonColor: '#3085d6'
+                    });
+                    householdSelect.focus();
+                    return;
+                }
+
                 if (birthDateInput.value && !validateAge(birthDateInput.value)) {
-                    e.preventDefault();
                     Swal.fire({
                         icon: 'error',
                         title: 'Invalid Age',
@@ -1070,24 +1099,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         confirmButtonColor: '#3085d6'
                     });
                     birthDateInput.focus();
-                } else {
-                    e.preventDefault();
-                    Swal.fire({
-                        title: 'Saving Child Data',
-                        text: 'Please wait while we save the child information...',
-                        allowOutsideClick: false,
-                        allowEscapeKey: false,
-                        showConfirmButton: false,
-                        didOpen: () => {
-                            Swal.showLoading();
-                        }
-                    });
-
-                    // Submit the form after showing the loading message
-                    setTimeout(() => {
-                        form.submit();
-                    }, 500);
+                    return;
                 }
+
+                Swal.fire({
+                    title: 'Saving Child Data',
+                    text: 'Please wait while we save the child information...',
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    showConfirmButton: false,
+                    didOpen: () => {
+                        Swal.showLoading();
+                    }
+                });
+
+                // Submit the form after showing the loading message
+                setTimeout(() => {
+                    form.submit();
+                }, 500);
             });
 
             // Show success message if PHP indicates success
@@ -1102,10 +1131,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Show error message if PHP indicates error
             <?php if ($add_error): ?>
+                const errorMessages = `<?php echo str_replace("\n", "<br>", $add_error); ?>`.split('<br>').filter(msg => msg.trim() !== '');
                 Swal.fire({
                     icon: 'error',
-                    title: 'Error!',
-                    text: '<?php echo $add_error; ?>',
+                    title: 'Please fix the following:',
+                    html: errorMessages.map(msg => `<div class="text-left mb-2">• ${msg}</div>`).join(''),
                     confirmButtonColor: '#3085d6'
                 });
             <?php endif; ?>

@@ -15,13 +15,15 @@ $stmt = $pdo->prepare("
         CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
         TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age,
         p.years_of_residency,
-        p.resident_type
+        p.resident_type,
+        CASE WHEN ci.id IS NOT NULL THEN 1 ELSE 0 END as is_child
     FROM persons p
     LEFT JOIN household_members hm ON p.id = hm.person_id
     LEFT JOIN households h ON hm.household_id = h.id
     LEFT JOIN barangay b ON h.barangay_id = b.id
     LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
     LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
+    LEFT JOIN child_information ci ON p.id = ci.person_id
     WHERE h.barangay_id = ?
     AND p.is_archived = ?
     ORDER BY p.last_name, p.first_name
@@ -31,6 +33,15 @@ $stmt = $pdo->prepare("
 $show_archived = isset($_GET['show_archived']) && $_GET['show_archived'] === 'true';
 $stmt->execute([$_SESSION['barangay_id'], $show_archived]);
 $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+// Debug information
+$child_count = 0;
+foreach ($residents as $resident) {
+    if ($resident['age'] < 18 && $resident['is_child']) {
+        $child_count++;
+    }
+}
+error_log("Total residents: " . count($residents) . ", Child records: " . $child_count);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -125,19 +136,8 @@ $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
             <?php foreach ($residents as $resident):
               $age = $resident['age'] ?? calculateAge($resident['birth_date']);
               $residentType = strtoupper($resident['resident_type'] ?? 'REGULAR');
-
-              // Check if this is a child record
-              $is_child = false;
-              $child_info = null;
-              if ($age < 18) {
-                $stmt = $pdo->prepare("SELECT * FROM child_information WHERE person_id = ?");
-                $stmt->execute([$resident['id']]);
-                $child_info = $stmt->fetch(PDO::FETCH_ASSOC);
-                $is_child = $child_info !== false;
-              }
-
-              // For children, we'll use age-based categorization
-              $category = ($age < 18) ? 'CHILD' : $residentType;
+              $is_child = $resident['is_child'] && $age < 18;
+              $category = $is_child ? 'CHILD' : $residentType;
             ?>
               <tr class="resident-row"
                 data-category="<?= $category ?>"
