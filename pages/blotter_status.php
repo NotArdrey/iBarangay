@@ -74,7 +74,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
             
-            // Simplified query without the missing columns
             $stmt = $pdo->prepare("
                 SELECT sp.*, 
                        bc.id as case_id
@@ -90,11 +89,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 exit;
             }
 
-            // Check if the proposal is in a state that allows user confirmation
             if ($proposal['status'] !== 'pending_user_confirmation' && 
                 $proposal['status'] !== 'all_confirmed' && 
                 $proposal['status'] !== 'both_confirmed') {
-                // If officers haven't acted yet (e.g. status is pending_captain_approval or pending_chief_approval)
+
                 if (strpos($proposal['status'], '_approval') !== false) {
                      echo json_encode(['success' => false, 'message' => 'Schedule is awaiting officer review before participant confirmation. Current status: ' . htmlspecialchars($proposal['status'])]);
                 } else {
@@ -102,11 +100,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
                 exit;
             }
-            
-            // Use the correct case_id field
             $caseId = $proposal['case_id'];
-            
-            // Find if user is complainant or respondent
+
             $pstmt = $pdo->prepare("
                 SELECT bp.role 
                 FROM blotter_participants bp 
