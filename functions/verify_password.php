@@ -45,8 +45,8 @@ try {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'barangayhub2@gmail.com';
-        $mail->Password   = 'eisy hpjz rdnt bwrp';
+        $mail->Username   = 'ibarangay.system@gmail.com';
+        $mail->Password   = 'nxxn vxyb kxum cuvd';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
 
@@ -69,4 +69,4 @@ try {
     error_log("Database error: " . $e->getMessage());
     echo json_encode(['success' => false, 'message' => 'An error occurred']);
     exit;
-} 
+}

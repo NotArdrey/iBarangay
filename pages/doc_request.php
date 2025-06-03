@@ -223,12 +223,12 @@ if (isset($_GET['action'])) {
                             $mail->isSMTP();
                             $mail->Host       = 'smtp.gmail.com';
                             $mail->SMTPAuth   = true;
-                            $mail->Username   = 'barangayhub2@gmail.com';
-                            $mail->Password   = 'eisy hpjz rdnt bwrp';
+                            $mail->Username   = 'ibarangay.system@gmail.com';  
+                            $mail->Password   = 'nxxn vxyb kxum cuvd';   
                             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                             $mail->Port       = 587;
                             $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
-                            $mail->addAddress($userInfo['email'], $userInfo['name']);
+                            $mail->addAddress($userInfo['email']); // Changed to use single argument
                             $mail->Subject = 'Your account has been suspended';
                             $mail->Body = getAccountSuspendedTemplate($userInfo['name'], $remarks);
                             $mail->send();
@@ -301,8 +301,8 @@ if (isset($_GET['action'])) {
                     $mail->isSMTP();
                     $mail->Host       = 'smtp.gmail.com';
                     $mail->SMTPAuth   = true;
-                    $mail->Username   = 'barangayhub2@gmail.com';
-                    $mail->Password   = 'eisy hpjz rdnt bwrp';
+                    $mail->Username   = 'ibarangay.system@gmail.com';  
+                    $mail->Password   = 'nxxn vxyb kxum cuvd';   
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
                     $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
@@ -387,8 +387,8 @@ if (isset($_GET['action'])) {
                     $mail->isSMTP();
                     $mail->Host       = 'smtp.gmail.com';
                     $mail->SMTPAuth   = true;
-                    $mail->Username   = 'barangayhub2@gmail.com';
-                    $mail->Password   = 'eisy hpjz rdnt bwrp';
+                    $mail->Username   = 'ibarangay.system@gmail.com';  
+                    $mail->Password   = 'nxxn vxyb kxum cuvd';   
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
                     $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/../config/dbconn.php';
+require_once __DIR__ . '/email_template.php'; // Added require for email templates
 
 /**
  * Create a new notification
@@ -185,4 +186,91 @@ function getRecentNotifications($user_id, $limit = 5) {
         error_log("Error getting recent notifications: " . $e->getMessage());
         return [];
     }
-} 
+}
+
+/**
+ * Notify user about a blotter case update.
+ *
+ * @param int $user_id The user to notify.
+ * @param int $case_id The ID of the blotter case.
+ * @param string $case_number The case number.
+ * @param string $update_details Specific details about the update.
+ * @param string|null $action_url Optional URL for the notification.
+ * @param string|null $action_text Optional text for the action button in the email.
+ * @return bool Whether the notification was created successfully.
+ */
+function notifyBlotterUpdate($user_id, $case_id, $case_number, $update_details, $action_url = null, $action_text = null) {
+    $system_title = "Blotter Case Update: " . htmlspecialchars($case_number);
+    $email_html_content = getBlotterUpdateNotificationTemplate($case_number, $update_details, $action_url, $action_text);
+    
+    return createNotification(
+        $user_id,
+        'blotter',
+        $system_title,
+        $email_html_content, // For systems that might send this as email
+        'medium',
+        'blotter_cases',
+        $case_id,
+        $action_url
+    );
+}
+
+/**
+ * Notify user about a scheduled hearing for a blotter case.
+ *
+ * @param int $user_id The user to notify.
+ * @param int $case_id The ID of the blotter case.
+ * @param string $case_number The case number.
+ * @param string $hearing_date The date of the hearing.
+ * @param string $hearing_time The time of the hearing.
+ * @param string $location The location of the hearing.
+ * @param string $additional_info Optional additional information for the email.
+ * @param string|null $action_url Optional URL for the notification.
+ * @param string|null $action_text Optional text for the action button in the email.
+ * @return bool Whether the notification was created successfully.
+ */
+function notifyHearingScheduled($user_id, $case_id, $case_number, $hearing_date, $hearing_time, $location, $additional_info = '', $action_url = null, $action_text = null) {
+    $system_title = "Hearing Scheduled: Case " . htmlspecialchars($case_number);
+    $email_html_content = getHearingScheduleNotificationTemplate($case_number, $hearing_date, $hearing_time, $location, $additional_info, $action_url, $action_text);
+
+    return createNotification(
+        $user_id,
+        'blotter_hearing',
+        $system_title,
+        $email_html_content,
+        'high',
+        'blotter_cases',
+        $case_id,
+        $action_url
+    );
+}
+
+/**
+ * Notify user about an issued summons for a blotter case.
+ *
+ * @param int $user_id The user to notify (typically the respondent).
+ * @param int $case_id The ID of the blotter case.
+ * @param string $case_number The case number.
+ * @param string $respondent_name The name of the respondent.
+ * @param string $hearing_date The date of the hearing.
+ * @param string $hearing_time The time of the hearing.
+ * @param string $additional_info Optional additional information for the email.
+ * @param string|null $action_url Optional URL for the notification (e.g., to view summons).
+ * @param string|null $action_text Optional text for the action button in the email.
+ * @return bool Whether the notification was created successfully.
+ */
+function notifySummonsIssued($user_id, $case_id, $case_number, $respondent_name, $hearing_date, $hearing_time, $additional_info = '', $action_url = null, $action_text = null) {
+    $system_title = "Summons Issued: Case " . htmlspecialchars($case_number);
+    $email_html_content = getSummonsNotificationTemplate($case_number, $respondent_name, $hearing_date, $hearing_time, $additional_info, $action_url, $action_text);
+
+    return createNotification(
+        $user_id,
+        'blotter_summons',
+        $system_title,
+        $email_html_content,
+        'urgent',
+        'blotter_cases',
+        $case_id,
+        $action_url
+    );
+}
