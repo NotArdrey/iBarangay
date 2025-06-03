@@ -15,16 +15,16 @@ const ROLE_COUNCILOR    = 6;
 const ROLE_CHIEF        = 7;
 const ROLE_RESIDENT     = 8;
 
-// 1) session, headers, token
+
 captain_start();
 
-// 2) access check & get barangay_id
+
 $bid = captain_checkAccess($pdo);
 
-// 3) handle any AJAX/GET/POST actions
+
 captain_handleActions($pdo, $bid);
 
-// 4) load dropdown and table data
+
 extract(captain_loadData($pdo, $bid));
 ?>
 
@@ -37,7 +37,7 @@ extract(captain_loadData($pdo, $bid));
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Captain Dashboard - User Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.7/dist/sweetalert2.all.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
 <body class="bg-gray-50">
@@ -68,7 +68,10 @@ extract(captain_loadData($pdo, $bid));
                         <?php foreach ($users as $user): ?>
                             <tr>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
-                                    <?= htmlspecialchars($user['person_name'] ?? ($user['first_name'].' '.$user['last_name'])) ?>
+                                    <?= htmlspecialchars(
+                                        $user['person_name'] ??
+                                        (trim(($user['first_name'] ?? '') . ' ' . ($user['last_name'] ?? '')) ?: 'N/A')
+                                    ) ?>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                                     <?= htmlspecialchars($user['email']) ?>
@@ -78,7 +81,7 @@ extract(captain_loadData($pdo, $bid));
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap">
                                     <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium <?= $user['is_active'] ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800' ?>">
-                                        <?= $user['status_text'] ?>
+                                        <?= isset($user['status_text']) ? $user['status_text'] : ($user['is_active'] ? 'Active' : 'Inactive') ?>
                                     </span>
                                 </td>
                                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -229,13 +232,12 @@ extract(captain_loadData($pdo, $bid));
             try {
                 const response = await fetch(`?toggle_status=1&user_id=${userId}&action=${action}`);
                 const data = await response.json();
-                
                 if (data.success) {
                     Swal.fire('Success!', `User ${action}d successfully`, 'success').then(() => {
                         location.reload();
                     });
                 } else {
-                    Swal.fire('Error', data.message, 'error');
+                    Swal.fire('Error', data.message || 'Failed to update user status', 'error');
                 }
             } catch (error) {
                 Swal.fire('Error', 'Failed to update user status', 'error');
@@ -252,19 +254,18 @@ extract(captain_loadData($pdo, $bid));
                 cancelButtonColor: '#3085d6',
                 confirmButtonText: 'Yes, delete it!'
             });
-            
             if (!result.isConfirmed) return;
-
             try {
-                const response = await fetch(`?delete_id=${id}`);
+                // Send CSRF token as GET param
+                const csrf = <?= json_encode($_SESSION['csrf_token']) ?>;
+                const response = await fetch(`?delete_id=${id}&csrf_token=${encodeURIComponent(csrf)}`);
                 const data = await response.json();
-                
                 if (data.success) {
                     Swal.fire('Deleted!', 'User has been deleted.', 'success').then(() => {
                         location.reload();
                     });
                 } else {
-                    Swal.fire('Error', data.message, 'error');
+                    Swal.fire('Error', data.message || 'Failed to delete user', 'error');
                 }
             } catch (error) {
                 Swal.fire('Error', 'Failed to delete user', 'error');
@@ -286,7 +287,7 @@ extract(captain_loadData($pdo, $bid));
             if (json.success) {
               Swal.fire('Success', json.message || 'Done', 'success').then(()=>location.reload());
             } else {
-              Swal.fire('Error', json.message, 'error');
+              Swal.fire('Error', json.message || 'Failed to add user', 'error');
             }
           } catch {
             Swal.fire('Error','Server error','error');
@@ -295,15 +296,24 @@ extract(captain_loadData($pdo, $bid));
 
         // open & populate edit modal
         async function openEditUserModal(id) {
-          const res = await fetch(`?get_user=1&user_id=${id}`);
-          const u   = await res.json();
-          document.getElementById('editUserId').value   = u.id;
-          document.getElementById('firstNameEdit').value= u.first_name;
-          document.getElementById('lastNameEdit').value = u.last_name;
-          document.getElementById('emailEdit').value    = u.email;
-          document.getElementById('phoneEdit').value    = u.phone;
-          document.getElementById('roleEdit').value     = u.role_id;
-          document.getElementById('editUserModal').classList.remove('hidden');
+          try {
+            const res = await fetch(`?get_user=1&user_id=${id}`);
+            const data = await res.json();
+            if (!data.success) {
+              Swal.fire('Error', data.message || 'Failed to load user', 'error');
+              return;
+            }
+            const u = data.data;
+            document.getElementById('editUserId').value   = u.id;
+            document.getElementById('firstNameEdit').value= u.first_name || '';
+            document.getElementById('lastNameEdit').value = u.last_name || '';
+            document.getElementById('emailEdit').value    = u.email || '';
+            document.getElementById('phoneEdit').value    = u.phone || '';
+            document.getElementById('roleEdit').value     = u.role_id || '';
+            document.getElementById('editUserModal').classList.remove('hidden');
+          } catch (e) {
+            Swal.fire('Error', 'Failed to load user', 'error');
+          }
         }
         function closeEditUserModal() {
           document.getElementById('editUserModal').classList.add('hidden');
@@ -314,13 +324,17 @@ extract(captain_loadData($pdo, $bid));
           .addEventListener('submit', async e => {
             e.preventDefault();
             const form = e.target, data = new FormData(form);
-            const res  = await fetch('', { method:'POST', body:data });
-            const json = await res.json();
-            if (json.success) {
-              Swal.fire('Success', json.message, 'success')
-                 .then(()=>location.reload());
-            } else {
-              Swal.fire('Error', json.message, 'error');
+            try {
+              const res  = await fetch('', { method:'POST', body:data });
+              const json = await res.json();
+              if (json.success) {
+                Swal.fire('Success', json.message || 'User updated', 'success')
+                   .then(()=>location.reload());
+              } else {
+                Swal.fire('Error', json.message || 'Update failed', 'error');
+              }
+            } catch {
+              Swal.fire('Error', 'Server error', 'error');
             }
           });
 
@@ -328,11 +342,20 @@ extract(captain_loadData($pdo, $bid));
         document.getElementById('personSelect').addEventListener('change', async function() {
           ['firstName','lastName','emailField'].forEach(id=>document.getElementById(id).value='');
           if (!this.value) return;
-          const res = await fetch(`?get_person=1&person_id=${this.value}`);
-          const data = await res.json();
-          document.getElementById('firstName').value = data.first_name;
-          document.getElementById('lastName').value  = data.last_name;
-          document.getElementById('emailField').value = data.email || '';
+          try {
+            const res = await fetch(`?get_person=1&person_id=${this.value}`);
+            const data = await res.json();
+            if (!data.success) {
+              Swal.fire('Error', data.message || 'Failed to load person', 'error');
+              return;
+            }
+            const p = data.data;
+            document.getElementById('firstName').value = p.first_name || '';
+            document.getElementById('lastName').value  = p.last_name || '';
+            document.getElementById('emailField').value = p.email || '';
+          } catch {
+            Swal.fire('Error', 'Failed to load person', 'error');
+          }
         });
     </script>
 </body>

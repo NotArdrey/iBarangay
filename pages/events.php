@@ -31,10 +31,18 @@ function logAuditTrail(
     // Fix: Always set user_id (required, NOT NULL) and admin_user_id
     $pdo->prepare(
         "INSERT INTO audit_trails
-         (user_id, admin_user_id, action, table_name, record_id, description)
+             (user_id, admin_user_id, action, table_name, record_id, description)
          VALUES (?, ?, ?, ?, ?, ?)"
-    )->execute([$adminId, $adminId, $action, $table, $recordId, $desc]);
+    )->execute([
+        $adminId,
+        $adminId,
+        $action,
+        $table,
+        $recordId,
+        $desc
+    ]);
 }
+
 
 function getEventNotificationTemplate(string $title, string $message, bool $isPostponed = false): string
 {
@@ -113,12 +121,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     /* postpone + delete */
     if (isset($_POST['delete']) && $event_id) {
-        $stmt = $pdo->prepare("SELECT * FROM events WHERE id = ? AND barangay_id = ?");
+        $stmt = $pdo->prepare(
+            "SELECT * FROM events WHERE id = ? AND barangay_id = ?"
+        );
         $stmt->execute([$event_id, $bid]);
         $event = $stmt->fetch(PDO::FETCH_ASSOC);
 
         if ($event) {
             sendEventEmails($pdo, $event, $bid, 'postponed');
+
             $pdo->prepare("DELETE FROM events WHERE id = ? AND barangay_id = ?")
                 ->execute([$event_id, $bid]);
             logAuditTrail($pdo, $user_id, 'DELETE', 'events', $event_id, 'Event postponed & deleted');
@@ -127,6 +138,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'title' => 'Event Postponed',
                 'message' => 'The event has been postponed and residents have been notified.'
             ];
+
         } else {
             $_SESSION['alert'] = [
                 'type' => 'error',
@@ -156,8 +168,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($organizer !== '' && strlen($organizer) > 100)
         $errors[] = 'Organizer max 100 chars';
 
-    $startDT = DateTime::createFromFormat('Y-m-d\TH:i', $startRaw) ?: DateTime::createFromFormat('Y-m-d H:i:s', $startRaw);
-    $endDT   = DateTime::createFromFormat('Y-m-d\TH:i', $endRaw)   ?: DateTime::createFromFormat('Y-m-d H:i:s', $endRaw);
+    $startDT = DateTime::createFromFormat('Y-m-d\TH:i', $startRaw)
+        ?: DateTime::createFromFormat('Y-m-d H:i:s', $startRaw);
+    $endDT   = DateTime::createFromFormat('Y-m-d\TH:i', $endRaw)
+        ?: DateTime::createFromFormat('Y-m-d H:i:s', $endRaw);
 
     if (!$startDT) $errors[] = 'Invalid start date/time';
     if (!$endDT)   $errors[] = 'Invalid end date/time';
@@ -178,17 +192,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $end_datetime   = $endDT->format('Y-m-d H:i:s');
 
     try {
-        if ($event_id) {          /* update */
+        if ($event_id) { /* update */
             $pdo->prepare(
                 "UPDATE events
-                   SET title = ?, description = ?, start_datetime = ?, end_datetime = ?,
-                       location = ?, organizer = ?
-                 WHERE id = ? AND barangay_id = ?"
+                    SET title = ?, description = ?, start_datetime = ?, end_datetime = ?,
+                        location = ?, organizer = ?
+                  WHERE id = ? AND barangay_id = ?"
             )->execute([
                 $title, $description, $start_datetime, $end_datetime,
                 $location, $organizer, $event_id, $bid
             ]);
-
             logAuditTrail($pdo, $user_id, 'UPDATE', 'events', $event_id, 'Event updated');
             $_SESSION['alert'] = [
                 'type' => 'success',
@@ -196,10 +209,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 'message' => 'Event has been updated successfully.'
             ];
         } else {                  /* insert */
+
             $pdo->prepare(
                 "INSERT INTO events
-                     (title, description, start_datetime, end_datetime,
-                      location, organizer, barangay_id, created_by_user_id)
+                        (title, description, start_datetime, end_datetime,
+                        location, organizer, barangay_id, created_by_user_id)
                  VALUES (?,?,?,?,?,?,?,?)"
             )->execute([
                 $title, $description, $start_datetime, $end_datetime,
@@ -212,12 +226,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $evt = $evt->fetch(PDO::FETCH_ASSOC);
 
             sendEventEmails($pdo, $evt, $bid, 'new');
+
             logAuditTrail($pdo, $user_id, 'INSERT', 'events', $newId, 'Event created');
             $_SESSION['alert'] = [
                 'type' => 'success',
                 'title' => 'Success',
                 'message' => 'Event has been created and residents have been notified.'
             ];
+
         }
     } catch (PDOException $e) {
         error_log('DB error: ' . $e->getMessage());
@@ -238,8 +254,11 @@ $stmt = $pdo->prepare("
         e.*, 
         p.first_name AS creator_first_name, 
         p.last_name AS creator_last_name
+        p.first_name AS creator_first_name, 
+        p.last_name AS creator_last_name
     FROM events e
     LEFT JOIN users u ON e.created_by_user_id = u.id
+    LEFT JOIN persons p ON u.id = p.user_id
     LEFT JOIN persons p ON u.id = p.user_id
     WHERE e.barangay_id = :bid 
     ORDER BY e.start_datetime DESC
