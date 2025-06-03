@@ -3,7 +3,7 @@ require "../config/dbconn.php";
 require "../functions/manage_census.php";
 require_once "../components/header.php";
 
-// Use the real household ID from the household_members table (not just the household's auto-increment id)
+// Query to get only archived records
 $stmt = $pdo->prepare("
     SELECT 
         p.*, 
@@ -25,22 +25,12 @@ $stmt = $pdo->prepare("
     LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
     LEFT JOIN child_information ci ON p.id = ci.person_id
     WHERE h.barangay_id = ?
-    AND p.is_archived = 0
+    AND p.is_archived = 1
     ORDER BY p.last_name, p.first_name
 ");
 
-// Execute the query
 $stmt->execute([$_SESSION['barangay_id']]);
 $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
-// Debug information
-$child_count = 0;
-foreach ($residents as $resident) {
-    if ($resident['age'] < 18 && $resident['is_child']) {
-        $child_count++;
-    }
-}
-error_log("Total residents: " . count($residents) . ", Child records: " . $child_count);
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -48,14 +38,13 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Census Records</title>
+  <title>Archived Records</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2/dist/tailwind.min.css" rel="stylesheet" />
   <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
 </head>
 
 <body class="bg-gray-100">
   <div class="container mx-auto p-4">
-
     <!-- Navigation Buttons -->
     <div class="flex flex-wrap gap-4 mb-6">
       <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
@@ -80,36 +69,9 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
       </a>
     </div>
 
-    <section id="censusRecords" class="bg-white rounded-lg shadow-sm p-6">
-      <h2 class="text-3xl font-bold text-blue-800">Census Records</h2>
+    <section id="archivedRecords" class="bg-white rounded-lg shadow-sm p-6">
+      <h2 class="text-3xl font-bold text-red-800">Archived Records</h2>
       <div class="mb-4 flex justify-between items-center">
-        <div class="flex gap-2">
-          <button id="btn-all"
-            class="filter-btn px-4 py-2 bg-blue-600 text-white rounded transition-colors duration-200"
-            data-filter="all">
-            All
-          </button>
-          <button id="btn-regular"
-            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
-            data-filter="regular">
-            Regular
-          </button>
-          <button id="btn-pwd"
-            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
-            data-filter="pwd">
-            PWD
-          </button>
-          <button id="btn-seniors"
-            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
-            data-filter="seniors">
-            Seniors
-          </button>
-          <button id="btn-children"
-            class="filter-btn px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300 transition-colors duration-200"
-            data-filter="children">
-            Children
-          </button>
-        </div>
         <div>
           <input type="text" id="search-resident" placeholder="Search by name..." class="px-4 py-2 border rounded w-64">
         </div>
@@ -137,11 +99,9 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
               $category = $is_child ? 'CHILD' : $residentType;
             ?>
               <tr class="resident-row"
-                data-category="<?= $category ?>"
                 data-name="<?= htmlspecialchars("{$resident['last_name']}, {$resident['first_name']} " .
                               ($resident['middle_name'] ? substr($resident['middle_name'], 0, 1) . '.' : '') .
-                              ($resident['suffix'] ? " {$resident['suffix']}" : '')) ?>"
-                data-archived="<?= $resident['is_archived'] ? 'true' : 'false' ?>">
+                              ($resident['suffix'] ? " {$resident['suffix']}" : '')) ?>">
                 <td class="px-6 py-4 whitespace-nowrap">
                   <?php if ($is_child): ?>
                     <span class="px-2 py-1 text-xs font-semibold rounded-full bg-yellow-100 text-yellow-800">
@@ -176,11 +136,7 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
                   <a href="view_resident.php?id=<?= $resident['id'] ?>"
                     onclick="event.preventDefault(); viewResident(<?= $resident['id'] ?>);"
                     class="text-green-600 hover:text-green-900 mr-3">View</a>
-                  <?php if ($resident['is_archived']): ?>
-                    <button onclick="restoreResident(<?= $resident['id'] ?>)" class="text-green-600 hover:text-green-900">Restore</button>
-                  <?php else: ?>
-                    <button onclick="deleteResident(<?= $resident['id'] ?>)" class="text-red-600 hover:text-red-900">Archive</button>
-                  <?php endif; ?>
+                  <button onclick="restoreResident(<?= $resident['id'] ?>)" class="text-green-600 hover:text-green-900">Restore</button>
                 </td>
               </tr>
             <?php endforeach; ?>
@@ -191,58 +147,8 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
   </div>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      const filterButtons = document.querySelectorAll('.filter-btn');
-      const residentRows = document.querySelectorAll('.resident-row');
       const searchInput = document.getElementById('search-resident');
-
-      // Active and inactive button styles
-      const activeClasses = ['bg-blue-600', 'text-white'];
-      const inactiveClasses = ['bg-gray-200', 'text-gray-700', 'hover:bg-gray-300'];
-
-      // Function to update button styles
-      function updateButtonStyles(activeButton) {
-        filterButtons.forEach(btn => {
-          // Remove all style classes
-          btn.classList.remove(...activeClasses, ...inactiveClasses);
-
-          if (btn === activeButton) {
-            // Apply active styles
-            btn.classList.add(...activeClasses);
-          } else {
-            // Apply inactive styles
-            btn.classList.add(...inactiveClasses);
-          }
-        });
-      }
-
-      // Function to filter residents
-      function filterResidents(filterType) {
-        const rows = document.querySelectorAll('tbody tr');
-        rows.forEach(row => {
-          const category = row.getAttribute('data-category');
-          let shouldShow = false;
-
-          switch (filterType) {
-            case 'all':
-              shouldShow = true;
-              break;
-            case 'regular':
-              shouldShow = category === 'REGULAR';
-              break;
-            case 'pwd':
-              shouldShow = category === 'PWD';
-              break;
-            case 'seniors':
-              shouldShow = category === 'SENIOR';
-              break;
-            case 'children':
-              shouldShow = category === 'CHILD';
-              break;
-          }
-
-          row.style.display = shouldShow ? '' : 'none';
-        });
-      }
+      const residentRows = document.querySelectorAll('.resident-row');
 
       // Function to search residents by name
       function searchResidents(searchTerm) {
@@ -250,92 +156,17 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
 
         residentRows.forEach(row => {
           const name = row.getAttribute('data-name').toLowerCase();
-          const isVisible = row.style.display !== 'none';
-
-          if (name.includes(lowercaseSearch)) {
-            // Only show if it passes the current filter
-            if (isVisible || searchTerm === '') {
-              row.style.display = '';
-            }
-          } else {
-            row.style.display = 'none';
-          }
+          row.style.display = name.includes(lowercaseSearch) ? '' : 'none';
         });
       }
 
-      // Add click event listeners to filter buttons
-      filterButtons.forEach(button => {
-        button.addEventListener('click', function() {
-          const filterType = this.getAttribute('data-filter');
-          
-          // Update button styles
-          updateButtonStyles(this);
-          
-          // Filter residents
-          filterResidents(filterType);
-        });
+      // Add search input event listener
+      searchInput.addEventListener('input', function() {
+        searchResidents(this.value);
       });
-
-      // Initialize with correct filter based on URL parameter
-      const urlParams = new URLSearchParams(window.location.search);
-      const showArchived = urlParams.get('show_archived') === 'true';
-      
-      if (showArchived) {
-        const archivedButton = document.getElementById('btn-archived');
-        updateButtonStyles(archivedButton);
-      } else {
-        const allButton = document.getElementById('btn-all');
-        updateButtonStyles(allButton);
-        filterResidents('all');
-      }
     });
 
-    function deleteResident(id) {
-      Swal.fire({
-        title: 'Are you sure?',
-        text: "This will archive the resident record. You can restore it later if needed.",
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonColor: '#3085d6',
-        cancelButtonColor: '#d33',
-        confirmButtonText: 'Yes, archive it!'
-      }).then((result) => {
-        if (result.isConfirmed) {
-          // Send delete request
-          fetch(`../functions/delete_resident.php?id=${id}`, {
-              method: 'DELETE'
-            })
-            .then(response => response.json())
-            .then(data => {
-              if (data.success) {
-                Swal.fire(
-                  'Archived!',
-                  'Resident has been archived.',
-                  'success'
-                ).then(() => {
-                  window.location.reload();
-                });
-              } else {
-                Swal.fire(
-                  'Error!',
-                  data.message || 'Something went wrong.',
-                  'error'
-                );
-              }
-            })
-            .catch(error => {
-              Swal.fire(
-                'Error!',
-                'Something went wrong.',
-                'error'
-              );
-            });
-        }
-      });
-    }
-
     function viewResident(id) {
-      console.log('Viewing resident ID:', id);
       window.location.href = 'view_resident.php?id=' + id;
     }
 
@@ -384,5 +215,4 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
     }
   </script>
 </body>
-
-</html>
+</html> 

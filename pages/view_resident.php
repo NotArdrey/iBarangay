@@ -1609,9 +1609,6 @@ function displayCurrency($amount) {
                                 </svg>
                             </div>
                             <div class="flex-1">
-                                <div class="flex justify-between items-start">
-                                    <h4 class="font-medium text-gray-800 mb-2"><?= htmlspecialchars($need['need_name']) ?></h4>
-                                </div>
                                 <p class="text-sm text-gray-600 mb-2">Category: <?= htmlspecialchars(ucfirst($need['need_category'])) ?></p>
                                 <?php if (!empty($need['details'])): ?>
                                     <p class="text-sm text-gray-600 mb-2"><?= htmlspecialchars($need['details']) ?></p>
