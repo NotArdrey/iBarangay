@@ -92,15 +92,6 @@ if (isset($_SESSION['user_id'])) {
 // Handle form submission for document requests - UPDATED VERSION
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        // Time-gated validation - ENABLED
-        $currentTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-        $startTime = new DateTime('08:00:00', new DateTimeZone('Asia/Manila'));
-        $endTime = new DateTime('17:00:00', new DateTimeZone('Asia/Manila'));
-
-        if ($currentTime < $startTime || $currentTime > $endTime) {
-            throw new Exception("Document requests can only be submitted between 8:00 AM and 5:00 PM.");
-        }
-
         // Check if user has pending blotter cases in ANY barangay
         if ($hasPendingBlotter) {
             $caseDetails = [];
@@ -138,10 +129,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         $user_id = $_SESSION['user_id'];
 
-        // Get user information (no census requirement)
+        // Get user information and person record
         $stmt = $pdo->prepare("
-            SELECT u.first_name, u.last_name, u.gender, u.id
+            SELECT u.first_name, u.last_name, u.gender, u.id, p.id as person_id
             FROM users u 
+            LEFT JOIN persons p ON u.id = p.user_id
             WHERE u.id = ?
         ");
         $stmt->execute([$user_id]);
@@ -151,44 +143,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception("User not found. Please log in again.");
         }
 
-        // Try to get person from census (optional)
-        $stmt = $pdo->prepare("
-            SELECT p.* FROM persons p WHERE p.user_id = ?
-        ");
-        $stmt->execute([$user_id]);
-        $person = $stmt->fetch();
-
-        // Use user info if no person record exists
-        if (!$person) {
-            $person = [
-                'id' => null,
-                'first_name' => $user_info['first_name'],
-                'last_name' => $user_info['last_name'],
-                'middle_name' => '',
-                'suffix' => '',
-                'gender' => $user_info['gender'],
-                'civil_status' => '',
-                'citizenship' => 'Filipino',
-                'birth_date' => null,
-                'birth_place' => '',
-                'religion' => '',
-                'education_level' => '',
-                'occupation' => '',
-                'monthly_income' => null,
-                'contact_number' => ''
-            ];
+        // If no person record exists, create one
+        $person_id = $user_info['person_id'];
+        if (!$person_id) {
+            $stmt = $pdo->prepare("
+                INSERT INTO persons (user_id, first_name, last_name, birth_date, birth_place, gender, civil_status, citizenship)
+                VALUES (?, ?, ?, '1990-01-01', 'Unknown', ?, 'SINGLE', 'Filipino')
+            ");
+            $stmt->execute([
+                $user_id,
+                $user_info['first_name'],
+                $user_info['last_name'],
+                strtoupper($user_info['gender'])
+            ]);
+            $person_id = $pdo->lastInsertId();
         }
 
-        // Set default address (no census requirement)
-        $address = [
-            'house_no' => '',
-            'street' => 'Default Street',
-            'subdivision' => '',
-            'block_lot' => '',
-            'phase' => ''
-        ];
-
-        // Get document type info for determining price
+        // Get document type info for determining price and validation
         $stmt = $pdo->prepare("
             SELECT dt.*, COALESCE(bdp.price, dt.default_fee) as final_price
             FROM document_types dt
@@ -203,7 +174,23 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw new Exception("Invalid document type selected");
         }
 
-      
+        // Check First Time Job Seeker restriction using simple query
+        if ($documentType['code'] === 'first_time_job_seeker') {
+            $stmt = $pdo->prepare("
+                SELECT COUNT(*) as existing_count
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                WHERE dr.person_id = ? 
+                AND dt.code = 'first_time_job_seeker'
+                AND dr.status NOT IN ('rejected', 'cancelled')
+            ");
+            $stmt->execute([$person_id]);
+            $result = $stmt->fetch();
+            
+            if ($result['existing_count'] > 0) {
+                throw new Exception('First Time Job Seeker certificate can only be requested once per person.');
+            }
+        }
 
         // Begin transaction for the main request
         $pdo->beginTransaction();
@@ -243,123 +230,82 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Prepare the main insert statement with all the new columns
+            // Prepare the main insert statement - FIXED VERSION
             $stmt = $pdo->prepare("
                 INSERT INTO document_requests (
-                    document_type_id, person_id, user_id, barangay_id, requested_by_user_id, 
-                    status, request_date, price,
-                    
-                    -- Personal Information
-                    first_name, middle_name, last_name, suffix, gender, civil_status, 
-                    citizenship, birth_date, birth_place, religion, education_level, 
-                    occupation, monthly_income, contact_number,
-                    
-                    -- Address Information
-                    address_no, street,
-                    
-                    -- Business Information (for business permits)
-                    business_name, business_location, business_nature, business_type,
-                    
-                    -- Purpose and specific fields
-                    purpose,
-                    
-                    -- Image path for indigency
-                    proof_image_path
+                    person_id, user_id, document_type_id, barangay_id, 
+                    requested_by_user_id, status, request_date, price,
+                    purpose, proof_image_path,
+                    business_name, business_location, business_nature, business_type
                 ) VALUES (
-                    ?, ?, ?, ?, ?, 'pending', NOW(), ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,
-                    ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?
                 )
             ");
 
             // Prepare values based on document type
-            $values = [
-                $documentTypeId,
-                $person['id'], // Can be null if no census record
-                $user_id,
-                $_SESSION['barangay_id'],
-                $user_id,
-                $documentType['final_price'],
-                
-                // Personal Information (from user or person table)
-                $person['first_name'] ?? '',
-                $person['middle_name'] ?? '',
-                $person['last_name'] ?? '',
-                $person['suffix'] ?? '',
-                $person['gender'] ?? '',
-                $person['civil_status'] ?? '',
-                $person['citizenship'] ?? 'Filipino',
-                $person['birth_date'] ?? null,
-                $person['birth_place'] ?? '',
-                $person['religion'] ?? '',
-                $person['education_level'] ?? '',
-                $person['occupation'] ?? '',
-                $person['monthly_income'] ?? null,
-                $person['contact_number'] ?? '',
-                
-                // Address Information (defaults)
-                $address['house_no'] ?? '',
-                $address['street'] ?? ''
-            ];
+            $purpose = '';
+            $businessName = null;
+            $businessLocation = null;
+            $businessNature = null;
+            $businessType = null;
 
-            // Add document-specific values
+            // Set document-specific values
             switch($documentType['code']) {
                 case 'barangay_clearance':
-                    $values = array_merge($values, [
-                        '', '', '', '', // business fields - empty for clearance
-                        $_POST['purposeClearance'] ?? '', // purpose
-                        $imagePath // proof_image_path
-                    ]);
+                    $purpose = $_POST['purposeClearance'] ?? '';
                     break;
 
                 case 'proof_of_residency':
                     $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
                                '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
-                    $values = array_merge($values, [
-                        '', '', '', '', // business fields - empty
-                        $purpose, // purpose
-                        $imagePath // proof_image_path
-                    ]);
                     break;
 
                 case 'barangay_indigency':
-                    $values = array_merge($values, [
-                        '', '', '', '', // business fields - empty
-                        $_POST['indigencyReason'] ?? '', // purpose
-                        $imagePath // proof_image_path (required for indigency)
-                    ]);
+                    $purpose = $_POST['indigencyReason'] ?? '';
                     break;
 
                 case 'business_permit_clearance':
-                    $values = array_merge($values, [
-                        $_POST['businessName'] ?? '', // business_name
-                        $_POST['businessAddress'] ?? '', // business_location
-                        $_POST['businessPurpose'] ?? '', // business_nature
-                        $_POST['businessType'] ?? '', // business_type
-                        'Business Permit Application', // purpose
-                        $imagePath // proof_image_path
-                    ]);
+                    $businessName = $_POST['businessName'] ?? '';
+                    $businessLocation = $_POST['businessAddress'] ?? '';
+                    $businessNature = $_POST['businessPurpose'] ?? '';
+                    $businessType = $_POST['businessType'] ?? '';
+                    $purpose = 'Business Permit Application';
+                    
+                    // Validate required business fields
+                    if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
+                        throw new Exception("All business information fields are required for Business Permit Clearance.");
+                    }
                     break;
 
                 case 'first_time_job_seeker':
-                    $values = array_merge($values, [
-                        '', '', '', '', // business fields - empty
-                        $_POST['jobSeekerPurpose'] ?? '', // purpose
-                        $imagePath // proof_image_path
-                    ]);
+                    $purpose = $_POST['jobSeekerPurpose'] ?? '';
+                    break;
+
+                case 'cedula':
+                    $purpose = 'Community Tax Certificate';
                     break;
 
                 default:
-                    $values = array_merge($values, [
-                        '', '', '', '', // business fields - empty
-                        '', // purpose
-                        $imagePath // proof_image_path
-                    ]);
+                    $purpose = 'General purposes';
                     break;
             }
 
             // Execute the insert
-            $stmt->execute($values);
+            $stmt->execute([
+                $person_id,
+                $user_id,
+                $documentTypeId,
+                $_SESSION['barangay_id'],
+                $user_id,
+                $documentType['final_price'],
+                $purpose,
+                $imagePath,
+                $businessName,
+                $businessLocation,
+                $businessNature,
+                $businessType
+            ]);
+
             $requestId = $pdo->lastInsertId();
 
             // If we got here, commit the transaction
@@ -440,11 +386,8 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
 $showPending = isset($_GET['show_pending']) || isset($_SESSION['show_pending']);
 unset($_SESSION['show_pending']);
 
-// Time-gated notice - ENABLED
-$currentTime = new DateTime('now', new DateTimeZone('Asia/Manila'));
-$startTime = new DateTime('08:00:00', new DateTimeZone('Asia/Manila'));
-$endTime = new DateTime('17:00:00', new DateTimeZone('Asia/Manila'));
-$isWithinTimeGate = ($currentTime >= $startTime && $currentTime <= $endTime);
+// Always allow submissions (time gate disabled)
+$isWithinTimeGate = true;
 
 require_once '../components/navbar.php';
 ?>
@@ -459,7 +402,7 @@ require_once '../components/navbar.php';
     <link rel="stylesheet" href="../styles/services.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
-    /* Footer fix */
+    /* [Previous CSS styles remain the same] */
     body {
         min-height: 100vh;
         display: flex;
@@ -479,17 +422,14 @@ require_once '../components/navbar.php';
         z-index: 1;
     }
 
-    /* Override SweetAlert z-index to ensure it appears above footer */
     .swal2-container {
         z-index: 9999 !important;
     }
 
-    /* Ensure main content has proper spacing */
     .wizard-section {
         padding-bottom: 2rem;
     }
 
-    /* Enhanced photo upload styles */
     .photo-upload-container {
         margin: 1rem 0;
         padding: 1.5rem;
@@ -542,10 +482,6 @@ require_once '../components/navbar.php';
         cursor: not-allowed;
     }
 
-    .upload-btn i {
-        font-size: 1rem;
-    }
-
     .photo-preview {
         margin: 1rem auto;
         text-align: center;
@@ -595,7 +531,6 @@ require_once '../components/navbar.php';
         text-align: center;
     }
 
-    /* Pending requests section */
     .pending-requests-section {
         background: #f8f9fa;
         padding: 2rem;
@@ -694,7 +629,6 @@ require_once '../components/navbar.php';
         background: #1a3350;
     }
 
-    /* Warning message for pending requests */
     .pending-warning {
         background: #fff3cd;
         border: 1px solid #ffeaa7;
@@ -721,7 +655,6 @@ require_once '../components/navbar.php';
         text-align: center;
     }
 
-    /* NEW: Residency warning styles */
     .residency-warning {
         background: #dc3545;
         color: white;
@@ -800,45 +733,6 @@ require_once '../components/navbar.php';
         color: #666;
     }
 
-    /* Responsive design */
-    @media (max-width: 768px) {
-        .upload-options {
-            flex-direction: column;
-            align-items: center;
-        }
-        
-        .upload-btn {
-            width: 100%;
-            max-width: 200px;
-            justify-content: center;
-        }
-        
-        .photo-preview img {
-            max-width: 150px;
-            max-height: 150px;
-        }
-
-        .pending-requests-header {
-            flex-direction: column;
-            gap: 1rem;
-            align-items: stretch;
-        }
-
-        .new-request-btn {
-            text-align: center;
-        }
-    }
-
-    /* Camera popup styling */
-    .camera-popup {
-        border-radius: 15px !important;
-    }
-
-    .camera-popup .swal2-html-container {
-        margin: 1rem 0 !important;
-    }
-
-    /* Form styling improvements */
     .form-row {
         margin-bottom: 1rem;
     }
@@ -927,6 +821,58 @@ require_once '../components/navbar.php';
         font-size: 2rem;
         font-weight: 600;
     }
+
+    .first-time-job-seeker-warning {
+        background: #fff3cd;
+        border: 1px solid #ffeaa7;
+        color: #856404;
+        padding: 1rem;
+        border-radius: 5px;
+        margin-bottom: 1rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+
+    .first-time-job-seeker-warning i {
+        font-size: 1.2rem;
+    }
+
+    @media (max-width: 768px) {
+        .upload-options {
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .upload-btn {
+            width: 100%;
+            max-width: 200px;
+            justify-content: center;
+        }
+        
+        .photo-preview img {
+            max-width: 150px;
+            max-height: 150px;
+        }
+
+        .pending-requests-header {
+            flex-direction: column;
+            gap: 1rem;
+            align-items: stretch;
+        }
+
+        .new-request-btn {
+            text-align: center;
+        }
+    }
+
+    .camera-popup {
+        border-radius: 15px !important;
+    }
+
+    .camera-popup .swal2-html-container {
+        margin: 1rem 0 !important;
+    }
     </style>
 </head>
 <body>
@@ -971,12 +917,6 @@ require_once '../components/navbar.php';
                     </div>
                     <div class="request-details">
                         Request ID: #<?= str_pad($request['id'], 6, '0', STR_PAD_LEFT) ?>
-                        <?php if (!empty($request['business_name'])): ?>
-                            <br>Business: <?= htmlspecialchars($request['business_name']) ?>
-                        <?php endif; ?>
-                        <?php if (!empty($request['purpose'])): ?>
-                            <br>Purpose: <?= htmlspecialchars($request['purpose']) ?>
-                        <?php endif; ?>
                         <?php if ($request['price'] > 0): ?>
                             <br>Fee: ₱<?= number_format($request['price'], 2) ?>
                         <?php endif; ?>
@@ -994,14 +934,6 @@ require_once '../components/navbar.php';
             <div class="wizard-container">
                 <h2 class="form-header">Document Request</h2>
                 
-                <!-- Time gate notice - ENABLED -->
-                <?php if (!$isWithinTimeGate): ?>
-                <div class="time-gate-notice">
-                    <p><i class="fas fa-clock"></i> Document requests can only be submitted between 8:00 AM and 5:00 PM.</p>
-                    <p>Please come back during operating hours.</p>
-                </div>
-                <?php endif; ?>
-
                 <?php if ($hasPendingBlotter): ?>
                 <div class="blotter-warning">
                     <i class="fas fa-exclamation-triangle"></i>
@@ -1074,14 +1006,21 @@ require_once '../components/navbar.php';
                             }
                             ?>
                         </select>
-                        
-                    
                     </div>
 
                     <!-- Document price/fee label -->
                     <div class="form-row">
                         <label>Document Fee:</label>
                         <span id="feeAmount" style="font-weight:bold;">₱0.00</span>
+                    </div>
+
+                    <!-- First Time Job Seeker Warning (hidden by default) -->
+                    <div id="firstTimeJobSeekerWarning" class="first-time-job-seeker-warning" style="display: none;">
+                        <i class="fas fa-info-circle"></i>
+                        <div>
+                            <strong>Important:</strong> First Time Job Seeker certificates can only be requested once per person. 
+                            This is to comply with government regulations regarding first-time employment certifications.
+                        </div>
                     </div>
 
                     <!-- Document-specific fields for the 6 document types -->
@@ -1113,7 +1052,6 @@ require_once '../components/navbar.php';
                             <div class="photo-upload-container" id="photoUploadContainer">
                                 <input type="file" id="userPhoto" name="userPhoto" accept="image/jpeg,image/jpg,image/png" style="display: none;" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                 
-                                <!-- Upload options -->
                                 <div class="upload-options">
                                     <button type="button" class="upload-btn" onclick="document.getElementById('userPhoto').click();" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                         <i class="fas fa-upload"></i> Choose Photo
@@ -1123,12 +1061,10 @@ require_once '../components/navbar.php';
                                     </button>
                                 </div>
                                 
-                                <!-- Upload hint -->
                                 <p class="upload-hint">
                                     Upload a recent photo of yourself (JPG or PNG, max 5MB)
                                 </p>
                                 
-                                <!-- Photo preview -->
                                 <div class="photo-preview" id="photoPreview" style="display: none;">
                                     <img id="previewImage" src="" alt="Photo preview">
                                     <br>
@@ -1141,17 +1077,8 @@ require_once '../components/navbar.php';
                     </div>
 
                     <div id="cedulaFields" class="document-fields" style="display: none;">
-                        <div class="form-row">
-                            <label for="cedulaOccupation">Occupation</label>
-                            <input type="text" id="cedulaOccupation" name="cedulaOccupation" placeholder="Enter your occupation" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                        </div>
-                        <div class="form-row">
-                            <label for="cedulaIncome">Annual Income</label>
-                            <input type="number" id="cedulaIncome" name="cedulaIncome" placeholder="Enter annual income in PHP" min="0" step="0.01" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                        </div>
-                        <div class="form-row">
-                            <label for="cedulaBirthplace">Place of Birth (Optional)</label>
-                            <input type="text" id="cedulaBirthplace" name="cedulaBirthplace" placeholder="Enter place of birth" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                        <div class="cedula-note">
+                            <strong>Note:</strong> Community Tax Certificate (Cedula) must be obtained in person at the Barangay Hall during office hours.
                         </div>
                     </div>
 
@@ -1203,20 +1130,15 @@ require_once '../components/navbar.php';
         <?php endif; ?>
     </main>
 
-    <!-- Hidden canvas for camera capture -->
     <canvas id="cameraCanvas" style="display: none;"></canvas>
 
     <script>
-    // Use barangayPrices in JS
     var barangayPrices = <?= json_encode($barangayPrices) ?>;
-    // Time gate enabled
     var isWithinTimeGateJS = <?= json_encode($isWithinTimeGate) ?>;
     var hasPendingBlotterJS = <?= json_encode($hasPendingBlotter) ?>;
     var hasInsufficientResidencyJS = <?= json_encode($hasInsufficientResidency) ?>;
 
-    // Enhanced photo upload functions
     function openCamera() {
-        // Check all validation restrictions
         if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
             Swal.fire('Error', 'Camera function is disabled due to validation restrictions.', 'error');
             return;
@@ -1227,7 +1149,7 @@ require_once '../components/navbar.php';
                 video: { 
                     width: { ideal: 640 }, 
                     height: { ideal: 480 },
-                    facingMode: 'user' // Front camera for selfies
+                    facingMode: 'user'
                 } 
             })
             .then(function(stream) {
@@ -1293,19 +1215,15 @@ require_once '../components/navbar.php';
     }
 
     function displayCapturedPhoto(dataUrl) {
-        // Convert data URL to blob
         fetch(dataUrl)
             .then(res => res.blob())
             .then(blob => {
-                // Create a file from blob
                 const file = new File([blob], "indigency_photo_" + Date.now() + ".jpg", { type: "image/jpeg" });
                 
-                // Create a DataTransfer object to set file input
                 const dataTransfer = new DataTransfer();
                 dataTransfer.items.add(file);
                 document.getElementById('userPhoto').files = dataTransfer.files;
                 
-                // Display preview
                 const previewImage = document.getElementById('previewImage');
                 const photoPreview = document.getElementById('photoPreview');
                 const photoUploadContainer = document.getElementById('photoUploadContainer');
@@ -1332,6 +1250,26 @@ require_once '../components/navbar.php';
         if (photoUploadContainer) photoUploadContainer.classList.remove('active');
     }
 
+    // Check for existing First Time Job Seeker requests
+    async function checkFirstTimeJobSeekerEligibility(userId) {
+        if (!userId) return true;
+        
+        try {
+            const response = await fetch('../api/check_first_time_job_seeker.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ user_id: userId })
+            });
+            const result = await response.json();
+            return result.eligible;
+        } catch (error) {
+            console.error('Error checking eligibility:', error);
+            return true; // Allow submission if check fails
+        }
+    }
+
     document.addEventListener('DOMContentLoaded', function() {
         const documentTypeSelect = document.getElementById('documentType');
         const feeAmountElement = document.getElementById('feeAmount');
@@ -1341,7 +1279,7 @@ require_once '../components/navbar.php';
         const cedulaFields = document.getElementById('cedulaFields');
         const businessPermitFields = document.getElementById('businessPermitFields');
         const firstTimeJobSeekerFields = document.getElementById('firstTimeJobSeekerFields');
-        const cedulaNote = document.querySelector('.cedula-note');
+        const firstTimeJobSeekerWarning = document.getElementById('firstTimeJobSeekerWarning');
         const form = document.getElementById('docRequestForm');
         const submitBtn = document.getElementById('submitBtn');
         const userPhotoInput = document.getElementById('userPhoto');
@@ -1349,7 +1287,6 @@ require_once '../components/navbar.php';
         // Handle file selection
         if (userPhotoInput) {
             userPhotoInput.addEventListener('change', function(e) {
-                // Check all validation restrictions
                 if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
                     this.value = '';
                     Swal.fire('Error', 'File upload is disabled due to validation restrictions.', 'error');
@@ -1358,14 +1295,12 @@ require_once '../components/navbar.php';
                 
                 const file = e.target.files[0];
                 if (file) {
-                    // Validate file size (5MB max)
                     if (file.size > 5 * 1024 * 1024) {
                         Swal.fire('File Too Large', 'File size must be less than 5MB. Please choose a smaller image.', 'error');
                         this.value = '';
                         return;
                     }
                     
-                    // Validate file type
                     const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png'];
                     if (!allowedTypes.includes(file.type)) {
                         Swal.fire('Invalid File Type', 'Please select a JPG or PNG image file only.', 'error');
@@ -1373,7 +1308,6 @@ require_once '../components/navbar.php';
                         return;
                     }
                     
-                    // Display preview
                     const reader = new FileReader();
                     reader.onload = function(e) {
                         const previewImage = document.getElementById('previewImage');
@@ -1409,9 +1343,9 @@ require_once '../components/navbar.php';
                 field.style.display = 'none';
             });
             
-            // Hide cedula note
-            if (cedulaNote) {
-                cedulaNote.style.display = 'none';
+            // Hide first time job seeker warning
+            if (firstTimeJobSeekerWarning) {
+                firstTimeJobSeekerWarning.style.display = 'none';
             }
             
             // Remove required attribute from ALL form inputs
@@ -1427,12 +1361,10 @@ require_once '../components/navbar.php';
         function setFieldsRequired(container, documentCode) {
             if (!container) return;
             
-            // Check all validation restrictions
             if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
                 return;
             }
 
-            // Set required fields based on document type
             switch(documentCode) {
                 case 'barangay_clearance':
                     const purposeClearance = document.getElementById('purposeClearance');
@@ -1453,26 +1385,17 @@ require_once '../components/navbar.php';
                     if (userPhoto) userPhoto.required = true;
                     break;
 
-                case 'cedula':
-                    const cedulaOccupation = document.getElementById('cedulaOccupation');
-                    const cedulaIncome = document.getElementById('cedulaIncome');
-                    if (cedulaOccupation) cedulaOccupation.required = true;
-                    if (cedulaIncome) cedulaIncome.required = true;
-                    break;
-
                 case 'business_permit_clearance':
                     const businessName = document.getElementById('businessName');
                     const businessType = document.getElementById('businessType');
                     const businessAddress = document.getElementById('businessAddress');
                     const businessPurpose = document.getElementById('businessPurpose');
                     
-                    // Enable and set required fields
                     [businessName, businessType, businessAddress, businessPurpose].forEach(field => {
                         if (field) {
                             field.required = true;
                             field.disabled = false;
                             
-                            // Add input event listener for validation
                             field.addEventListener('input', function() {
                                 if (!this.value.trim()) {
                                     this.setCustomValidity('This field is required');
@@ -1520,8 +1443,6 @@ require_once '../components/navbar.php';
                         break;
                     case 'cedula':
                         cedulaFields.style.display = 'block';
-                        if (cedulaNote) cedulaNote.style.display = 'block';
-                        setFieldsRequired(cedulaFields, documentCode);
                         break;
                     case 'business_permit_clearance':
                         businessPermitFields.style.display = 'block';
@@ -1529,6 +1450,7 @@ require_once '../components/navbar.php';
                         break;
                     case 'first_time_job_seeker':
                         firstTimeJobSeekerFields.style.display = 'block';
+                        firstTimeJobSeekerWarning.style.display = 'block';
                         setFieldsRequired(firstTimeJobSeekerFields, documentCode);
                         break;
                 }
@@ -1538,13 +1460,14 @@ require_once '../components/navbar.php';
         // Form submission handler
         if (form && submitBtn) {
             form.addEventListener('submit', function(e) {
+                e.preventDefault();
+
                 if (!form.checkValidity()) {
-                    return; // Let browser handle validation errors
+                    // Let browser handle validation errors
+                    form.reportValidity();
+                    return;
                 }
 
-                e.preventDefault(); // Prevent immediate submission
-
-                // Time gate check enabled
                 if (!isWithinTimeGateJS) {
                     Swal.fire({
                         title: 'Outside Operating Hours',
@@ -1568,6 +1491,36 @@ require_once '../components/navbar.php';
                         title: 'Insufficient Residency',
                         text: 'You need to be a resident for at least 6 months to request documents. Please check your residency information or contact the barangay office.',
                         icon: 'error'
+                    });
+                    return;
+                }
+
+                // Check for First Time Job Seeker restriction
+                const selectedDocType = documentTypeSelect.options[documentTypeSelect.selectedIndex];
+                if (selectedDocType && selectedDocType.dataset.code === 'first_time_job_seeker') {
+                    Swal.fire({
+                        title: 'First Time Job Seeker Certificate',
+                        html: `
+                            <div style="text-align: left;">
+                                <p><strong>Important Information:</strong></p>
+                                <ul>
+                                    <li>This certificate can only be requested <strong>once per person</strong></li>
+                                    <li>It is specifically for first-time job seekers only</li>
+                                    <li>Once issued, you cannot request another one</li>
+                                </ul>
+                                <p>Are you sure you want to proceed with this request?</p>
+                            </div>
+                        `,
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Yes, I understand and want to proceed',
+                        cancelButtonText: 'Cancel',
+                        confirmButtonColor: '#dc3545',
+                        cancelButtonColor: '#6c757d'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            submitForm();
+                        }
                     });
                     return;
                 }
@@ -1603,13 +1556,11 @@ require_once '../components/navbar.php';
         }
 
         function submitForm() {
-            // Update button state
             submitBtn.disabled = true;
             submitBtn.textContent = 'Submitting...';
 
             form.submit();
 
-            // Re-enable button after timeout if something goes wrong
             setTimeout(function() {
                 if (submitBtn.disabled) {
                     submitBtn.disabled = false;
@@ -1618,7 +1569,7 @@ require_once '../components/navbar.php';
             }, 15000);
         }
 
-        // Auto-select document type if provided in URL (?documentType=code)
+        // Auto-select document type if provided in URL
         const urlParams = new URLSearchParams(window.location.search);
         const docTypeParam = urlParams.get('documentType');
         if (docTypeParam && documentTypeSelect) {
@@ -1631,8 +1582,7 @@ require_once '../components/navbar.php';
             }
         }
 
-        // Initial check for submit button state based on validation conditions
-        // Time gate check enabled
+        // Initial check for submit button state
         if (hasPendingBlotterJS || hasInsufficientResidencyJS || !isWithinTimeGateJS) {
             if (submitBtn) {
                 submitBtn.disabled = true;

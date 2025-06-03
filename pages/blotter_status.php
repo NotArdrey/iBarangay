@@ -6,6 +6,91 @@ require "../config/dbconn.php";
 $conn = $pdo;
 global $conn;
 
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && 
+    isset($_SERVER['HTTP_CONTENT_TYPE']) && 
+    strpos($_SERVER['HTTP_CONTENT_TYPE'], 'application/json') !== false
+) {
+    $input = json_decode(file_get_contents('php://input'), true);
+    if (!empty($input['action']) && !empty($input['proposal_id'])) {
+        $proposalId = intval($input['proposal_id']);
+        $userId = $_SESSION['user_id'];
+        
+        // Fix the query to properly alias the case ID
+        $stmt = $pdo->prepare("
+            SELECT sp.*, 
+                   bc.id as case_id,  -- This is the fix
+                   bc.hearing_attempts, 
+                   bc.max_hearing_attempts 
+            FROM schedule_proposals sp 
+            JOIN blotter_cases bc ON sp.blotter_case_id = bc.id 
+            WHERE sp.id = ?
+        ");
+        $stmt->execute([$proposalId]);
+        $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$proposal) {
+            echo json_encode(['success'=>false,'message'=>'Proposal not found']); 
+            exit;
+        }
+        
+        // Use the correct case_id field
+        $caseId = $proposal['case_id'];
+        
+        // Find if user is complainant or respondent
+        $pstmt = $pdo->prepare("
+            SELECT bp.role 
+            FROM blotter_participants bp 
+            LEFT JOIN persons p ON bp.person_id = p.id 
+            WHERE bp.blotter_case_id = ? AND p.user_id = ?
+        ");
+        $pstmt->execute([$caseId, $userId]);
+        $role = $pstmt->fetchColumn();
+        
+        if ($role !== 'complainant' && $role !== 'respondent') {
+            echo json_encode(['success'=>false,'message'=>'Only complainant or respondent can confirm/reject availability.']); 
+            exit;
+        }
+        
+        if ($input['action'] === 'confirm_availability') {
+            // Update the correct column based on role
+            $col = ($role === 'complainant') ? 'complainant_confirmed' : 'respondent_confirmed';
+            $pdo->prepare("UPDATE schedule_proposals SET $col = 1 WHERE id = ?")->execute([$proposalId]);
+            
+            // Check if both parties confirmed
+            $sp2 = $pdo->prepare("SELECT complainant_confirmed, respondent_confirmed, captain_confirmed FROM schedule_proposals WHERE id=?");
+            $sp2->execute([$proposalId]);
+            $flags = $sp2->fetch(PDO::FETCH_ASSOC);
+            
+            if ($flags['complainant_confirmed'] && $flags['respondent_confirmed']) {
+                // Both parties confirmed - check if captain also confirmed
+                if ($flags['captain_confirmed']) {
+                    // All confirmed - finalize hearing
+                    $pdo->beginTransaction();
+                    $pdo->prepare("UPDATE schedule_proposals SET status='both_confirmed' WHERE id=?")->execute([$proposalId]);
+                    $pdo->prepare("UPDATE blotter_cases SET scheduling_status='scheduled', status='open' WHERE id=?")->execute([$caseId]);
+                    $pdo->commit();
+                    echo json_encode(['success'=>true,'message'=>'All parties confirmed. Hearing scheduled.']);
+                } else {
+                    echo json_encode(['success'=>true,'message'=>'Both parties confirmed. Waiting for officer confirmation.']);
+                }
+            } else {
+                echo json_encode(['success'=>true,'message'=>'Your confirmation is recorded. Waiting for other party.']);
+            }
+            exit;
+        } elseif ($input['action'] === 'reject_availability') {
+            // Mark as conflict
+            $pdo->beginTransaction();
+            $pdo->prepare("UPDATE schedule_proposals SET status='conflict', conflict_reason=? WHERE id=?")
+                ->execute([$input['reason'], $proposalId]);
+            $pdo->prepare("UPDATE blotter_cases SET scheduling_status='pending_schedule', hearing_attempts=hearing_attempts+1 WHERE id=?")
+                ->execute([$caseId]);
+            $pdo->commit();
+            echo json_encode(['success'=>true,'message'=>'Your unavailability was recorded. A new schedule will be proposed.']);
+            exit;
+        }
+    }
+}
 $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 4;
 $user_info = null;
 $barangay_name = "Barangay";
@@ -49,15 +134,15 @@ require "../components/navbar.php";
 $columnCheck = $pdo->query("SHOW COLUMNS FROM blotter_cases LIKE 'hearing_attempts'");
 $hasNewColumns = $columnCheck->rowCount() > 0;
 
-// Modified SQL query to fix GROUP BY issues and get user cases properly
+// Fetch all cases where the user is a participant (either as person or external)
 $sql = "
     SELECT bc.*, 
            GROUP_CONCAT(DISTINCT cc.name SEPARATOR ', ') AS categories,
            bp.role,
-           u.email as user_email,
-           CONCAT(p.first_name, ' ', p.last_name) as proposed_by_name";
-
-// Add conditional columns if they exist
+           p.id AS person_id,
+           ep.id AS external_id,
+           u.email as user_email
+";
 if ($hasNewColumns) {
     $sql .= ",
            bc.hearing_attempts,
@@ -71,20 +156,19 @@ if ($hasNewColumns) {
            FALSE as is_cfa_eligible,
            NULL as cfa_reason";
 }
-
 $sql .= "
     FROM blotter_cases bc
     JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
-    JOIN persons p ON bp.person_id = p.id
+    LEFT JOIN persons p ON bp.person_id = p.id
+    LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
     LEFT JOIN users u ON p.user_id = u.id
     LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
     LEFT JOIN case_categories cc ON bcc.category_id = cc.id
-    WHERE p.user_id = ?
+    WHERE (p.user_id = ? OR ep.id IS NOT NULL)
       AND bc.status != 'deleted'
-    GROUP BY bc.id, bp.role, u.email, p.first_name, p.last_name
+    GROUP BY bc.id, bp.id
     ORDER BY bc.created_at DESC
 ";
-
 try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$user_id]);
@@ -129,31 +213,37 @@ foreach ($cases as &$case) {
         $case['captain_remarks'] = $proposal['captain_remarks'];
         $case['conflict_reason'] = $proposal['conflict_reason'];
         $case['confirmed_by_role'] = $proposal['confirmed_by_role'] ?? null;
+        $case['complainant_confirmed'] = $proposal['complainant_confirmed'];
+        $case['respondent_confirmed']  = $proposal['respondent_confirmed'];
     }
-    
-    // Check if user has email for summons delivery method
     $case['has_email'] = !empty($case['user_email']);
-    
-    // Fetch participant notifications/summons for users without email
-    if (!$case['has_email'] && isset($case['current_proposal_id'])) {
+
+    // Fetch participant notification for this participant (person or external)
+    $participant_id = null;
+    if (!empty($case['person_id'])) {
+        $stmt_pid = $pdo->prepare("SELECT id FROM blotter_participants WHERE blotter_case_id = ? AND person_id = ?");
+        $stmt_pid->execute([$case['id'], $case['person_id']]);
+        $participant_id = $stmt_pid->fetchColumn();
+    } elseif (!empty($case['external_id'])) {
+        $stmt_pid = $pdo->prepare("SELECT id FROM blotter_participants WHERE blotter_case_id = ? AND external_participant_id = ?");
+        $stmt_pid->execute([$case['id'], $case['external_id']]);
+        $participant_id = $stmt_pid->fetchColumn();
+    }
+    if ($participant_id) {
         $stmt3 = $pdo->prepare("
             SELECT pn.*, bp.role 
             FROM participant_notifications pn
             JOIN blotter_participants bp ON pn.participant_id = bp.id
-            WHERE pn.blotter_case_id = ? AND bp.person_id = (
-                SELECT person_id FROM blotter_participants 
-                WHERE blotter_case_id = ? AND person_id IN (
-                    SELECT id FROM persons WHERE user_id = ?
-                )
-            )
+            WHERE pn.blotter_case_id = ? AND pn.participant_id = ?
             ORDER BY pn.created_at DESC
             LIMIT 1
         ");
-        $stmt3->execute([$case['id'], $case['id'], $user_id]);
+        $stmt3->execute([$case['id'], $participant_id]);
         $case['summons_info'] = $stmt3->fetch(PDO::FETCH_ASSOC);
     }
 }
 unset($case);
+
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -163,9 +253,9 @@ unset($case);
     <title>My Cases & Schedules - iBarangay</title>
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" />
-    
-    <!-- SweetAlert2 CSS -->
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.10.1/sweetalert2.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.10.1/sweetalert2.all.min.js"></script>
+
+
     
     <style>
         * {
@@ -774,7 +864,6 @@ unset($case);
                                 <?= ucfirst(str_replace('_', ' ', $case['status'])) ?>
                             </span>
                         </div>
-
                         <div class="case-meta">
                             <div class="meta-item">
                                 <i class="fas fa-calendar-alt"></i>
@@ -797,554 +886,263 @@ unset($case);
                         <?php if (isset($case['current_proposal_id'])): ?>
                             <div class="scheduling-status">
                                 <div class="scheduling-header">
-                                    <h4 class="scheduling-title">
-                                        <i class="fas fa-clock"></i>
-                                        Hearing Schedule
-                                    </h4>
-                                    <span class="status-badge status-<?= strtolower(str_replace(' ', '-', $case['proposal_status'])) ?>">
-                                        <?= ucfirst(str_replace('_', ' ', $case['proposal_status'])) ?>
-                                    </span>
+                                    <div class="scheduling-title">
+                                        <i class="fas fa-calendar-alt"></i> Hearing Schedule Proposal
+                                    </div>
                                 </div>
-
                                 <div class="schedule-info">
                                     <div class="schedule-datetime">
                                         <div class="datetime-item">
                                             <i class="fas fa-calendar"></i>
-                                            <span><?= date('F d, Y', strtotime($case['proposed_date'])) ?></span>
+                                            <?= date('M d, Y', strtotime($case['proposed_date'])) ?>
                                         </div>
                                         <div class="datetime-item">
                                             <i class="fas fa-clock"></i>
-                                            <span><?= date('g:i A', strtotime($case['proposed_time'])) ?></span>
+                                            <?= date('g:i A', strtotime($case['proposed_time'])) ?>
                                         </div>
                                         <div class="datetime-item">
                                             <i class="fas fa-map-marker-alt"></i>
-                                            <span><?= htmlspecialchars($case['hearing_location'] ?? 'Barangay Hall') ?></span>
-                                        </div>
-                                        <div class="datetime-item">
-                                            <i class="fas fa-user-tie"></i>
-                                            <span><?= htmlspecialchars($case['presiding_officer'] ?? 'Barangay Captain') ?></span>
+                                            <?= htmlspecialchars($case['hearing_location']) ?>
                                         </div>
                                     </div>
+                                    <div>
+                                        <strong>Presiding Officer:</strong> <?= htmlspecialchars($case['presiding_officer']) ?>
+                                    </div>
+                                    <div>
+                                        <strong>Status:</strong>
+                                        <?php
+                                        $status = $case['proposal_status'];
+                                        if ($status === 'conflict') {
+                                            echo '<span class="status-badge status-cfa-eligible">Conflict: ' . htmlspecialchars($case['conflict_reason']) . '</span>';
+                                        } elseif ($status === 'both_confirmed') {
+                                            echo '<span class="status-badge status-open">Confirmed by all parties</span>';
+                                        } elseif ($status === 'proposed' || $status === 'pending_user_confirmation' || $status === 'pending_officer_confirmation') {
+                                            echo '<span class="status-badge status-pending">Pending Confirmation</span>';
+                                        } else {
+                                            echo '<span class="status-badge">' . htmlspecialchars($status) . '</span>';
+                                        }
+                                        ?>
+                                    </div>
                                 </div>
-
-                                <?php 
-                                $needsResponse = false;
-                                $showApprovalButtons = false;
-                                $confirmButtonText = '';
-                                $rejectButtonText = '';
-                                
-                                // Determine if user needs to respond and what buttons to show
-                                if ($case['proposal_status'] === 'proposed' || $case['proposal_status'] === 'pending') {
-                                    if (!$case['user_confirmed'] && !$case['captain_confirmed']) {
-                                        // Neither confirmed yet
-                                        $needsResponse = true;
-                                        $showApprovalButtons = true;
-                                        $confirmButtonText = 'Confirm Availability';
-                                        $rejectButtonText = 'Request Different Time';
-                                    }
-                                } elseif ($case['proposal_status'] === 'conflict') {
-                                    // Show conflict reason
-                                    if (!empty($case['conflict_reason'])) {
-                                        echo '<div class="conflict-alert">';
-                                        echo '<i class="fas fa-exclamation-triangle"></i>';
-                                        echo '<strong>Schedule Conflict:</strong> ' . htmlspecialchars($case['conflict_reason']);
-                                        echo '</div>';
-                                    }
-                                } elseif ($case['proposal_status'] === 'confirmed' || $case['proposal_status'] === 'both_confirmed') {
-                                    // Show confirmation details
-                                    echo '<div class="schedule-confirmed">';
-                                    echo '<i class="fas fa-check-circle"></i>';
-                                    echo '<span>Schedule confirmed. Please attend on the scheduled date and time.</span>';
-                                    echo '</div>';
-                                }
-                                
-                                if ($showApprovalButtons): ?>
+                                <?php
+                                // Show confirm/reject buttons if user is complainant/respondent and proposal needs their action
+                                $userIsComplainant = ($case['role'] === 'complainant');
+                                $userIsRespondent  = ($case['role'] === 'respondent');
+                                    if (
+                                        in_array($case['proposal_status'], ['pending_user_confirmation','pending_officer_confirmation'])
+                                        && (
+                                            ($userIsComplainant && empty($case['complainant_confirmed']))
+                                        || ($userIsRespondent  && empty($case['respondent_confirmed']))
+                                        )
+                                    ): ?>
                                     <div class="schedule-actions">
-                                        <button onclick="respondToProposal(<?= $case['current_proposal_id'] ?>, 'confirm')" 
-                                                class="btn btn-success">
-                                            <i class="fas fa-check"></i> <?= $confirmButtonText ?>
+                                        <button class="confirm-btn btn-success"
+                                            data-proposal="<?= $case['current_proposal_id'] ?>">
+                                            Confirm Availability
                                         </button>
-                                        <button onclick="respondToProposal(<?= $case['current_proposal_id'] ?>, 'reject')" 
-                                                class="btn btn-warning">
-                                            <i class="fas fa-times"></i> <?= $rejectButtonText ?>
+                                        <button class="reject-btn btn-danger"
+                                            data-proposal="<?= $case['current_proposal_id'] ?>">
+                                            Not Available
                                         </button>
                                     </div>
                                 <?php endif; ?>
+                            </div> <!-- end scheduling-status -->
 
-                                <?php 
-                                // Add debugging info only for development - remove in production
-                                if (isset($case['confirmed_by_role']) && $case['confirmed_by_role']): ?>
-                                    <div class="schedule-history">
-                                        <div class="history-item confirmed">
-                                            <strong>Confirmed by:</strong> 
-                                            <?php
-                                            $roleNames = [
-                                                3 => 'Barangay Captain',
-                                                7 => 'Chief Officer',
-                                                8 => 'Resident'
-                                            ];
-                                            echo $roleNames[$case['confirmed_by_role']] ?? 'Unknown Role';
-                                            ?>
+                            <div class="schedule-history">
+                                <div class="history-item <?= htmlspecialchars($case['proposal_status']) ?>">
+                                    <div class="history-meta">
+                                        <i class="fas fa-clock"></i>
+                                        <?= date('M d, Y g:i A', strtotime($case['updated_at'])) ?>
+                                    </div>
+                                    <div>
+                                        <?php
+                                        $status = $case['proposal_status'] ?? '';
+                                        if ($status === 'conflict') {
+                                            echo 'Schedule proposed but conflicts with existing appointment.';
+                                        } elseif ($status === 'both_confirmed') {
+                                            echo 'Hearing schedule confirmed by both parties.';
+                                        } elseif ($status === 'proposed') {
+                                            echo 'New hearing schedule proposed.';
+                                        } else {
+                                            echo 'Hearing schedule status: ' . htmlspecialchars($status);
+                                        }
+                                        ?>
+                                    </div>
+                                </div>
+
+                                <?php if (!empty($case['user_remarks']) || !empty($case['captain_remarks'])): ?>
+                                    <div class="history-item remarks-item">
+                                        <div class="history-meta">
+                                            <i class="fas fa-comments"></i> Remarks
+                                        </div>
+                                        <div>
+                                            <?php if (!empty($case['user_remarks'])): ?>
+                                                <div><strong>You:</strong> <?= nl2br(htmlspecialchars($case['user_remarks'])) ?></div>
+                                            <?php endif; ?>
+                                            <?php if (!empty($case['captain_remarks'])): ?>
+                                                <div><strong>Captain:</strong> <?= nl2br(htmlspecialchars($case['captain_remarks'])) ?></div>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                <?php endif; ?>
+
+                                <?php if (!empty($case['conflict_reason'])): ?>
+                                    <div class="history-item conflict-item">
+                                        <div class="history-meta">
+                                            <i class="fas fa-exclamation-triangle"></i> Conflict Reason
+                                        </div>
+                                        <div>
+                                            <?= nl2br(htmlspecialchars($case['conflict_reason'])) ?>
                                         </div>
                                     </div>
                                 <?php endif; ?>
                             </div>
-                        <?php else: ?>
-                            <div class="scheduling-status">
-                                <div class="scheduling-header">
-                                    <h4 class="scheduling-title">
-                                        <i class="fas fa-clock"></i>
-                                        Hearing Schedule
-                                    </h4>
-                                    <span class="status-badge status-pending">
-                                        Pending Schedule
-                                    </span>
-                                </div>
-                                <p class="text-muted">No hearing schedule has been proposed yet. Please wait for the barangay officials to schedule your hearing.</p>
-                            </div>
-                        <?php endif; ?>
+                        <?php endif; ?> 
 
-                        <?php if (!$case['has_email'] && isset($case['summons_info'])): ?>
-                            <div class="summons-info">
-                                <h4><i class="fas fa-envelope"></i> Summons Delivery</h4>
-                                <p>Since you don't have an email address on file, summons will be delivered physically.</p>
-                                <?php if ($case['summons_info']): ?>
-                                    <div class="summons-status">
-                                        <strong>Status:</strong> <?= ucfirst($case['summons_info']['delivery_status']) ?><br>
-                                        <strong>Method:</strong> <?= ucfirst($case['summons_info']['delivery_method']) ?><br>
-                                        <?php if ($case['summons_info']['delivered_at']): ?>
-                                            <strong>Delivered:</strong> <?= date('M d, Y g:i A', strtotime($case['summons_info']['delivered_at'])) ?>
-                                        <?php endif; ?>
-                                    </div>
-                                <?php endif; ?>
-                            </div>
-                        <?php endif; ?>
-                    </div>
+                    </div> <!-- end case-card -->
                 <?php endforeach; ?>
             <?php endif; ?>
-        </div>
-    </div>
 
-    <!-- Response Modal -->
-    <div class="modal" id="responseModal">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h3 class="modal-title" id="modalTitle">Respond to Schedule Proposal</h3>
+            <!-- Hidden modals for schedule actions -->
+            <div class="modal" id="confirmModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div class="modal-title">Confirm Schedule</div>
+                        <button class="close-modal" onclick="document.getElementById('confirmModal').classList.remove('show')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Are you sure you want to confirm this schedule?</p>
+                        <div id="confirmScheduleDetails" class="schedule-info">
+                            <!-- Schedule details will be populated by JavaScript -->
+                        </div>
+                        <div class="form-group">
+                            <label for="userRemarks" class="form-label">Your Remarks (optional)</label>
+                            <textarea id="userRemarks" class="form-control" placeholder="Enter any remarks here..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-primary" id="btnConfirmSchedule">Confirm Schedule</button>
+                        <button class="btn btn-outline" onclick="document.getElementById('confirmModal').classList.remove('show')">Cancel</button>
+                    </div>
+                </div>
             </div>
-            <form id="responseForm">
-                <input type="hidden" id="proposalId" name="proposal_id">
-                <input type="hidden" id="responseType" name="response">
 
-                <div class="form-group">
-                    <label class="form-label">Your Response</label>
-                    <div id="responseMessage" style="padding: 1rem; background: var(--bg-light); border-radius: 6px; margin-bottom: 1rem;"></div>
+            <div class="modal" id="rejectModal">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <div class="modal-title">Provide Conflict Details</div>
+                        <button class="close-modal" onclick="document.getElementById('rejectModal').classList.remove('show')">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <p>Please let us know why you cannot attend the proposed schedule:</p>
+                        <div class="form-group">
+                            <label for="conflictReason" class="form-label">Conflict Reason</label>
+                            <textarea id="conflictReason" class="form-control" placeholder="Enter the reason for conflict..."></textarea>
+                        </div>
+                    </div>
+                    <div class="modal-actions">
+                        <button class="btn btn-danger" id="btnRejectSchedule">Submit</button>
+                        <button class="btn btn-outline" onclick="document.getElementById('rejectModal').classList.remove('show')">Cancel</button>
+                    </div>
                 </div>
+            </div>
+        </div> <!-- end container -->
+    </div> <!-- end page-wrapper -->
 
-                <div class="form-group">
-                    <label class="form-label" for="remarks">Additional Remarks</label>
-                    <textarea class="form-control" id="remarks" name="remarks" 
-                              placeholder="Any additional information or concerns..."></textarea>
-                </div>
-
-                <div class="form-group" id="alternativeDatesGroup" style="display: none;">
-                    <label class="form-label" for="alternativeDates">Suggest Alternative Dates/Times</label>
-                    <textarea class="form-control" id="alternativeDates" name="alternative_dates" 
-                              placeholder="Please suggest dates and times when you're available..."></textarea>
-                </div>
-
-                <div class="modal-actions">
-                    <button type="button" class="btn btn-outline" onclick="closeModal()">Cancel</button>
-                    <button type="submit" class="btn btn-primary" id="submitBtn">Submit Response</button>
-                </div>
-            </form>
-        </div>
-    </div>
-
-    <footer class="footer">
-        <p>&copy; 2025 iBarangay. All rights reserved.</p>
-    </footer>
-
-    <!-- SweetAlert2 JavaScript -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/sweetalert2/11.10.1/sweetalert2.all.min.js"></script>
-
+    <!-- JavaScript to handle schedule confirmation/rejection -->
     <script>
-        // Handle schedule proposal responses
-        function respondToProposal(proposalId, responseType) {
-            document.getElementById('proposalId').value = proposalId;
-            document.getElementById('responseType').value = responseType;
-            
-            const modal = document.getElementById('responseModal');
-            const responseMessage = document.getElementById('responseMessage');
-            const alternativeDatesGroup = document.getElementById('alternativeDatesGroup');
-            const modalTitle = document.getElementById('modalTitle');
-            const submitBtn = document.getElementById('submitBtn');
-            
-            if (responseType === 'confirm') {
-                modalTitle.textContent = 'Confirm Your Availability';
-                responseMessage.innerHTML = '<i class="fas fa-check-circle" style="color: var(--success-color);"></i> You are confirming that you can attend the proposed hearing schedule.';
-                responseMessage.style.background = '#ecfdf5';
-                responseMessage.style.color = '#059669';
-                alternativeDatesGroup.style.display = 'none';
-                submitBtn.innerHTML = '<i class="fas fa-check"></i> Confirm Availability';
-                submitBtn.className = 'btn btn-success';
-            } else {
-                modalTitle.textContent = 'Report Scheduling Conflict';
-                responseMessage.innerHTML = '<i class="fas fa-exclamation-triangle" style="color: var(--warning-color);"></i> You cannot attend the proposed hearing schedule. Please provide alternative dates.';
-                responseMessage.style.background = '#fffbeb';
-                responseMessage.style.color = '#d97706';
-                alternativeDatesGroup.style.display = 'block';
-                submitBtn.innerHTML = '<i class="fas fa-calendar-alt"></i> Submit Conflict';
-                submitBtn.className = 'btn btn-warning';
-            }
-            
-            modal.classList.add('show');
-        }
-
-        function closeModal() {
-            document.getElementById('responseModal').classList.remove('show');
-            document.getElementById('responseForm').reset();
-        }
-
-        // Handle form submission
-        document.getElementById('responseForm').addEventListener('submit', async function(e) {
-            e.preventDefault();
-            
-            const formData = new FormData(this);
-            const submitBtn = document.getElementById('submitBtn');
-            const originalText = submitBtn.innerHTML;
-            
-            submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Processing...';
-            submitBtn.disabled = true;
-            
+        document.querySelectorAll('.confirm-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const proposalId = btn.dataset.proposal;
+        
+        // Use SweetAlert2 for confirmation
+        const result = await Swal.fire({
+            title: 'Confirm Availability',
+            text: 'Are you available for this hearing schedule?',
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonColor: '#059669',
+            cancelButtonColor: '#dc2626',
+            confirmButtonText: 'Yes, I am available',
+            cancelButtonText: 'Cancel'
+        });
+        
+        if (result.isConfirmed) {
             try {
-                // Show loading state
-                Swal.fire({
-                    title: 'Processing...',
-                    text: 'Submitting your response...',
-                    allowOutsideClick: false,
-                    didOpen: () => {
-                        Swal.showLoading();
-                    }
-                });
-
-                const response = await fetch('../api/scheduling_api.php', {
+                const res = await fetch('', {
                     method: 'POST',
-                    body: new URLSearchParams({
-                        action: 'respond_to_proposal',
-                        proposal_id: formData.get('proposal_id'),
-                        response: formData.get('response'),
-                        remarks: formData.get('remarks'),
-                        alternative_dates: formData.get('alternative_dates')
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ 
+                        action: 'confirm_availability', 
+                        proposal_id: proposalId 
                     })
                 });
                 
-                const data = await response.json();
+                const data = await res.json();
                 
                 if (data.success) {
-                    // Success SweetAlert
-                    Swal.fire({
-                        title: 'Success!',
-                        text: 'Your response has been submitted successfully.',
-                        icon: 'success',
-                        confirmButtonColor: '#059669',
-                        confirmButtonText: 'OK'
-                    }).then(() => {
-                        closeModal();
-                        location.reload();
-                    });
+                    await Swal.fire('Success', data.message, 'success');
+                    location.reload();
                 } else {
-                    throw new Error(data.message || 'Failed to submit response');
+                    Swal.fire('Error', data.message, 'error');
                 }
             } catch (error) {
-                // Error SweetAlert
-                Swal.fire({
-                    title: 'Error!',
-                    text: error.message || 'Failed to submit response. Please try again.',
-                    icon: 'error',
-                    confirmButtonColor: '#dc2626',
-                    confirmButtonText: 'OK'
-                });
-            } finally {
-                submitBtn.innerHTML = originalText;
-                submitBtn.disabled = false;
+                Swal.fire('Error', 'Failed to process your request', 'error');
             }
-        });
+        }
+    });
+});
 
-        // Close modal when clicking outside
-        document.getElementById('responseModal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
-            }
-        });
-
-        // Handle URL action parameters for direct response
-        document.addEventListener('DOMContentLoaded', function() {
-            const urlParams = new URLSearchParams(window.location.search);
-            const action = urlParams.get('action');
-            const caseId = urlParams.get('case_id');
-            
-            if (action && caseId && (action === 'confirm' || action === 'reject')) {
-                // Find the current proposal for this case
-                const caseCard = document.querySelector(`[data-case-id="${caseId}"]`);
-                if (caseCard) {
-                    const confirmBtn = caseCard.querySelector('.confirm-availability-btn');
-                    const rejectBtn = caseCard.querySelector('.cant-attend-btn');
-                    
-                    if (action === 'confirm' && confirmBtn) {
-                        confirmBtn.click();
-                    } else if (action === 'reject' && rejectBtn) {
-                        rejectBtn.click();
-                    }
+document.querySelectorAll('.reject-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+        const proposalId = btn.dataset.proposal;
+        
+        // Use SweetAlert2 for input
+        const { value: reason } = await Swal.fire({
+            title: 'Not Available',
+            input: 'textarea',
+            inputLabel: 'Please provide a reason for your unavailability:',
+            inputPlaceholder: 'Enter your reason here...',
+            inputAttributes: {
+                'aria-label': 'Enter your reason'
+            },
+            showCancelButton: true,
+            confirmButtonColor: '#dc2626',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Submit',
+            inputValidator: (value) => {
+                if (!value) {
+                    return 'You need to provide a reason!'
                 }
+            }
+        });
+        
+        if (reason) {
+            try {
+                const res = await fetch('', {
+                    method: 'POST',
+                    headers: {'Content-Type':'application/json'},
+                    body: JSON.stringify({ 
+                        action: 'reject_availability', 
+                        proposal_id: proposalId, 
+                        reason: reason 
+                    })
+                });
                 
-                // Clean up URL
-                window.history.replaceState({}, document.title, window.location.pathname);
+                const data = await res.json();
+                
+                if (data.success) {
+                    await Swal.fire('Success', data.message, 'success');
+                    location.reload();
+                } else {
+                    Swal.fire('Error', data.message, 'error');
+                }
+            } catch (error) {
+                Swal.fire('Error', 'Failed to process your request', 'error');
             }
-
-            // Enhanced Confirm Availability and Can't Attend handlers using SweetAlert2
-            document.querySelectorAll('.confirm-availability-btn').forEach(function(btn) {
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const proposalId = btn.dataset.proposalId;
-                    const caseId = btn.dataset.caseId;
-                    
-                    Swal.fire({
-                        title: 'Confirm Your Availability',
-                        html: `
-                            <div style="text-align: left; margin: 1rem 0;">
-                                <p style="margin-bottom: 1rem;">Are you available for the scheduled hearing?</p>
-                                <div style="background: #ecfdf5; border: 1px solid #a7f3d0; border-radius: 8px; padding: 1rem; color: #047857;">
-                                    <i class="fas fa-info-circle" style="margin-right: 0.5rem;"></i>
-                                    <strong>Note:</strong> By confirming, you agree to attend the hearing at the scheduled time and date.
-                                </div>
-                            </div>
-                        `,
-                        icon: 'question',
-                        showCancelButton: true,
-                        confirmButtonColor: '#059669',
-                        cancelButtonColor: '#6b7280',
-                        confirmButtonText: '<i class="fas fa-check"></i> Yes, I can attend',
-                        cancelButtonText: '<i class="fas fa-times"></i> Cancel',
-                        customClass: {
-                            popup: 'swal2-popup',
-                            title: 'swal2-title',
-                            htmlContainer: 'swal2-html-container'
-                        }
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            // Show loading
-                            Swal.fire({
-                                title: 'Processing...',
-                                text: 'Confirming your availability...',
-                                allowOutsideClick: false,
-                                allowEscapeKey: false,
-                                showConfirmButton: false,
-                                didOpen: () => {
-                                    Swal.showLoading();
-                                }
-                            });
-
-                            // Submit form
-                            const form = document.createElement('form');
-                            form.method = 'POST';
-                            form.action = 'handle_schedule.php';
-                            
-                            const actionInput = document.createElement('input');
-                            actionInput.type = 'hidden';
-                            actionInput.name = 'action';
-                            actionInput.value = 'confirm';
-                            
-                            const proposalInput = document.createElement('input');
-                            proposalInput.type = 'hidden';
-                            proposalInput.name = 'proposal_id';
-                            proposalInput.value = proposalId;
-                            
-                            form.appendChild(actionInput);
-                            form.appendChild(proposalInput);
-                            document.body.appendChild(form);
-                            form.submit();
-                        }
-                    });
-                });
-            });
-
-            // Can't Attend handlers
-            document.querySelectorAll('.cant-attend-btn').forEach(function(btn) {
-                btn.addEventListener('click', function(e) {
-                    e.preventDefault();
-                    const proposalId = btn.dataset.proposalId;
-                    const caseId = btn.dataset.caseId;
-                    
-                    Swal.fire({
-                        title: "Can't Attend Hearing",
-                        html: `
-                            <div style="text-align: left; margin: 1rem 0;">
-                                <p style="margin-bottom: 1rem;">Please provide a reason why you cannot attend and suggest alternative dates/times when you are available.</p>
-                                <div style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; padding: 1rem; color: #dc2626; margin-bottom: 1rem;">
-                                    <i class="fas fa-exclamation-triangle" style="margin-right: 0.5rem;"></i>
-                                    <strong>Important:</strong> A valid reason is required for rescheduling.
-                                </div>
-                            </div>
-                        `,
-                        input: 'textarea',
-                        inputLabel: 'Reason and Alternative Dates/Times',
-                        inputPlaceholder: 'Please explain why you cannot attend and suggest alternative dates and times when you are available...',
-                        inputAttributes: {
-                            'aria-label': 'Reason for not attending',
-                            'style': 'min-height: 120px; font-family: Poppins, sans-serif;'
-                        },
-                        showCancelButton: true,
-                        confirmButtonColor: '#dc2626',
-                        cancelButtonColor: '#6b7280',
-                        confirmButtonText: '<i class="fas fa-paper-plane"></i> Submit Request',
-                        cancelButtonText: '<i class="fas fa-times"></i> Cancel',
-                        inputValidator: (value) => {
-                            if (!value || value.trim().length < 10) {
-                                return 'Please provide a detailed reason (at least 10 characters) and suggest alternative dates.';
-                            }
-                        },
-                        customClass: {
-                            popup: 'swal2-popup',
-                            title: 'swal2-title',
-                            input: 'swal2-textarea'
-                        }
-                    }).then((result) => {
-                        if (result.isConfirmed && result.value) {
-                            // Show loading
-                            Swal.fire({
-                                title: 'Processing...',
-                                text: 'Submitting your request...',
-                                allowOutsideClick: false,
-                                allowEscapeKey: false,
-                                showConfirmButton: false,
-                                didOpen: () => {
-                                    Swal.showLoading();
-                                }
-                            });
-
-                            // Submit form
-                            const form = document.createElement('form');
-                            form.method = 'POST';
-                            form.action = 'handle_schedule.php';
-                            
-                            const actionInput = document.createElement('input');
-                            actionInput.type = 'hidden';
-                            actionInput.name = 'action';
-                            actionInput.value = 'reject';
-                            
-                            const proposalInput = document.createElement('input');
-                            proposalInput.type = 'hidden';
-                            proposalInput.name = 'proposal_id';
-                            proposalInput.value = proposalId;
-                            
-                            const remarksInput = document.createElement('input');
-                            remarksInput.type = 'hidden';
-                            remarksInput.name = 'remarks';
-                            remarksInput.value = result.value;
-                            
-                            form.appendChild(actionInput);
-                            form.appendChild(proposalInput);
-                            form.appendChild(remarksInput);
-                            document.body.appendChild(form);
-                            form.submit();
-                        }
-                    });
-                });
-            });
-        });
-
-        // Auto-refresh every 2 minutes to check for updates
-        setInterval(function() {
-            // Check for updates without reloading
-            fetch('../api/scheduling_api.php?action=get_user_cases_with_schedules')
-                .then(response => response.json())
-                .then(data => {
-                    if (data.success) {
-                        // Simple check for changes
-                        const currentCases = <?= json_encode($cases) ?>;
-                        if (JSON.stringify(data.cases) !== JSON.stringify(currentCases)) {
-                            // Show update notification using SweetAlert2
-                            Swal.fire({
-                                title: 'Updates Available',
-                                text: 'There are new schedule updates. Would you like to refresh the page?',
-                                icon: 'info',
-                                showCancelButton: true,
-                                confirmButtonColor: '#3498db',
-                                cancelButtonColor: '#6b7280',
-                                confirmButtonText: '<i class="fas fa-sync-alt"></i> Refresh Now',
-                                cancelButtonText: 'Later',
-                                toast: true,
-                                position: 'top-end',
-                                timer: 10000,
-                                timerProgressBar: true,
-                                showCloseButton: true
-                            }).then((result) => {
-                                if (result.isConfirmed) {
-                                    location.reload();
-                                }
-                            });
-                        }
-                    }
-                })
-                .catch(error => console.log('Update check failed:', error));
-        }, 120000); // 2 minutes
-
-        // Success/Error messages from server-side operations
-        <?php if (isset($_GET['success'])): ?>
-        document.addEventListener('DOMContentLoaded', function() {
-            const success = '<?= htmlspecialchars($_GET['success']) ?>';
-            let title = 'Success!';
-            let text = '';
-            
-            switch(success) {
-                case 'confirmed':
-                    text = 'You have successfully confirmed your availability for the hearing.';
-                    break;
-                case 'rejected':
-                    text = 'Your scheduling conflict has been reported. The captain will propose alternative dates.';
-                    break;
-                default:
-                    text = 'Operation completed successfully.';
-            }
-            
-            Swal.fire({
-                title: title,
-                text: text,
-                icon: 'success',
-                confirmButtonColor: '#059669',
-                confirmButtonText: 'OK'
-            });
-        });
-        <?php endif; ?>
-
-        <?php if (isset($_GET['error'])): ?>
-        document.addEventListener('DOMContentLoaded', function() {
-            const error = '<?= htmlspecialchars($_GET['error']) ?>';
-            let text = '';
-            
-            switch(error) {
-                case 'invalid_proposal':
-                    text = 'The schedule proposal could not be found or is no longer valid.';
-                    break;
-                case 'already_responded':
-                    text = 'You have already responded to this schedule proposal.';
-                    break;
-                case 'database_error':
-                    text = 'A database error occurred. Please try again later.';
-                    break;
-                default:
-                    text = 'An error occurred while processing your request.';
-            }
-            
-            Swal.fire({
-                title: 'Error!',
-                text: text,
-                icon: 'error',
-                confirmButtonColor: '#dc2626',
-                confirmButtonText: 'OK'
-            });
-        });
-        <?php endif; ?>
+        }
+    });
+});
     </script>
 </body>
 </html>
