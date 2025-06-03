@@ -1,6 +1,7 @@
 <?php
 session_start();
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once 'email_template.php';
 $dotenv = Dotenv\Dotenv::createImmutable(__DIR__ . '/../');
 $dotenv->load();
 
@@ -28,52 +29,42 @@ if (isset($_GET['email'])) {
     $stmt->bind_result($user_id, $isverify, $token, $expiry);
     
     if ($stmt->fetch()) {
-        $stmt->close();
-        if ($isverify === "yes") {
+        if ($isverify) {
             $_SESSION['alert'] = "<script>
-            Swal.fire({icon:'success', title:'Already Verified', text:'Your email is already verified.'})
-            .then(() => { window.location.href='../pages/index.php'; });
-            </script>";
-            header("Location: ../pages/index.php");
+                Swal.fire({icon:'info', title:'Already Verified', text:'This email is already verified.'})
+                .then(() => { window.location.href='../pages/login.php'; });
+                </script>";
+            header("Location: ../pages/login.php");
             exit();
-        } else {
-            // If token has expired, generate a new one.
-            if (strtotime($expiry) < time()) {
-                $token = bin2hex(random_bytes(16));
-                $expiry = date('Y-m-d H:i:s', strtotime('+1 day'));
-                $stmt2 = $conn->prepare("UPDATE Users SET verification_token = ?, verification_expiry = ? WHERE user_id = ?");
-                if (!$stmt2) {
-                    $_SESSION['alert'] = "<script>
-                        Swal.fire({icon:'error', title:'Error', text:'Database update failed: " . $conn->error . "'})
-                        .then(() => { window.location.href='../pages/register.php'; });
-                        </script>";
-                    header("Location: ../pages/register.php");
-                    exit();
-                }
-                $stmt2->bind_param("ssi", $token, $expiry, $user_id);
-                $stmt2->execute();
-                $stmt2->close();
-            }
+        }
+
+        // Generate new verification token
+        $newToken = bin2hex(random_bytes(16));
+        $newExpiry = date('Y-m-d H:i:s', strtotime('+24 hours'));
+        
+        // Update the verification token
+        $updateStmt = $conn->prepare("UPDATE Users SET verification_token = ?, verification_expiry = ? WHERE email = ?");
+        $updateStmt->bind_param("sss", $newToken, $newExpiry, $email);
+        
+        if ($updateStmt->execute()) {
+            $verificationLink = "https://localhost/iBarangay/functions/register.php?token=" . $newToken;
             
-            // Create new verification link.
-            $verificationLink = "https://localhost/iBarangay/pages/verify.php?token=" . $token;
             $mail = new PHPMailer(true);
             try {
                 $mail->isSMTP();
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
-                $mail->Username   = 'barangayhub2@gmail.com'; // Your SMTP username
-                $mail->Password   = 'eisy hpjz rdnt bwrp'; // Your SMTP password
+                $mail->Username   = 'barangayhub2@gmail.com';
+                $mail->Password   = 'eisy hpjz rdnt bwrp';
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
 
-                $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
+                $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
                 $mail->addAddress($email);
 
                 $mail->isHTML(true);
                 $mail->Subject = 'Resend: Email Verification';
-                $mail->Body    = "Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>This link will expire in 24 hours.";
-                $mail->AltBody = "Please verify your email by visiting: $verificationLink";
+                $mail->Body = getVerificationEmailTemplate($verificationLink);
                 
                 $mail->send();
                 $_SESSION['alert'] = "<script>
@@ -89,15 +80,14 @@ if (isset($_GET['email'])) {
             header("Location: ../pages/index.php");
             exit();
         }
-    } else {
-        $stmt->close();
-        $_SESSION['alert'] = "<script>
-            Swal.fire({icon:'error', title:'Error', text:'Email not found.'})
-            .then(() => { window.location.href='../pages/register.php'; });
-            </script>";
-        header("Location: ../pages/register.php");
-        exit();
     }
+    
+    $_SESSION['alert'] = "<script>
+        Swal.fire({icon:'error', title:'Error', text:'Email not found in our records.'})
+        .then(() => { window.location.href='../pages/register.php'; });
+        </script>";
+    header("Location: ../pages/register.php");
+    exit();
 } else {
     header("Location: ../pages/register.php");
     exit();

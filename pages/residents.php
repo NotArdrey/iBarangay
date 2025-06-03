@@ -149,13 +149,10 @@ if (isset($_GET['action'], $_GET['id'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
+                    $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
                     $mail->addAddress($userInfo['email'], $userInfo['name']);
                     $mail->Subject = 'Your account has been suspended';
-                    $mail->Body    = "Hello {$userInfo['name']},\n\n"
-                        . "Your account has been suspended for the following reason:\n"
-                        . "{$remarks}\n\n"
-                        . "If you believe this is a mistake, please contact your barangay administrator.";
+                    $mail->Body = getAccountSuspendedTemplate($userInfo['name'], $remarks);
                     $mail->send();
                 } catch (Exception $e) {
                     error_log('Mailer Error: ' . $mail->ErrorInfo);

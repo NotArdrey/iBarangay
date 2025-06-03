@@ -4,6 +4,7 @@ use PHPMailer\PHPMailer\Exception;
 
 require "../config/dbconn.php";  // This file should define a valid $pdo instance.
 require_once __DIR__ . '/../vendor/autoload.php';
+require_once 'email_template.php';
 
 /**
  * Audit Trail logging function.
@@ -68,16 +69,13 @@ function sendPasswordReset($email, $pdo) {
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         
-        $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
+        $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
         $mail->addAddress($email);
         
         // Email content.
-        $mail->isHTML(false);
+        $mail->isHTML(true);
         $mail->Subject = "Password Reset Request";
-        $mail->Body    = "Dear User,\n\nWe received a request to reset your password. " .
-                         "Please click the link below to reset your password:\n\n" .
-                         $resetLink . "\n\n" .
-                         "If you did not request a password reset, please ignore this email.";
+        $mail->Body = getPasswordResetTemplate($resetLink);
         
         $mail->send();
         
@@ -93,29 +91,8 @@ function sendPasswordReset($email, $pdo) {
 
 // Process the form submission.
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $email = isset($_POST['email']) ? $_POST['email'] : '';
-    $message = sendPasswordReset($email, $pdo);
-    ?>
-    <!DOCTYPE html>
-    <html lang="en">
-    <head>
-        <meta charset="UTF-8">
-        <title>Password Reset</title>
-        <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    </head>
-    <body>
-        <script>
-            Swal.fire({
-                icon: <?php echo json_encode((strpos($message, 'sent') !== false) ? 'success' : 'error'); ?>,
-                title: 'Password Reset',
-                text: <?php echo json_encode($message); ?>
-            }).then(() => {
-                window.location.href = '../pages/login.php';
-            });
-        </script>
-    </body>
-    </html>
-    <?php
-    exit;
+    $email = $_POST['email'] ?? '';
+    $result = sendPasswordReset($email, $pdo);
+    echo $result;
 }
 ?>

@@ -2,6 +2,7 @@
 session_start();
 require_once '../config/dbconn.php';
 require '../vendor/autoload.php';
+require_once 'email_template.php';
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -54,13 +55,7 @@ try {
 
         $mail->isHTML(true);
         $mail->Subject = 'Password Change Verification Code';
-        $mail->Body = "
-            <h2>Password Change Request</h2>
-            <p>You have requested to change your password. Please use the following verification code to continue:</p>
-            <h1 style='font-size: 24px; color: #0a2240; background: #f5f5f5; padding: 10px; text-align: center;'>{$verification_code}</h1>
-            <p>This code will expire in 15 minutes.</p>
-            <p>If you did not request this change, please ignore this email and ensure your account is secure.</p>
-        ";
+        $mail->Body = getVerificationCodeTemplate($verification_code);
 
         $mail->send();
         echo json_encode(['success' => true, 'message' => 'Verification code sent']);

@@ -227,10 +227,10 @@ if (isset($_GET['action'])) {
                             $mail->Password   = 'eisy hpjz rdnt bwrp';
                             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                             $mail->Port       = 587;
-                            $mail->setFrom('noreply@barangayhub.com','Barangay Hub');
+                            $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
                             $mail->addAddress($userInfo['email'], $userInfo['name']);
                             $mail->Subject = 'Your account has been suspended';
-                            $mail->Body    = "Hello {$userInfo['name']},\n\nYour account has been suspended for the following reason: {$remarks}";
+                            $mail->Body = getAccountSuspendedTemplate($userInfo['name'], $remarks);
                             $mail->send();
                         } catch (Exception $e) {
                             error_log('Mailer Error: ' . $mail->ErrorInfo);
@@ -302,10 +302,10 @@ if (isset($_GET['action'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('noreply@barangayhub.com','iBarangay');
+                    $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
                     $mail->addAddress($requestInfo['email'], $requestInfo['requester_name']);
                     $mail->Subject = 'Document Request Not Processed';
-                    $mail->Body    = "Hello {$requestInfo['requester_name']},\n\nYour request for '{$requestInfo['document_name']}' has been declined.\n\nReason: {$remarks}";
+                    $mail->Body = getDocumentReadyTemplate($requestInfo['document_name'], false);
                     $mail->send();
                 } catch (Exception $e) {
                     error_log('Email send failed: ' . $e->getMessage());
@@ -387,7 +387,7 @@ if (isset($_GET['action'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('noreply@barangayhub.com','iBarangay');
+                    $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
                     $mail->addAddress($info['email'], $info['requester_name']);
 
                     // Check if document is a cedula
