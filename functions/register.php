@@ -28,6 +28,7 @@ use Dotenv\Dotenv;
 
 // Include the PHPMailer autoloader
 require_once '../vendor/autoload.php';
+require_once 'email_template.php';
 
 // ------------------------------------------------------
 // Email Verification: Process link click with token
@@ -58,7 +59,7 @@ if (isset($_GET['token'])) {
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
 
-                $mail->setFrom('noreply@barangayhub.com', 'Barangay Hub');
+                $mail->setFrom('noreply@iBarangay.com', 'iBarangay System');
                 $mail->addAddress($userEmail);
 
                 $mail->isHTML(true);
@@ -794,13 +795,13 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
 
-                $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
-                $mail->addAddress($email);
+                    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
+                    $mail->addAddress($email);
 
-                $mail->isHTML(true);
-                $mail->Subject = 'Email Verification';
-                $mail->Body    = "Thank you for registering. Please verify your email by clicking the following link: <a href='$verificationLink'>$verificationLink</a><br>Your link will expire in 24 hours.";
-                $mail->send();
+                    $mail->isHTML(true);
+                    $mail->Subject = 'Email Verification';
+                    $mail->Body    = getVerificationEmailTemplate($verificationLink);
+                    $mail->send();
 
                     $message = "Registration successful! Please check your email to verify your account.";
                     $icon = "success";

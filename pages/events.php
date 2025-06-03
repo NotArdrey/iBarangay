@@ -2,6 +2,7 @@
 /* pages/events.php – fully working version with loading animation
    ─────────────────────────────────────────────────────────────── */
 require __DIR__ . '/../vendor/autoload.php';
+
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -9,6 +10,7 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 
 /* dependencies */
 require __DIR__ . '/../config/dbconn.php';
+require __DIR__ . '/../functions/notification_helper.php';
 
 $user_id = $_SESSION['user_id']     ?? null;
 $bid     = $_SESSION['barangay_id'] ?? null;
@@ -41,19 +43,36 @@ function logAuditTrail(
     ]);
 }
 
-function sendEventEmails(
-    PDO $pdo,
-    array $event,
-    int $barangayId,
-    string $type
-): void {
-    $stmt = $pdo->prepare("SELECT email FROM users WHERE barangay_id = ?");
+
+function getEventNotificationTemplate(string $title, string $message, bool $isPostponed = false): string
+{
+    $status = $isPostponed ? 'POSTPONED' : 'NEW';
+    $color = $isPostponed ? '#dc2626' : '#059669';
+
+    return "
+    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;'>
+        <div style='background-color: {$color}; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;'>
+            <h2 style='margin: 0;'>{$status} EVENT</h2>
+        </div>
+        <div style='background-color: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-radius: 0 0 5px 5px;'>
+            <h3 style='color: #1f2937; margin-top: 0;'>{$title}</h3>
+            <div style='color: #4b5563; white-space: pre-line;'>{$message}</div>
+            <div style='margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 0.875rem;'>
+                This is an automated message from the iBarangay System. Please do not reply to this email.
+            </div>
+        </div>
+    </div>";
+}
+
+function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type): void
+{
+    // Get all users in the barangay
+    $stmt = $pdo->prepare("SELECT id, email FROM users WHERE barangay_id = ?");
     $stmt->execute([$barangayId]);
     $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if (!$users) return;
 
-    // Create notifications for all users
-    $user_ids = array_column($users, 'id');
+    // Prepare email content
     $notification_title = $type === 'new' ? "New Event: {$event['title']}" : "Event Postponed: {$event['title']}";
     $notification_message = $type === 'new' 
         ? "A new event has been scheduled:\n\n" 
@@ -65,17 +84,6 @@ function sendEventEmails(
     $notification_message .= "Location: {$event['location']}\n";
     if ($event['organizer']) $notification_message .= "Organizer: {$event['organizer']}\n";
 
-    createNotificationsForUsers(
-        $user_ids,
-        'event',
-        $notification_title,
-        $notification_message,
-        'high',
-        'events',
-        $event['id'],
-        "../pages/event_details.php?id={$event['id']}"
-    );
-
     // Send email notifications
     $mail = new PHPMailer(true);
     try {
@@ -86,8 +94,8 @@ function sendEventEmails(
         $mail->Password   = 'eisy hpjz rdnt bwrp';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
-        $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
-        $mail->isHTML(false);
+        $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
+        $mail->isHTML(true);
 
         foreach ($users as $user) {
             if (empty($user['email'])) continue;
@@ -95,12 +103,11 @@ function sendEventEmails(
             $mail->clearAddresses();
             $mail->addAddress($user['email']);
             $mail->Subject = $notification_title;
-
-            $body  = "Dear Resident,\n\n";
-            $body .= $notification_message;
-            $body .= "\nThank you,\nBarangay Management";
-
-            $mail->Body = $body;
+            $mail->Body = getEventNotificationTemplate(
+                $event['title'],
+                $notification_message,
+                $type === 'postponed'
+            );
             $mail->send();
         }
     } catch (Exception $e) {
@@ -122,16 +129,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($event) {
             sendEventEmails($pdo, $event, $bid, 'postponed');
-            $pdo->prepare(
-                "DELETE FROM events WHERE id = ? AND barangay_id = ?"
-            )->execute([$event_id, $bid]);
-            logAuditTrail(
-                $pdo, $user_id, 'DELETE', 'events', $event_id,
-                'Event postponed & deleted'
-            );
-            $_SESSION['message'] = 'Event postponed and removed; residents notified.';
+
+            $pdo->prepare("DELETE FROM events WHERE id = ? AND barangay_id = ?")
+                ->execute([$event_id, $bid]);
+            logAuditTrail($pdo, $user_id, 'DELETE', 'events', $event_id, 'Event postponed & deleted');
+            $_SESSION['alert'] = [
+                'type' => 'success',
+                'title' => 'Event Postponed',
+                'message' => 'The event has been postponed and residents have been notified.'
+            ];
+
         } else {
-            $_SESSION['message'] = 'Event not found.';
+            $_SESSION['alert'] = [
+                'type' => 'error',
+                'title' => 'Error',
+                'message' => 'Event not found.'
+            ];
         }
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
@@ -166,7 +179,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($startDT && $endDT && $endDT <= $startDT)   $errors[] = 'End must be after start';
 
     if ($errors) {
-        $_SESSION['message'] = implode('<br>', $errors);
+        $_SESSION['alert'] = [
+            'type' => 'error',
+            'title' => 'Validation Error',
+            'message' => implode('<br>', $errors)
+        ];
         header('Location: ' . $_SERVER['PHP_SELF']);
         exit;
     }
@@ -185,13 +202,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $title, $description, $start_datetime, $end_datetime,
                 $location, $organizer, $event_id, $bid
             ]);
+            logAuditTrail($pdo, $user_id, 'UPDATE', 'events', $event_id, 'Event updated');
+            $_SESSION['alert'] = [
+                'type' => 'success',
+                'title' => 'Success',
+                'message' => 'Event has been updated successfully.'
+            ];
+        } else {                  /* insert */
 
-            logAuditTrail(
-                $pdo, $user_id, 'UPDATE', 'events', $event_id,
-                'Event updated'
-            );
-            $_SESSION['message'] = 'Event updated.';
-        } else { /* insert */
             $pdo->prepare(
                 "INSERT INTO events
                         (title, description, start_datetime, end_datetime,
@@ -208,15 +226,22 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $evt = $evt->fetch(PDO::FETCH_ASSOC);
 
             sendEventEmails($pdo, $evt, $bid, 'new');
-            logAuditTrail(
-                $pdo, $user_id, 'INSERT', 'events', $newId,
-                'Event created'
-            );
-            $_SESSION['message'] = 'Event created; residents notified.';
+
+            logAuditTrail($pdo, $user_id, 'INSERT', 'events', $newId, 'Event created');
+            $_SESSION['alert'] = [
+                'type' => 'success',
+                'title' => 'Success',
+                'message' => 'Event has been created and residents have been notified.'
+            ];
+
         }
     } catch (PDOException $e) {
         error_log('DB error: ' . $e->getMessage());
-        $_SESSION['message'] = 'Database error.';
+        $_SESSION['alert'] = [
+            'type' => 'error',
+            'title' => 'Database Error',
+            'message' => 'An error occurred while saving the event.'
+        ];
     }
 
     header('Location: ' . $_SERVER['PHP_SELF']);
@@ -245,14 +270,28 @@ require __DIR__ . '/../components/header.php';
 ?>
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Event Management</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.css" rel="stylesheet">
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <style>
+    /* Fix for SweetAlert2 button being invisible due to Tailwind/Flowbite */
+    .swal2-confirm {
+        background-color: #3085d6 !important;
+        color: #fff !important;
+        border: none !important;
+        box-shadow: none !important;
+        border-radius: 0.25rem !important;
+        padding: 0.625em 2em !important;
+        font-size: 1.0625em !important;
+    }
+    </style>
 </head>
+
 <body class="bg-gray-50">
     <main class="ml-0 lg:ml-64 p-4 md:p-8 space-y-6">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
@@ -260,12 +299,16 @@ require __DIR__ . '/../components/header.php';
             <button onclick="toggleModal()" class="w-full md:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">+ Add New Event</button>
         </div>
 
-        <?php if (!empty($_SESSION['message'])): ?>
-        <div class="flex items-center p-4 mb-4 text-sm text-green-800 rounded-lg bg-green-50" role="alert">
-            <svg class="flex-shrink-0 inline w-4 h-4 me-3" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20"><path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5ZM9.5 4a1.5 1.5 0 1 1 0 3 1.5 1.5 0 0 1 0-3ZM12 15H8a1 1 0 0 1 0-2h1v-3H8a1 1 0 0 1 0-2h2a1 1 0 0 1 1 1v4h1a1 1 0 0 1 0 2Z"/></svg>
-            <div><?= $_SESSION['message']; unset($_SESSION['message']); ?></div>
-        </div>
-        <?php endif; ?>
+        <?php if (isset($_SESSION['alert'])): ?>
+        <script>
+            Swal.fire({
+                icon: '<?= $_SESSION['alert']['type'] ?>',
+                title: '<?= $_SESSION['alert']['title'] ?>',
+                html: '<?= $_SESSION['alert']['message'] ?>',
+                confirmButtonColor: '#3085d6'
+            });
+        </script>
+        <?php unset($_SESSION['alert']); endif; ?>
 
         <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
             <div class="overflow-x-auto">
@@ -285,40 +328,42 @@ require __DIR__ . '/../components/header.php';
                     <tbody class="bg-white divide-y divide-gray-200">
                         <?php if ($events): ?>
                             <?php foreach ($events as $event): ?>
-                            <tr class="hover:bg-gray-50 transition-colors">
-                                <td class="px-4 py-3 text-sm font-medium text-gray-900"><?= htmlspecialchars($event['title']) ?></td>
-                                <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                                    <div class="flex flex-col">
-                                        <span class="font-medium"><?= date('M d, Y', strtotime($event['start_datetime'])) ?></span>
-                                        <span class="text-gray-600"><?= date('h:i A', strtotime($event['start_datetime'])) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
-                                    <div class="flex flex-col">
-                                        <span class="font-medium"><?= date('M d, Y', strtotime($event['end_datetime'])) ?></span>
-                                        <span class="text-gray-600"><?= date('h:i A', strtotime($event['end_datetime'])) ?></span>
-                                    </div>
-                                </td>
-                                <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($event['location']) ?></td>
-                                <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($event['organizer'] ?? 'N/A') ?></td>
-                                <td class="px-4 py-3 text-sm text-gray-600">
-                                    <?= htmlspecialchars(trim(($event['creator_first_name'] ?? '') . ' ' . ($event['creator_last_name'] ?? ''))) ?>
-                                </td>
-                                <td class="px-4 py-3 text-sm text-gray-600"><?= nl2br(htmlspecialchars($event['description'] ?? '')) ?></td>
-                                <td class="px-4 py-3 text-sm text-gray-600">
-                                    <div class="flex items-center space-x-3">
-                                        <button onclick="editEvent(<?= $event['id'] ?>)" class="p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50">Edit</button>
-                                        <form method="POST" class="inline">
-                                            <input type="hidden" name="event_id" value="<?= $event['id'] ?>">
-                                            <input type="hidden" name="delete" value="1">
-                                            <button type="button" onclick="confirmDelete(this.form)" class="p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50">Delete</button>
-                                        </form>
-                                    </div>
-                                </td>
-                            </tr>
+                                <tr class="hover:bg-gray-50 transition-colors">
+                                    <td class="px-4 py-3 text-sm font-medium text-gray-900"><?= htmlspecialchars($event['title']) ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                                        <div class="flex flex-col">
+                                            <span class="font-medium"><?= date('M d, Y', strtotime($event['start_datetime'])) ?></span>
+                                            <span class="text-gray-600"><?= date('h:i A', strtotime($event['start_datetime'])) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-600 whitespace-nowrap">
+                                        <div class="flex flex-col">
+                                            <span class="font-medium"><?= date('M d, Y', strtotime($event['end_datetime'])) ?></span>
+                                            <span class="text-gray-600"><?= date('h:i A', strtotime($event['end_datetime'])) ?></span>
+                                        </div>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($event['location']) ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-600"><?= htmlspecialchars($event['organizer'] ?? 'N/A') ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-600">
+                                        <?= htmlspecialchars(trim(($event['creator_first_name'] ?? '') . ' ' . ($event['creator_last_name'] ?? ''))) ?>
+                                    </td>
+                                    <td class="px-4 py-3 text-sm text-gray-600"><?= nl2br(htmlspecialchars($event['description'] ?? '')) ?></td>
+                                    <td class="px-4 py-3 text-sm text-gray-600">
+                                        <div class="flex items-center space-x-3">
+                                            <button onclick="editEvent(<?= $event['id'] ?>)" class="p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50">Edit</button>
+                                            <form method="POST" class="inline">
+                                                <input type="hidden" name="event_id" value="<?= $event['id'] ?>">
+                                                <input type="hidden" name="delete" value="1">
+                                                <button type="button" onclick="confirmDelete(this.form)" class="p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50">Delete</button>
+                                            </form>
+                                        </div>
+                                    </td>
+                                </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
-                            <tr><td colspan="8" class="px-4 py-4 text-center text-gray-500">No events found</td></tr>
+                            <tr>
+                                <td colspan="8" class="px-4 py-4 text-center text-gray-500">No events found</td>
+                            </tr>
                         <?php endif; ?>
                     </tbody>
                 </table>
@@ -376,7 +421,9 @@ require __DIR__ . '/../components/header.php';
                 title: 'Sending emails...',
                 text: 'Please wait while notifications are being sent.',
                 allowOutsideClick: false,
-                didOpen: () => { Swal.showLoading(); }
+                didOpen: () => {
+                    Swal.showLoading();
+                }
             });
         }
 
@@ -385,16 +432,16 @@ require __DIR__ . '/../components/header.php';
             modal.classList.toggle('hidden');
             if (eventId) {
                 <?php foreach ($events as $e): ?>
-                if (<?= $e['id'] ?> === eventId) {
-                    document.getElementById('eventId').value = <?= $e['id'] ?>;
-                    document.querySelector('[name="title"]').value = '<?= addslashes($e['title']) ?>';
-                    document.querySelector('[name="start_datetime"]').value = '<?= str_replace(' ', 'T', $e['start_datetime']) ?>';
-                    document.querySelector('[name="end_datetime"]').value = '<?= str_replace(' ', 'T', $e['end_datetime']) ?>';
-                    document.querySelector('[name="location"]').value = '<?= addslashes($e['location']) ?>';
-                    document.querySelector('[name="organizer"]').value = '<?= addslashes($e['organizer']) ?>';
-                    document.querySelector('[name="description"]').value = '<?= addslashes($e['description']) ?>';
-                    document.getElementById('modalTitle').textContent = 'Edit Event';
-                }
+                    if (<?= $e['id'] ?> === eventId) {
+                        document.getElementById('eventId').value = <?= $e['id'] ?>;
+                        document.querySelector('[name="title"]').value = '<?= addslashes($e['title']) ?>';
+                        document.querySelector('[name="start_datetime"]').value = '<?= str_replace(' ', 'T', $e['start_datetime']) ?>';
+                        document.querySelector('[name="end_datetime"]').value = '<?= str_replace(' ', 'T', $e['end_datetime']) ?>';
+                        document.querySelector('[name="location"]').value = '<?= addslashes($e['location']) ?>';
+                        document.querySelector('[name="organizer"]').value = '<?= addslashes($e['organizer']) ?>';
+                        document.querySelector('[name="description"]').value = '<?= addslashes($e['description']) ?>';
+                        document.getElementById('modalTitle').textContent = 'Edit Event';
+                    }
                 <?php endforeach; ?>
             } else {
                 document.getElementById('eventId').value = '';
@@ -427,4 +474,5 @@ require __DIR__ . '/../components/header.php';
     </script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.2.0/flowbite.min.js"></script>
 </body>
+
 </html>

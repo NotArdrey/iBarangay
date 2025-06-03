@@ -2,7 +2,8 @@
 
 session_start();
 $error = isset($_SESSION['login_error']) ? $_SESSION['login_error'] : '';
-unset($_SESSION['login_error']);
+$success = isset($_SESSION['success']) ? $_SESSION['success'] : '';
+unset($_SESSION['login_error'], $_SESSION['success']);
 
 // Add session management code
 if (isset($_SESSION['user_id'])) {
@@ -106,6 +107,20 @@ if (isset($_SESSION['user_id'])) {
         });
       <?php endif; ?>
     });
+
+    // Display SweetAlert for success messages, if any
+    <?php if(!empty($success)): ?>
+      Swal.fire({
+        icon: 'success',
+        title: 'Success!',
+        text: '<?php echo addslashes($success); ?>',
+        timer: 3000,
+        timerProgressBar: true,
+        showConfirmButton: true,
+        confirmButtonText: 'OK',
+        confirmButtonColor: '#3b82f6'
+      });
+    <?php endif; ?>
   </script>
 </body>
 </html>

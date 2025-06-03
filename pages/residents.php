@@ -7,6 +7,7 @@ if (session_status() === PHP_SESSION_NONE) {
 
 require __DIR__ . "/../vendor/autoload.php";
 require __DIR__ . "/../config/dbconn.php";
+require_once '../functions/email_template.php';
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -30,7 +31,7 @@ if ($current_admin_id === null || !in_array($role, [2, 3, 4, 5, 6, 7], true)) {
 function logAuditTrail(PDO $pdo, int $admin, string $action, string $table, int $id, string $desc): void
 {
     $stmt = $pdo->prepare(
-        "INSERT INTO audit_trails (admin_user_id, action, table_name, record_id, old_values)
+        "INSERT INTO audit_trails (user_id, action, table_name, record_id, old_values)
          VALUES (:admin, :act, :tbl, :rid, :desc)"
     );
     $stmt->execute([
@@ -149,13 +150,11 @@ if (isset($_GET['action'], $_GET['id'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
+                    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($userInfo['email'], $userInfo['name']);
                     $mail->Subject = 'Your account has been suspended';
-                    $mail->Body    = "Hello {$userInfo['name']},\n\n"
-                        . "Your account has been suspended for the following reason:\n"
-                        . "{$remarks}\n\n"
-                        . "If you believe this is a mistake, please contact your barangay administrator.";
+                    $mail->isHTML(true);
+                    $mail->Body = getAccountSuspendedTemplate($userInfo['name'], $remarks);
                     $mail->send();
                 } catch (Exception $e) {
                     error_log('Mailer Error: ' . $mail->ErrorInfo);
@@ -195,12 +194,11 @@ if (isset($_GET['action'], $_GET['id'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('noreply@barangayhub.com', 'iBarangay');
+                    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($userInfo['email'], $userInfo['name']);
                     $mail->Subject = 'Your account has been reactivated';
-                    $mail->Body    = "Hello {$userInfo['name']},\n\n"
-                        . "Your account has been reactivated.\n"
-                        . "You can now log in and continue using the system.";
+                    $mail->isHTML(true);
+                    $mail->Body    = getAccountReactivatedTemplate($userInfo['name']);
                     $mail->send();
                 } catch (Exception $e) {
                     error_log('Mailer Error: ' . $mail->ErrorInfo);
