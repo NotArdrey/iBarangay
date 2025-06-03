@@ -16,6 +16,19 @@ if (file_exists($envPath)) {
 if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APPLICATION_CREDENTIALS'))) {
     error_log('Google Document AI credentials not found or inaccessible: ' . getenv('GOOGLE_APPLICATION_CREDENTIALS'));
 }
+
+// Function to check if phone number already exists
+function checkPhoneExists($phone) {
+    global $pdo;
+    try {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE phone = ?");
+        $stmt->execute([$phone]);
+        return $stmt->fetchColumn() > 0;
+    } catch (PDOException $e) {
+        error_log("Error checking phone number: " . $e->getMessage());
+        return false;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -198,7 +211,7 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
     });
 
     // Form validation and person verification
-    document.querySelector('form').addEventListener('submit', function(event) {
+    document.querySelector('form').addEventListener('submit', async function(event) {
       event.preventDefault();
       
       // Get the person details for verification
@@ -231,6 +244,26 @@ if (!getenv('GOOGLE_APPLICATION_CREDENTIALS') || !file_exists(getenv('GOOGLE_APP
           icon: 'error',
           title: 'Invalid Phone Number',
           text: 'Please enter a valid Philippine mobile number starting with 09 followed by 9 digits.',
+          confirmButtonText: 'OK'
+        });
+        return;
+      }
+      
+      // Check if phone number already exists
+      const checkPhoneResponse = await fetch('../functions/check_phone.php', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'phone=' + encodeURIComponent(phone)
+      });
+      
+      const phoneData = await checkPhoneResponse.json();
+      if (phoneData.exists) {
+        Swal.fire({
+          icon: 'error',
+          title: 'Phone Number Already Exists',
+          text: 'This phone number is already registered in the system. Please use a different phone number.',
           confirmButtonText: 'OK'
         });
         return;
