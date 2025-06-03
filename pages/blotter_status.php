@@ -6,91 +6,11 @@ require "../config/dbconn.php";
 $conn = $pdo;
 global $conn;
 
+// Add error logging
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
 
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && 
-    isset($_SERVER['HTTP_CONTENT_TYPE']) && 
-    strpos($_SERVER['HTTP_CONTENT_TYPE'], 'application/json') !== false
-) {
-    $input = json_decode(file_get_contents('php://input'), true);
-    if (!empty($input['action']) && !empty($input['proposal_id'])) {
-        $proposalId = intval($input['proposal_id']);
-        $userId = $_SESSION['user_id'];
-        
-        // Fix the query to properly alias the case ID
-        $stmt = $pdo->prepare("
-            SELECT sp.*, 
-                   bc.id as case_id,  -- This is the fix
-                   bc.hearing_attempts, 
-                   bc.max_hearing_attempts 
-            FROM schedule_proposals sp 
-            JOIN blotter_cases bc ON sp.blotter_case_id = bc.id 
-            WHERE sp.id = ?
-        ");
-        $stmt->execute([$proposalId]);
-        $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$proposal) {
-            echo json_encode(['success'=>false,'message'=>'Proposal not found']); 
-            exit;
-        }
-        
-        // Use the correct case_id field
-        $caseId = $proposal['case_id'];
-        
-        // Find if user is complainant or respondent
-        $pstmt = $pdo->prepare("
-            SELECT bp.role 
-            FROM blotter_participants bp 
-            LEFT JOIN persons p ON bp.person_id = p.id 
-            WHERE bp.blotter_case_id = ? AND p.user_id = ?
-        ");
-        $pstmt->execute([$caseId, $userId]);
-        $role = $pstmt->fetchColumn();
-        
-        if ($role !== 'complainant' && $role !== 'respondent') {
-            echo json_encode(['success'=>false,'message'=>'Only complainant or respondent can confirm/reject availability.']); 
-            exit;
-        }
-        
-        if ($input['action'] === 'confirm_availability') {
-            // Update the correct column based on role
-            $col = ($role === 'complainant') ? 'complainant_confirmed' : 'respondent_confirmed';
-            $pdo->prepare("UPDATE schedule_proposals SET $col = 1 WHERE id = ?")->execute([$proposalId]);
-            
-            // Check if both parties confirmed
-            $sp2 = $pdo->prepare("SELECT complainant_confirmed, respondent_confirmed, captain_confirmed FROM schedule_proposals WHERE id=?");
-            $sp2->execute([$proposalId]);
-            $flags = $sp2->fetch(PDO::FETCH_ASSOC);
-            
-            if ($flags['complainant_confirmed'] && $flags['respondent_confirmed']) {
-                // Both parties confirmed - check if captain also confirmed
-                if ($flags['captain_confirmed']) {
-                    // All confirmed - finalize hearing
-                    $pdo->beginTransaction();
-                    $pdo->prepare("UPDATE schedule_proposals SET status='both_confirmed' WHERE id=?")->execute([$proposalId]);
-                    $pdo->prepare("UPDATE blotter_cases SET scheduling_status='scheduled', status='open' WHERE id=?")->execute([$caseId]);
-                    $pdo->commit();
-                    echo json_encode(['success'=>true,'message'=>'All parties confirmed. Hearing scheduled.']);
-                } else {
-                    echo json_encode(['success'=>true,'message'=>'Both parties confirmed. Waiting for officer confirmation.']);
-                }
-            } else {
-                echo json_encode(['success'=>true,'message'=>'Your confirmation is recorded. Waiting for other party.']);
-            }
-            exit;
-        } elseif ($input['action'] === 'reject_availability') {
-            // Mark as conflict
-            $pdo->beginTransaction();
-            $pdo->prepare("UPDATE schedule_proposals SET status='conflict', conflict_reason=? WHERE id=?")
-                ->execute([$input['reason'], $proposalId]);
-            $pdo->prepare("UPDATE blotter_cases SET scheduling_status='pending_schedule', hearing_attempts=hearing_attempts+1 WHERE id=?")
-                ->execute([$caseId]);
-            $pdo->commit();
-            echo json_encode(['success'=>true,'message'=>'Your unavailability was recorded. A new schedule will be proposed.']);
-            exit;
-        }
-    }
-}
+// Set up user session variables BEFORE handling POST requests
 $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 4;
 $user_info = null;
 $barangay_name = "Barangay";
@@ -112,6 +32,226 @@ if ($user_id) {
         $barangay_id = $row['barangay_id'];
     }
     $stmt = null;
+}
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Check if it's a JSON request
+    $contentType = $_SERVER['CONTENT_TYPE'] ?? $_SERVER['HTTP_CONTENT_TYPE'] ?? '';
+    if (strpos($contentType, 'application/json') !== false) {
+        header('Content-Type: application/json');
+        
+        try {
+            $input = json_decode(file_get_contents('php://input'), true);
+            
+            // Check for JSON decode errors
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                echo json_encode(['success' => false, 'message' => 'Invalid JSON data']);
+                exit;
+            }
+            
+            if (empty($input['action']) || empty($input['proposal_id'])) {
+                echo json_encode(['success' => false, 'message' => 'Missing required parameters']);
+                exit;
+            }
+            
+            $proposalId = intval($input['proposal_id']);
+            
+            // Use the user_id that was already set up above
+            if (!$user_id) {
+                echo json_encode(['success' => false, 'message' => 'User not logged in']);
+                exit;
+            }
+            
+            $userId = $user_id; // Use the already established user_id
+        
+            // Get the person_id for the current user
+            $personStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = ?");
+            $personStmt->execute([$userId]);
+            $personId = $personStmt->fetchColumn();
+            
+            if (!$personId) {
+                echo json_encode(['success' => false, 'message' => 'User person record not found']); 
+                exit;
+            }
+            
+            $stmt = $pdo->prepare("
+                SELECT sp.*, 
+                       bc.id as case_id
+                FROM schedule_proposals sp 
+                JOIN blotter_cases bc ON sp.blotter_case_id = bc.id 
+                WHERE sp.id = ?
+            ");
+            $stmt->execute([$proposalId]);
+            $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+
+            if (!$proposal) {
+                echo json_encode(['success' => false, 'message' => 'Proposal not found']); 
+                exit;
+            }
+
+            if ($proposal['status'] !== 'pending_user_confirmation' && 
+                $proposal['status'] !== 'all_confirmed' && 
+                $proposal['status'] !== 'both_confirmed') {
+
+                if (strpos($proposal['status'], '_approval') !== false) {
+                     echo json_encode(['success' => false, 'message' => 'Schedule is awaiting officer review before participant confirmation. Current status: ' . htmlspecialchars($proposal['status'])]);
+                } else {
+                     echo json_encode(['success' => false, 'message' => 'Schedule is not currently open for participant confirmation. Current status: ' . htmlspecialchars($proposal['status'])]);
+                }
+                exit;
+            }
+            $caseId = $proposal['case_id'];
+
+            $pstmt = $pdo->prepare("
+                SELECT bp.role 
+                FROM blotter_participants bp 
+                WHERE bp.blotter_case_id = ? AND bp.person_id = ?
+            ");
+            $pstmt->execute([$caseId, $personId]);
+            $role = $pstmt->fetchColumn();
+            
+            if (!in_array($role, ['complainant', 'respondent', 'witness'])) {
+                echo json_encode(['success' => false, 'message' => 'Only complainant, respondent, or witness can confirm/reject availability.']); 
+                exit;
+            }
+        
+            if ($input['action'] === 'confirm_availability') {
+                // Update the correct column based on role
+                $col = '';
+                if ($role === 'complainant') $col = 'complainant_confirmed';
+                elseif ($role === 'respondent') $col = 'respondent_confirmed';
+                elseif ($role === 'witness') $col = 'witness_confirmed';
+                
+                if (empty($col)) {
+                    echo json_encode(['success' => false, 'message' => 'Invalid user role']);
+                    exit;
+                }
+                
+                $updateStmt = $pdo->prepare("UPDATE schedule_proposals SET $col = 1 WHERE id = ?");
+                $updateStmt->execute([$proposalId]);
+                
+                // Check if all parties confirmed
+                $sp2 = $pdo->prepare("SELECT complainant_confirmed, respondent_confirmed, witness_confirmed, captain_confirmed FROM schedule_proposals WHERE id=?");
+                $sp2->execute([$proposalId]);
+                $flags = $sp2->fetch(PDO::FETCH_ASSOC);
+                
+                // Get all participants to check if witness exists
+                $partStmt = $pdo->prepare("
+                    SELECT COUNT(DISTINCT bp.role) as role_count,
+                           SUM(CASE WHEN bp.role = 'witness' THEN 1 ELSE 0 END) as witness_count
+                    FROM blotter_participants bp
+                    WHERE bp.blotter_case_id = ?
+                ");
+                $partStmt->execute([$caseId]);
+                $partInfo = $partStmt->fetch(PDO::FETCH_ASSOC);
+                $hasWitness = $partInfo['witness_count'] > 0;
+
+                $officerCheck = $pdo->prepare("
+                    SELECT captain_confirmed, chief_confirmed 
+                    FROM schedule_proposals 
+                    WHERE id = ?
+                ");
+                $officerCheck->execute([$proposalId]);
+                $officerFlags = $officerCheck->fetch(PDO::FETCH_ASSOC);
+                
+                if ($flags['complainant_confirmed'] && $flags['respondent_confirmed'] && 
+                    (!$hasWitness || $flags['witness_confirmed'])) {
+                    // Create the hearing record
+                    $pdo->beginTransaction();
+                    
+                    try {
+                        // Get hearing number
+                        $hStmt = $pdo->prepare("SELECT COUNT(*) + 1 as hearing_num FROM case_hearings WHERE blotter_case_id = ?");
+                        $hStmt->execute([$caseId]);
+                        $hearingNum = $hStmt->fetchColumn();
+                        
+                        // Insert hearing
+                        $insertHearingStmt = $pdo->prepare("
+                            INSERT INTO case_hearings 
+                            (blotter_case_id, hearing_date, hearing_type, hearing_outcome,
+                            presiding_officer_name, presiding_officer_position, hearing_number)
+                            VALUES(?, TIMESTAMP(?, ?), 'mediation', 'scheduled', ?, ?, ?)
+                        ");
+                        $insertHearingStmt->execute([
+                            $caseId,
+                            $proposal['proposed_date'],
+                            $proposal['proposed_time'],
+                            $proposal['presiding_officer'],
+                            $proposal['presiding_officer_position'],
+                            $hearingNum
+                        ]);
+                        
+                        // Update case and proposal status
+                        $updateCaseStmt = $pdo->prepare("
+                            UPDATE blotter_cases
+                            SET scheduling_status = 'scheduled', 
+                                status = 'open',
+                                scheduled_hearing = TIMESTAMP(?, ?)
+                            WHERE id = ?
+                        ");
+                        $updateCaseStmt->execute([$proposal['proposed_date'], $proposal['proposed_time'], $caseId]);
+                        
+                        $updateProposalStmt = $pdo->prepare("
+                            UPDATE schedule_proposals
+                            SET status = 'all_confirmed'
+                            WHERE id = ?
+                        ");
+                        $updateProposalStmt->execute([$proposalId]);
+                        
+                        $pdo->commit();
+                        
+                        echo json_encode(['success' => true, 'message' => 'Hearing officially scheduled. All required participants have confirmed attendance. Officer availability has been noted.']);
+                    } catch (Exception $e) {
+                        $pdo->rollBack();
+                        error_log("Error scheduling hearing: " . $e->getMessage());
+                        echo json_encode(['success' => false, 'message' => 'Error scheduling hearing: ' . $e->getMessage()]);
+                    }
+                } else {
+                    // Build message about who still needs to confirm
+                    $pending = [];
+                    if (!$flags['complainant_confirmed']) $pending[] = 'complainant';
+                    if (!$flags['respondent_confirmed']) $pending[] = 'respondent';
+                    if ($hasWitness && !$flags['witness_confirmed']) $pending[] = 'witness';
+                    
+                    echo json_encode(['success' => true, 'message' => 'Your confirmation is recorded. Waiting for: ' . implode(', ', $pending)]);
+                }
+                exit;
+                
+            } elseif ($input['action'] === 'reject_availability') {
+                // Mark as conflict
+                $pdo->beginTransaction();
+                
+                try {
+                    $conflictStmt = $pdo->prepare("UPDATE schedule_proposals SET status='conflict', conflict_reason=? WHERE id=?");
+                    $conflictStmt->execute([$input['reason'] ?? 'Participant declined', $proposalId]);
+                    
+                    // Check if hearing_attempts column exists before using it
+                    $columnCheck = $pdo->query("SHOW COLUMNS FROM blotter_cases LIKE 'hearing_attempts'");
+                    if ($columnCheck->rowCount() > 0) {
+                        $caseUpdateStmt = $pdo->prepare("UPDATE blotter_cases SET scheduling_status='pending_schedule', hearing_attempts=COALESCE(hearing_attempts,0)+1 WHERE id=?");
+                    } else {
+                        $caseUpdateStmt = $pdo->prepare("UPDATE blotter_cases SET scheduling_status='pending_schedule' WHERE id=?");
+                    }
+                    $caseUpdateStmt->execute([$caseId]);
+                    
+                    $pdo->commit();
+                    echo json_encode(['success' => true, 'message' => 'Your unavailability was recorded. A new schedule will need to be proposed.']);
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    error_log("Error recording conflict: " . $e->getMessage());
+                    echo json_encode(['success' => false, 'message' => 'Error recording conflict: ' . $e->getMessage()]);
+                }
+                exit;
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Invalid action']);
+                exit;
+            }
+        } catch (Exception $e) {
+            error_log("Error in POST handler: " . $e->getMessage());
+            echo json_encode(['success' => false, 'message' => 'Server error: ' . $e->getMessage()]);
+            exit;
+        }
+    }
 }
 
 // Handle scheduling actions from URL parameters
@@ -142,21 +282,6 @@ $sql = "
            p.id AS person_id,
            ep.id AS external_id,
            u.email as user_email
-";
-if ($hasNewColumns) {
-    $sql .= ",
-           bc.hearing_attempts,
-           bc.max_hearing_attempts,
-           bc.is_cfa_eligible,
-           bc.cfa_reason";
-} else {
-    $sql .= ",
-           0 as hearing_attempts,
-           3 as max_hearing_attempts,
-           FALSE as is_cfa_eligible,
-           NULL as cfa_reason";
-}
-$sql .= "
     FROM blotter_cases bc
     JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
     LEFT JOIN persons p ON bp.person_id = p.id
@@ -169,6 +294,7 @@ $sql .= "
     GROUP BY bc.id, bp.id
     ORDER BY bc.created_at DESC
 ";
+
 try {
     $stmt = $pdo->prepare($sql);
     $stmt->execute([$user_id]);
@@ -914,27 +1040,36 @@ unset($case);
                                         $status = $case['proposal_status'];
                                         if ($status === 'conflict') {
                                             echo '<span class="status-badge status-cfa-eligible">Conflict: ' . htmlspecialchars($case['conflict_reason']) . '</span>';
-                                        } elseif ($status === 'both_confirmed') {
-                                            echo '<span class="status-badge status-open">Confirmed by all parties</span>';
-                                        } elseif ($status === 'proposed' || $status === 'pending_user_confirmation' || $status === 'pending_officer_confirmation') {
-                                            echo '<span class="status-badge status-pending">Pending Confirmation</span>';
+                                        } elseif ($status === 'all_confirmed' || $status === 'both_confirmed') { // both_confirmed is legacy
+                                            echo '<span class="status-badge status-open">Confirmed by all participants</span>';
+                                        } elseif ($status === 'pending_user_confirmation') {
+                                            echo '<span class="status-badge status-pending">Pending Participant Confirmation</span>';
+                                        } elseif ($status === 'pending_captain_approval') {
+                                            echo '<span class="status-badge status-pending">Pending Captain Review</span>';
+                                        } elseif ($status === 'pending_chief_approval') {
+                                            echo '<span class="status-badge status-pending">Pending Chief Officer Review</span>';
                                         } else {
-                                            echo '<span class="status-badge">' . htmlspecialchars($status) . '</span>';
+                                            echo '<span class="status-badge">' . htmlspecialchars(ucfirst(str_replace('_', ' ', $status))) . '</span>';
                                         }
                                         ?>
                                     </div>
                                 </div>
                                 <?php
-                                // Show confirm/reject buttons if user is complainant/respondent and proposal needs their action
-                                $userIsComplainant = ($case['role'] === 'complainant');
-                                $userIsRespondent  = ($case['role'] === 'respondent');
-                                    if (
-                                        in_array($case['proposal_status'], ['pending_user_confirmation','pending_officer_confirmation'])
-                                        && (
-                                            ($userIsComplainant && empty($case['complainant_confirmed']))
-                                        || ($userIsRespondent  && empty($case['respondent_confirmed']))
-                                        )
-                                    ): ?>
+                                // Show confirm/reject buttons if user is complainant/respondent/witness 
+                                // AND the proposal status is 'pending_user_confirmation'
+                                // AND this specific user has not yet confirmed.
+                                $userRoleInCase = $case['role']; // 'complainant', 'respondent', 'witness'
+                                $canConfirmThisUser = false;
+                                
+                                if ($case['proposal_status'] === 'pending_user_confirmation') {
+                                    if ($userRoleInCase === 'complainant' && empty($case['complainant_confirmed'])) $canConfirmThisUser = true;
+                                    if ($userRoleInCase === 'respondent' && empty($case['respondent_confirmed'])) $canConfirmThisUser = true;
+                                    // Assuming 'witness_confirmed' is a general flag for all witnesses for now.
+                                    // If individual witness tracking is needed, this logic would be more complex.
+                                    if ($userRoleInCase === 'witness' && empty($case['witness_confirmed'])) $canConfirmThisUser = true; 
+                                }
+                                
+                                if ($canConfirmThisUser): ?>
                                     <div class="schedule-actions">
                                         <button class="confirm-btn btn-success"
                                             data-proposal="<?= $case['current_proposal_id'] ?>">
@@ -958,13 +1093,19 @@ unset($case);
                                         <?php
                                         $status = $case['proposal_status'] ?? '';
                                         if ($status === 'conflict') {
-                                            echo 'Schedule proposed but conflicts with existing appointment.';
-                                        } elseif ($status === 'both_confirmed') {
-                                            echo 'Hearing schedule confirmed by both parties.';
-                                        } elseif ($status === 'proposed') {
-                                            echo 'New hearing schedule proposed.';
+                                            echo 'Schedule proposed but a participant is unavailable or a conflict arose.';
+                                        } elseif ($status === 'all_confirmed' || $status === 'both_confirmed') {
+                                            echo 'Hearing schedule confirmed by all required participants.';
+                                        } elseif ($status === 'pending_user_confirmation') {
+                                            echo 'Schedule awaiting confirmation from participants.';
+                                        } elseif ($status === 'pending_captain_approval') {
+                                            echo 'Schedule proposed, awaiting review from Barangay Captain.';
+                                        } elseif ($status === 'pending_chief_approval') {
+                                            echo 'Schedule proposed, awaiting review from Chief Officer.';
+                                        } elseif ($status === 'proposed') { // Legacy or initial state before officer review
+                                            echo 'New hearing schedule proposed, pending officer review.';
                                         } else {
-                                            echo 'Hearing schedule status: ' . htmlspecialchars($status);
+                                            echo 'Hearing schedule status: ' . htmlspecialchars(ucfirst(str_replace('_', ' ', $status)));
                                         }
                                         ?>
                                     </div>
@@ -1051,7 +1192,7 @@ unset($case);
 
     <!-- JavaScript to handle schedule confirmation/rejection -->
     <script>
-        document.querySelectorAll('.confirm-btn').forEach(btn => {
+     document.querySelectorAll('.confirm-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
         const proposalId = btn.dataset.proposal;
         
@@ -1069,14 +1210,29 @@ unset($case);
         
         if (result.isConfirmed) {
             try {
-                const res = await fetch('', {
+                const res = await fetch(window.location.href, {
                     method: 'POST',
-                    headers: {'Content-Type':'application/json'},
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
                     body: JSON.stringify({ 
                         action: 'confirm_availability', 
-                        proposal_id: proposalId 
+                        proposal_id: parseInt(proposalId)
                     })
                 });
+                
+                // Check if response is ok
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+                
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await res.text();
+                    console.error('Non-JSON response:', text);
+                    throw new Error('Server returned non-JSON response');
+                }
                 
                 const data = await res.json();
                 
@@ -1084,10 +1240,11 @@ unset($case);
                     await Swal.fire('Success', data.message, 'success');
                     location.reload();
                 } else {
-                    Swal.fire('Error', data.message, 'error');
+                    Swal.fire('Error', data.message || 'An error occurred', 'error');
                 }
             } catch (error) {
-                Swal.fire('Error', 'Failed to process your request', 'error');
+                console.error('Error:', error);
+                Swal.fire('Error', 'Failed to process your request. Please try again. Error: ' + error.message, 'error');
             }
         }
     });
@@ -1119,15 +1276,30 @@ document.querySelectorAll('.reject-btn').forEach(btn => {
         
         if (reason) {
             try {
-                const res = await fetch('', {
+                const res = await fetch(window.location.href, {
                     method: 'POST',
-                    headers: {'Content-Type':'application/json'},
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Accept': 'application/json'
+                    },
                     body: JSON.stringify({ 
                         action: 'reject_availability', 
-                        proposal_id: proposalId, 
+                        proposal_id: parseInt(proposalId), 
                         reason: reason 
                     })
                 });
+                
+                // Check if response is ok
+                if (!res.ok) {
+                    throw new Error(`HTTP error! status: ${res.status}`);
+                }
+                
+                const contentType = res.headers.get('content-type');
+                if (!contentType || !contentType.includes('application/json')) {
+                    const text = await res.text();
+                    console.error('Non-JSON response:', text);
+                    throw new Error('Server returned non-JSON response');
+                }
                 
                 const data = await res.json();
                 
@@ -1135,10 +1307,11 @@ document.querySelectorAll('.reject-btn').forEach(btn => {
                     await Swal.fire('Success', data.message, 'success');
                     location.reload();
                 } else {
-                    Swal.fire('Error', data.message, 'error');
+                    Swal.fire('Error', data.message || 'An error occurred', 'error');
                 }
             } catch (error) {
-                Swal.fire('Error', 'Failed to process your request', 'error');
+                console.error('Error:', error);
+                Swal.fire('Error', 'Failed to process your request. Please try again. Error: ' + error.message, 'error');
             }
         }
     });
