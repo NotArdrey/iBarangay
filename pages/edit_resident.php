@@ -28,6 +28,9 @@ try {
     $stmt = $pdo->prepare("
         SELECT p.*, 
                a.house_no, a.street, a.phase as sitio,
+               pa.house_no as permanent_house_no, pa.street as permanent_street, 
+               pa.barangay_name as permanent_barangay, pa.municipality as permanent_municipality,
+               pa.province as permanent_province, pa.region as permanent_region,
                hm.household_id, hm.relationship_type_id,
                rt.name as relationship_name,
                hm.is_household_head,
@@ -35,6 +38,7 @@ try {
                pi.osca_id, pi.gsis_id, pi.sss_id, pi.tin_id, pi.philhealth_id, pi.other_id_type, pi.other_id_number
         FROM persons p
         LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
+        LEFT JOIN addresses pa ON p.id = pa.person_id AND pa.is_permanent = 1
         LEFT JOIN household_members hm ON p.id = hm.person_id
         LEFT JOIN households h ON hm.household_id = h.id
         LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
@@ -231,6 +235,19 @@ try {
     $stmt = $pdo->prepare("SELECT id, name FROM living_arrangement_types ORDER BY id");
     $stmt->execute();
     $living_arrangement_types = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    // Fetch other specific needs
+    $stmt = $pdo->prepare("
+        SELECT pon.details
+        FROM person_other_needs pon
+        WHERE pon.person_id = ?
+    ");
+    $stmt->execute([$person_id]);
+    $other_needs_rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    $other_specific_needs = '';
+    if ($other_needs_rows) {
+        $other_specific_needs = implode("\n", array_column($other_needs_rows, 'details'));
+    }
 } catch (Exception $e) {
     $_SESSION['error'] = "Error fetching data: " . $e->getMessage();
     header("Location: census_records.php");
@@ -863,27 +880,27 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div id="permanentAddressFields" class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                                     <label class="block text-sm font-medium">House No.</label>
-                                    <input type="text" name="permanent_house_no" value="" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    <input type="text" name="permanent_house_no" value="<?= htmlspecialchars($person['permanent_house_no'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                         </div>
                                 <div>
                                     <label class="block text-sm font-medium">Street</label>
-                                    <input type="text" name="permanent_street" value="" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    <input type="text" name="permanent_street" value="<?= htmlspecialchars($person['permanent_street'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                     </div>
                                 <div>
                                     <label class="block text-sm font-medium">Barangay</label>
-                                    <input type="text" name="permanent_barangay" value="" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    <input type="text" name="permanent_barangay" value="<?= htmlspecialchars($person['permanent_barangay'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                 </div>
                                 <div>
                                     <label class="block text-sm font-medium">City/Municipality</label>
-                                    <input type="text" name="permanent_municipality" value="" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    <input type="text" name="permanent_municipality" value="<?= htmlspecialchars($person['permanent_municipality'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium">Province</label>
-                                    <input type="text" name="permanent_province" value="" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    <input type="text" name="permanent_province" value="<?= htmlspecialchars($person['permanent_province'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium">Region</label>
-                                    <input type="text" name="permanent_region" value="" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    <input type="text" name="permanent_region" value="<?= htmlspecialchars($person['permanent_region'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
                                 </div>
                             </div>
                         </div>
@@ -906,15 +923,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div>
                                 <label class="block text-sm font-medium">Household</label>
                                 <select name="household_id" id="household_id_select" class="mt-1 block w-full border rounded p-2">
-                                <option value="">-- Select Household --</option>
-                                <?php foreach ($households as $household): ?>
-                                        <option value="<?= $household['household_id'] ?>" data-purok="<?= $household['purok_name'] ?>" <?= $household['household_id'] == ($person['household_id'] ?? '') ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($household['household_number']) ?> (<?= htmlspecialchars($household['purok_name']) ?>)
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
-                        <div>
+                                    <option value="">-- Select Household --</option>
+                                    <?php foreach ($households as $household): ?>
+                                        <option value="<?= $household['household_id'] ?>" 
+                                                data-purok="<?= $household['purok_id'] ?>"
+                                                <?= ($household['household_id'] == ($person['household_id'] ?? '')) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($household['household_number']) ?> 
+                                            (<?= htmlspecialchars($household['purok_name']) ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
+                            <div>
                                 <label class="block text-sm font-medium">Relationship to Head</label>
                                 <select name="relationship" class="mt-1 block w-full border rounded p-2">
                                 <option value="">-- Select Relationship --</option>
@@ -1607,7 +1627,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         <h4 class="font-semibold text-md mb-3">F. Other Specific Needs</h4>
                         <div class="pl-4">
                             <textarea name="other_specific_needs" rows="3" class="w-full border rounded p-2 uppercase"
-                                oninput="this.value = this.value.toUpperCase()"></textarea>
+                                oninput="this.value = this.value.toUpperCase()"><?= htmlspecialchars($other_specific_needs ?? '') ?></textarea>
                         </div>
                     </div>
                 </div>
@@ -1881,19 +1901,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Remove all except the first option
                 householdSelect.innerHTML = '';
                 householdSelect.appendChild(originalOption.cloneNode(true));
+                
                 if (householdsByPurok[purokId]) {
                     householdsByPurok[purokId].forEach(hh => {
                         const opt = document.createElement('option');
                         opt.value = hh.id;
-                        opt.textContent = hh.number + (hh.purok_name ? ' - ' + hh.purok_name : '');
+                        opt.textContent = hh.number + ' (' + hh.purok_name + ')';
+                        opt.setAttribute('data-purok', purokId);
+                        // Pre-select if matches the resident's household
+                        if (hh.id === '<?= $person['household_id'] ?? '' ?>') {
+                            opt.selected = true;
+                        }
                         householdSelect.appendChild(opt);
                     });
                 }
             }
+
             if (purokSelect && householdSelect) {
                 purokSelect.addEventListener('change', updateHouseholdOptions);
-                // Optionally, update on page load if a purok is pre-selected
-                if (purokSelect.value) updateHouseholdOptions();
+                // Update on page load if a purok is pre-selected
+                if (purokSelect.value) {
+                    updateHouseholdOptions();
+                }
             }
 
             // Handle adding family members
