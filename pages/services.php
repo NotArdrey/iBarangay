@@ -344,8 +344,9 @@ $userName = '';
 $barangayName = '';
 if (isset($_SESSION['user_id'])) {
     $user_id = $_SESSION['user_id'];
-    $sql = "SELECT u.first_name, u.last_name, b.name as barangay_name
+    $sql = "SELECT p.first_name, p.last_name, b.name as barangay_name
             FROM users u
+            LEFT JOIN persons p ON u.id = p.user_id
             LEFT JOIN barangay b ON u.barangay_id = b.id
             WHERE u.id = ?";
     $stmtUser = $pdo->prepare($sql);

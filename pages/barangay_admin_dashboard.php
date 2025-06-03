@@ -165,8 +165,8 @@ foreach ($genderData as $g) {
     }
 }
 if (empty($genderLabels)) {
-    $genderLabels = ['Male', 'Female', 'Others'];
-    $genderCounts = [0,0,0];
+    $genderLabels = ['MALE', 'FEMALE'];
+    $genderCounts = [0,0];
 }
 
 // Document requests (existing)
