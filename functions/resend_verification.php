@@ -54,12 +54,12 @@ if (isset($_GET['email'])) {
                 $mail->isSMTP();
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
-                $mail->Username   = 'barangayhub2@gmail.com';
+                $mail->Username   = 'iBarangay@gmail.com';
                 $mail->Password   = 'eisy hpjz rdnt bwrp';
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
 
-                $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
+                $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                 $mail->addAddress($email);
 
                 $mail->isHTML(true);

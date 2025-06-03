@@ -4,111 +4,122 @@
  */
 
 function getEmailTemplate($title, $content, $buttonText = null, $buttonLink = null) {
-    $logoPath = 'https://localhost/iBarangay/photo/logo.png';
-    
-    $template = '
+    $primaryColor = '#0a2240';
+    $headerBg = $primaryColor;
+    $headerText = '#fff';
+    $bodyBg = '#f9fafb';
+    $borderColor = '#e5e7eb';
+    $titleColor = '#1f2937';
+    $messageColor = '#4b5563';
+    $footerColor = '#6b7280';
+    $buttonBg = $primaryColor;
+    $buttonHover = '#143366';
+    $buttonText = $buttonText ?? '';
+    $buttonLink = $buttonLink ?? '';
+
+    $template = "
     <!DOCTYPE html>
     <html>
     <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>' . htmlspecialchars($title) . '</title>
+        <meta charset='UTF-8'>
+        <meta name='viewport' content='width=device-width, initial-scale=1.0'>
+        <title>" . htmlspecialchars($title) . "</title>
         <style>
             body {
-                font-family: Arial, sans-serif;
-                line-height: 1.6;
-                color: #333;
+                font-family: 'Segoe UI', Arial, sans-serif;
+                background: #f4f4f4;
                 margin: 0;
                 padding: 0;
-                background-color: #f4f4f4;
             }
             .email-container {
                 max-width: 600px;
-                margin: 0 auto;
-                padding: 20px;
-                background-color: #ffffff;
+                margin: 40px auto;
+                background: #fff;
+                border-radius: 10px;
+                box-shadow: 0 4px 24px rgba(10,34,64,0.08);
+                overflow: hidden;
             }
             .header {
+                background: $headerBg;
+                color: $headerText;
+                padding: 20px 0 10px 0;
                 text-align: center;
-                padding: 20px 0;
-                background-color: #0a2240;
-                border-radius: 8px 8px 0 0;
-            }
-            .logo {
-                max-width: 150px;
-                height: auto;
+                border-radius: 10px 10px 0 0;
             }
             .content {
-                padding: 30px 20px;
-                background-color: #ffffff;
+                background: $bodyBg;
+                padding: 32px 32px 16px 32px;
+                border: 1px solid $borderColor;
+                border-top: none;
+                border-radius: 0 0 10px 10px;
             }
             .title {
-                color: #0a2240;
+                color: $titleColor;
                 font-size: 24px;
-                margin-bottom: 20px;
+                font-weight: 700;
+                margin-top: 0;
+                margin-bottom: 24px;
                 text-align: center;
             }
             .message {
-                color: #333;
+                color: $messageColor;
                 font-size: 16px;
-                margin-bottom: 30px;
+                margin-bottom: 32px;
+                white-space: pre-line;
             }
             .button {
                 display: inline-block;
-                padding: 12px 24px;
-                background-color: #0a2240;
-                color: #ffffff;
+                padding: 14px 32px;
+                background: $buttonBg;
+                color: #fff !important;
                 text-decoration: none;
-                border-radius: 4px;
-                font-weight: bold;
-                margin: 20px 0;
+                border-radius: 6px;
+                font-weight: 600;
+                font-size: 17px;
+                margin: 32px 0 0 0;
+                transition: background 0.2s;
+                border: none;
+                text-align: center;
+            }
+            .button:hover {
+                background: $buttonHover;
             }
             .footer {
+                margin-top: 20px;
+                padding-top: 20px;
+                border-top: 1px solid $borderColor;
+                color: $footerColor;
+                font-size: 0.95em;
                 text-align: center;
-                padding: 20px;
-                background-color: #f8f9fa;
-                border-top: 1px solid #eee;
-                color: #666;
-                font-size: 14px;
+                background: $bodyBg;
+                border-radius: 0 0 10px 10px;
             }
-            .verification-code {
-                background-color: #f8f9fa;
-                padding: 15px;
-                border-radius: 4px;
-                text-align: center;
-                font-size: 24px;
-                font-weight: bold;
-                color: #0a2240;
-                margin: 20px 0;
+            @media (max-width: 600px) {
+                .email-container { border-radius: 0; }
+                .content { padding: 20px 8px 8px 8px; }
+                .footer { padding: 16px 4px; font-size: 13px; }
             }
         </style>
     </head>
     <body>
-        <div class="email-container">
-            <div class="header">
-                <img src="' . $logoPath . '" alt="iBarangay Logo" class="logo">
+        <div class='email-container'>
+            <div class='header'>
+                <h2 style='margin: 0;'>$title</h2>
             </div>
-            <div class="content">
-                <h1 class="title">' . htmlspecialchars($title) . '</h1>
-                <div class="message">' . $content . '</div>';
-    
+            <div class='content'>
+                <div class='message'>$content</div>";
     if ($buttonText && $buttonLink) {
-        $template .= '
-                <div style="text-align: center;">
-                    <a href="' . htmlspecialchars($buttonLink) . '" class="button">' . htmlspecialchars($buttonText) . '</a>
-                </div>';
+        $template .= "<div style='text-align: center;'><a href='" . htmlspecialchars($buttonLink) . "' class='button'>" . htmlspecialchars($buttonText) . "</a></div>";
     }
-    
-    $template .= '
+    $template .= "
             </div>
-            <div class="footer">
-                <p>This is an automated message from iBarangay System. Please do not reply to this email.</p>
-                <p>&copy; ' . date('Y') . ' iBarangay. All rights reserved.</p>
+            <div class='footer'>
+                This is an automated message from the iBarangay System. Please do not reply to this email.<br><br>
+                &copy; " . date('Y') . " iBarangay. All rights reserved.
             </div>
         </div>
     </body>
-    </html>';
-    
+    </html>";
     return $template;
 }
 

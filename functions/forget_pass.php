@@ -5,6 +5,7 @@ use PHPMailer\PHPMailer\Exception;
 require "../config/dbconn.php";  // This file should define a valid $pdo instance.
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once 'email_template.php';
+session_start();
 
 /**
  * Audit Trail logging function.
@@ -93,6 +94,12 @@ function sendPasswordReset($email, $pdo) {
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = $_POST['email'] ?? '';
     $result = sendPasswordReset($email, $pdo);
-    echo $result;
+    if (strpos($result, 'sent to your email') !== false) {
+        $_SESSION['forget_success'] = $result;
+    } else {
+        $_SESSION['forget_error'] = $result;
+    }
+    header('Location: ../pages/forget_pass.php');
+    exit;
 }
 ?>

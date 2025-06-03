@@ -1,9 +1,17 @@
+<?php
+session_start();
+$error = isset($_SESSION['forget_error']) ? $_SESSION['forget_error'] : '';
+unset($_SESSION['forget_error']);
+$success = isset($_SESSION['forget_success']) ? $_SESSION['forget_success'] : '';
+unset($_SESSION['forget_success']);
+?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Forgot Password - iBarangay</title>
+    <link rel="stylesheet" href="../styles/login.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <style>
         /* Define CSS variables for theming */
@@ -219,73 +227,49 @@
     </style>
 </head>
 <body>
-    <div class="forget-password-container">
+    <div class="login-container">
         <div class="header">
-            <img src="../photo/logo.png" alt="iBarangay Logo">
+            <img src="../photo/logo.png" alt="Government Logo">
             <h1>iBarangay</h1>
-            <p>Forgot your password? No worries!</p>
         </div>
-
-        <div class="input-group">
-            <label for="email">Email Address</label>
-            <form id="forgotPasswordForm" action="../functions/forget_pass.php" method="post">
-                <input type="email" name="email" id="email" placeholder="Enter your email address" required>
-                <button type="submit" class="submit-btn" id="submitBtn">
-                    Send Reset Link
-                </button>
-            </form>
+        <form action="../functions/forget_pass.php" method="POST" id="forget-form">
+            <div class="input-group">
+                <label for="email">Enter your email address</label>
+                <input type="email" id="email" name="email" required placeholder="e.g. user@email.com">
+            </div>
+            <button type="submit" class="login-btn"><span>Send Reset Link</span></button>
+        </form>
+        <div class="signup">
+            <a href="../pages/login.php" class="alt-link">Back to Login</a>
         </div>
-
-        <div class="message" id="messageDiv">
-            <?php
-                if (isset($_GET['message'])) {
-                    echo htmlspecialchars($_GET['message']);
-                }
-            ?>
-        </div>
-
-        <div class="security-info">
-            <p>For your security, the reset link will expire in 1 hour.</p>
-            <p>If you don't receive the email, please check your spam folder.</p>
-        </div>
-
-        <div class="back-to-login">
-            <a href="../pages/login.php">← Back to Login</a>
+        <div class="footer">
+            <div class="footer-info">
+                <p>&copy; 2025 iBarangay. All Rights Reserved.</p>
+            </div>
+            <div class="security-note">
+                <svg viewBox="0 0 24 24">
+                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+                </svg>
+                <span>Secure Government Portal</span>
+            </div>
         </div>
     </div>
-
     <script>
-        document.getElementById('forgotPasswordForm').addEventListener('submit', function(e) {
-            const submitBtn = document.getElementById('submitBtn');
-            const email = document.getElementById('email').value;
-            
-            // Basic email validation
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            if (!emailRegex.test(email)) {
-                e.preventDefault();
+        document.addEventListener('DOMContentLoaded', function() {
+            <?php if(!empty($error)): ?>
                 Swal.fire({
                     icon: 'error',
-                    title: 'Invalid Email',
-                    text: 'Please enter a valid email address.'
+                    title: 'Request Failed',
+                    text: '<?php echo addslashes($error); ?>'
                 });
-                return;
-            }
-
-            // Show loading state
-            submitBtn.textContent = 'Sending...';
-            submitBtn.disabled = true;
-        });
-
-        // Show message if exists
-        window.addEventListener('load', function() {
-            const messageDiv = document.getElementById('messageDiv');
-            const message = messageDiv.textContent.trim();
-            
-            if (message) {
-                const isSuccess = message.toLowerCase().includes('sent') || message.toLowerCase().includes('success');
-                messageDiv.className = `message ${isSuccess ? 'success' : 'error'}`;
-                messageDiv.style.display = 'block';
-            }
+            <?php endif; ?>
+            <?php if(!empty($success)): ?>
+                Swal.fire({
+                    icon: 'success',
+                    title: 'Request Sent',
+                    text: '<?php echo addslashes($success); ?>'
+                });
+            <?php endif; ?>
         });
     </script>
 </body>
