@@ -795,7 +795,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
 
-                    $mail->setFrom('noreply@Ibarangay.com', 'Barangay Hub');
+                    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($email);
 
                     $mail->isHTML(true);

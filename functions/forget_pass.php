@@ -70,7 +70,7 @@ function sendPasswordReset($email, $pdo) {
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         
-        $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
+        $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
         $mail->addAddress($email);
         
         // Email content.

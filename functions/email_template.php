@@ -185,4 +185,13 @@ function getAccountSuspendedTemplate($userName, $reason) {
         <p>If you believe this is a mistake, please contact your barangay administrator.</p>';
     
     return getEmailTemplate($title, $content);
+}
+
+function getAccountReactivatedTemplate($name) {
+    $title = "Account Reactivated";
+    $content = "
+        <p>Hello " . htmlspecialchars($name) . ",</p>
+        <p>Your account has been reactivated. You can now log in and continue using the system.</p>
+    ";
+    return getEmailTemplate($title, $content);
 } 
