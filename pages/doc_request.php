@@ -227,7 +227,7 @@ if (isset($_GET['action'])) {
                             $mail->Password   = 'eisy hpjz rdnt bwrp';
                             $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                             $mail->Port       = 587;
-                            $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
+                            $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                             $mail->addAddress($userInfo['email'], $userInfo['name']);
                             $mail->Subject = 'Your account has been suspended';
                             $mail->Body = getAccountSuspendedTemplate($userInfo['name'], $remarks);
@@ -302,7 +302,7 @@ if (isset($_GET['action'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
+                    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($requestInfo['email'], $requestInfo['requester_name']);
                     $mail->Subject = 'Document Request Not Processed';
                     $mail->Body = getDocumentReadyTemplate($requestInfo['document_name'], false);
@@ -387,7 +387,7 @@ if (isset($_GET['action'])) {
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
-                    $mail->setFrom('barangayhub2@gmail.com', 'iBarangay System');
+                    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($info['email'], $info['requester_name']);
 
                     // Check if document is a cedula
