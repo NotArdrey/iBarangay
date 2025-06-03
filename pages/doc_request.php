@@ -304,6 +304,7 @@ if (isset($_GET['action'])) {
                     $mail->Port       = 587;
                     $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($requestInfo['email'], $requestInfo['requester_name']);
+                    $mail->isHTML(true);
                     $mail->Subject = 'Document Request Not Processed';
                     $mail->Body = getDocumentReadyTemplate($requestInfo['document_name'], false);
                     $mail->send();
@@ -389,6 +390,7 @@ if (isset($_GET['action'])) {
                     $mail->Port       = 587;
                     $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($info['email'], $info['requester_name']);
+                    $mail->isHTML(true);
 
                     // Check if document is a cedula
                     if (in_array($info['document_code'], ['cedula', 'community_tax_certificate'])) {
