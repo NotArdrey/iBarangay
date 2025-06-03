@@ -2,8 +2,50 @@
 require_once "../components/header.php";
 require "../config/dbconn.php";
 
-// Check if user is logged in and is a captain
-requireRole(3); // 3 is the role ID for captain
+// Define requireRole if it's not already defined (e.g., by header.php or other includes)
+// This function checks if the current user has one of the specified roles.
+// If not, it sends an error response and exits.
+if (!function_exists('requireRole')) {
+    function requireRole($roles) {
+        if (session_status() === PHP_SESSION_NONE) {
+            // Start session if not already started.
+            // Note: session_start() should ideally be called earlier, e.g., in a global bootstrap file or header.
+            // Calling it here ensures it's active for role checking if not handled elsewhere.
+            session_start();
+        }
+
+        // Assumption: User's role ID is stored in $_SESSION['user_role_id']
+        // Adjust this key if your application uses a different session variable.
+        $userRoleId = $_SESSION['user_role_id'] ?? null;
+
+        if ($userRoleId === null) {
+            // User not logged in or role not set in session.
+            http_response_code(401); // Unauthorized
+            echo json_encode(['success' => false, 'message' => 'Unauthorized: User role not found in session. Please log in.']);
+            exit;
+        }
+
+        $isAllowed = false;
+        if (is_array($roles)) {
+            // Check if user's role is in the array of allowed roles
+            if (in_array($userRoleId, $roles, true)) { // Use strict comparison
+                $isAllowed = true;
+            }
+        } elseif ((int)$userRoleId === (int)$roles) { // Compare as integers if a single role ID is passed
+            $isAllowed = true;
+        }
+
+        if (!$isAllowed) {
+            http_response_code(403); // Forbidden
+            $requiredRolesString = is_array($roles) ? implode(', ', $roles) : (string)$roles;
+            echo json_encode(['success' => false, 'message' => "Access Denied. You do not have the required role(s): {$requiredRolesString}."]);
+            exit;
+        }
+    }
+}
+
+// Check if user is logged in and has an authorized role (captain or role 7)
+requireRole([3, 7]); // Authorized roles: 3 (captain), 7 (e.g., secretary or other authorized personnel)
 
 if (!isset($_GET['case_id'])) {
     http_response_code(400);
@@ -51,4 +93,4 @@ try {
 } catch (Exception $e) {
     http_response_code(500);
     echo json_encode(['success' => false, 'message' => 'Internal server error']);
-} 
+}

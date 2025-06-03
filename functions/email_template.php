@@ -194,4 +194,88 @@ function getAccountReactivatedTemplate($name) {
         <p>Your account has been reactivated. You can now log in and continue using the system.</p>
     ";
     return getEmailTemplate($title, $content);
-} 
+}
+
+/**
+ * Generates an email template for blotter case updates.
+ *
+ * @param string $caseNumber The blotter case number.
+ * @param string $updateDetails Specific details about the update.
+ * @param string|null $actionLink Optional URL for an action button.
+ * @param string|null $actionText Optional text for the action button.
+ * @return string The HTML email content.
+ */
+function getBlotterUpdateNotificationTemplate($caseNumber, $updateDetails, $actionLink = null, $actionText = null) {
+    $title = "Update on Blotter Case: " . htmlspecialchars($caseNumber);
+    $content = '
+        <p>An update has been made to your blotter case (<strong>' . htmlspecialchars($caseNumber) . '</strong>):</p>
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <p>' . nl2br(htmlspecialchars($updateDetails)) . '</p>
+        </div>
+        <p>Please log in to the iBarangay system to view the full details.</p>';
+    
+    return getEmailTemplate($title, $content, $actionText, $actionLink);
+}
+
+/**
+ * Generates an email template for hearing schedule notifications.
+ *
+ * @param string $caseNumber The blotter case number.
+ * @param string $hearingDate The date of the hearing.
+ * @param string $hearingTime The time of the hearing.
+ * @param string $location The location of the hearing.
+ * @param string $additionalInfo Optional additional information.
+ * @param string|null $actionLink Optional URL for an action button.
+ * @param string|null $actionText Optional text for the action button.
+ * @return string The HTML email content.
+ */
+function getHearingScheduleNotificationTemplate($caseNumber, $hearingDate, $hearingTime, $location, $additionalInfo = '', $actionLink = null, $actionText = null) {
+    $title = "Hearing Scheduled for Case: " . htmlspecialchars($caseNumber);
+    $content = '
+        <p>A hearing has been scheduled for blotter case <strong>' . htmlspecialchars($caseNumber) . '</strong>.</p>
+        <p><strong>Details:</strong></p>
+        <div style="background-color: #f8f9fa; padding: 15px; border-radius: 4px; margin: 20px 0;">
+            <ul style="margin: 0; padding-left: 20px;">
+                <li><strong>Date:</strong> ' . htmlspecialchars($hearingDate) . '</li>
+                <li><strong>Time:</strong> ' . htmlspecialchars($hearingTime) . '</li>
+                <li><strong>Location:</strong> ' . htmlspecialchars($location) . '</li>
+            </ul>';
+    if (!empty($additionalInfo)) {
+        $content .= '<p style="margin-top: 15px; margin-bottom: 0;"><strong>Additional Information:</strong><br>' . nl2br(htmlspecialchars($additionalInfo)) . '</p>';
+    }
+    $content .= '
+        </div>
+        <p>Your presence may be required. Please check the iBarangay system for more details or contact the barangay office.</p>';
+    
+    return getEmailTemplate($title, $content, $actionText, $actionLink);
+}
+
+/**
+ * Generates an email template for summons notifications.
+ *
+ * @param string $caseNumber The blotter case number.
+ * @param string $respondentName The name of the respondent.
+ * @param string $hearingDate The date of the hearing mentioned in the summons.
+ * @param string $hearingTime The time of the hearing mentioned in the summons.
+ * @param string $additionalInfo Optional additional information.
+ * @param string|null $actionLink Optional URL for an action button (e.g., view summons document).
+ * @param string|null $actionText Optional text for the action button.
+ * @return string The HTML email content.
+ */
+function getSummonsNotificationTemplate($caseNumber, $respondentName, $hearingDate, $hearingTime, $additionalInfo = '', $actionLink = null, $actionText = null) {
+    $title = "Summons Issued for Case: " . htmlspecialchars($caseNumber);
+    $content = '
+        <p>Dear ' . htmlspecialchars($respondentName) . ',</p>
+        <p>A summons has been issued for you in relation to blotter case <strong>' . htmlspecialchars($caseNumber) . '</strong>.</p>
+        <p>You are required to appear for a hearing on:</p>
+        <ul>
+            <li><strong>Date:</strong> ' . htmlspecialchars($hearingDate) . '</li>
+            <li><strong>Time:</strong> ' . htmlspecialchars($hearingTime) . '</li>
+        </ul>
+        <p>Please refer to the summons document for complete details and instructions. This may be attached or available through the iBarangay system.</p>';
+    if (!empty($additionalInfo)) {
+        $content .= '<p><strong>Additional Information:</strong><br>' . nl2br(htmlspecialchars($additionalInfo)) . '</p>';
+    }
+    
+    return getEmailTemplate($title, $content, $actionText, $actionLink);
+}

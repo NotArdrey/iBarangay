@@ -65,8 +65,8 @@ function sendPasswordReset($email, $pdo) {
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'barangayhub2@gmail.com';  // Your SMTP username.
-        $mail->Password   = 'eisy hpjz rdnt bwrp';         // Your SMTP password.
+        $mail->Username   = 'ibarangay.system@gmail.com';  
+        $mail->Password   = 'nxxn vxyb kxum cuvd';   
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         
