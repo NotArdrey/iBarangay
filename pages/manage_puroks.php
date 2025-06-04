@@ -1,44 +1,12 @@
 <?php
 require "../config/dbconn.php";
-require_once "../components/header.php"; // header.php should handle session_start()
-
-// Define User Roles
-if (!defined('ROLE_CAPTAIN')) define('ROLE_CAPTAIN', 3);
-if (!defined('ROLE_SECRETARY')) define('ROLE_SECRETARY', 4);
-if (!defined('ROLE_TREASURER')) define('ROLE_TREASURER', 5);
-if (!defined('ROLE_COUNCILOR')) define('ROLE_COUNCILOR', 6);
-if (!defined('ROLE_CHAIRPERSON')) define('ROLE_CHAIRPERSON', 7); // Changed from ROLE_CHIEF
-if (!defined('ROLE_HEALTH_WORKER')) define('ROLE_HEALTH_WORKER', 9);
-
-// Check if user is logged in (assuming header.php or dbconn.php handles session_start)
-if (!isset($_SESSION['user_id'])) {
-    header('Location: login.php');
-    exit;
-}
-
-$current_role_id = $_SESSION['role_id'] ?? 0;
-$barangay_id = $_SESSION['barangay_id']; // Ensure this is set
-
-// Roles with full management access for census-related data (including puroks)
-$canManageRoles = [ROLE_CAPTAIN, ROLE_CHAIRPERSON, ROLE_HEALTH_WORKER]; // Changed from ROLE_CHIEF
-// Roles with view access
-$canViewRoles = [ROLE_CAPTAIN, ROLE_CHAIRPERSON, ROLE_HEALTH_WORKER, ROLE_SECRETARY, ROLE_TREASURER, ROLE_COUNCILOR]; // Changed from ROLE_CHIEF
-
-$hasFullAccess = in_array($current_role_id, $canManageRoles);
-$canViewPage = in_array($current_role_id, $canViewRoles);
-
-if (!$canViewPage) {
-    echo "Access Denied. You do not have permission to view this page.";
-    // Optionally include footer or redirect
-    exit;
-}
+require_once "../components/header.php";
 
 // Add purok logic
 $add_error = '';
 $add_success = '';
-if ($hasFullAccess && $_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
-    // Ensure $barangay_id is available, it's used inside this block.
-    // $barangay_id = $_SESSION['barangay_id']; // Already defined above
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action'])) {
+    $barangay_id = $_SESSION['barangay_id'];
 
     if ($_POST['action'] === 'add') {
         $purok_name = trim($_POST['purok_name']);
@@ -200,18 +168,15 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
     <div class="container mx-auto p-4">
         <!-- Navigation Buttons -->
         <div class="flex flex-wrap gap-4 mb-6">
-            <?php if ($hasFullAccess): ?>
             <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                 Add Resident
             </a>
             <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                 Add Child
             </a>
-            <?php endif; ?>
             <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                 Census Records
             </a>
-            <?php if ($hasFullAccess): ?>
             <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                 Manage Households
             </a>
@@ -220,7 +185,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
             <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                 Temporary Records
             </a>
-            <?php endif; ?>
         </div>
 
         <section class="bg-white rounded-lg shadow p-6 mb-8">
@@ -228,7 +192,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                 <h2 class="text-2xl font-bold text-blue-800">Manage Puroks</h2>
 
                 <!-- Add New Purok Form -->
-                <?php if ($hasFullAccess): ?>
                 <div class="bg-gray-50 p-4 rounded-lg lg:w-96">
                     <h3 class="text-lg font-semibold text-gray-800 mb-4">Add New Purok</h3>
                     <form method="POST" class="space-y-4">
@@ -244,7 +207,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                         </button>
                     </form>
                 </div>
-                <?php endif; ?>
             </div>
 
             <!-- Puroks Table -->
@@ -272,7 +234,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                                         <?= date('M j, Y', strtotime($purok['created_at'])) ?>
                                     </td>
                                     <td class="px-4 py-3">
-                                        <?php if ($hasFullAccess): ?>
                                         <button onclick="editPurok(<?= $purok['id'] ?>, '<?= htmlspecialchars($purok['name']) ?>')"
                                             class="text-blue-600 hover:text-blue-800 font-medium mr-3">Edit</button>
                                         <form method="POST" class="inline" onsubmit="return confirmDelete(event, '<?= htmlspecialchars($purok['name']) ?>');">
@@ -280,9 +241,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                                             <input type="hidden" name="purok_id" value="<?= $purok['id'] ?>">
                                             <button type="submit" class="text-red-600 hover:text-red-800 font-medium">Delete</button>
                                         </form>
-                                        <?php else: ?>
-                                            <span class="text-gray-400">N/A</span>
-                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -302,7 +260,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
             <div class="relative top-20 mx-auto p-5 border w-96 shadow-lg rounded-md bg-white">
                 <div class="mt-3">
                     <h3 class="text-lg font-medium text-gray-900 mb-4">Edit Purok</h3>
-                    <?php if ($hasFullAccess): // Only render form if user has access to submit it ?>
                     <form method="POST" class="space-y-4">
                         <input type="hidden" name="action" value="edit">
                         <input type="hidden" name="purok_id" id="edit_purok_id">
@@ -318,13 +275,6 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                                 class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Save Changes</button>
                         </div>
                     </form>
-                    <?php else: ?>
-                    <p class="text-red-500">You do not have permission to edit puroks.</p>
-                     <div class="flex justify-end gap-3 mt-4">
-                            <button type="button" onclick="closeEditModal()"
-                                class="px-4 py-2 bg-gray-300 text-gray-700 rounded hover:bg-gray-400">Close</button>
-                     </div>
-                    <?php endif; ?>
                 </div>
             </div>
         </div>
