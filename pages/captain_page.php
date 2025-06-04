@@ -12,8 +12,9 @@ const ROLE_CAPTAIN      = 3;
 const ROLE_SECRETARY    = 4;
 const ROLE_TREASURER    = 5;
 const ROLE_COUNCILOR    = 6;
-const ROLE_CHIEF        = 7;
+const ROLE_CHAIRPERSON  = 7; // Changed from ROLE_CHIEF
 const ROLE_RESIDENT     = 8;
+const ROLE_HEALTH_WORKER = 9;
 
 
 captain_start();

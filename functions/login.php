@@ -36,6 +36,7 @@ function getDashboardUrl(int $role_id): string
         case 5:
         case 6:
         case 7:
+        case 9: // Added ROLE_HEALTH_WORKER
             return '../pages/barangay_admin_dashboard.php';
         case 8:
         default:
