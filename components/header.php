@@ -51,7 +51,7 @@ $_SESSION['role_id']     = (int) ($user['role_id'] ?? 8); // Default to resident
 $_SESSION['barangay_id'] = (int) ($user['barangay_id'] ?? 1); // Default barangay
 
 // ── Lookup Barangay Name for Official Roles ───────────────────────
-$officialRoles = [3,4,5,6,7,9]; // e.g. Captain, Secretary, Treasurer, etc. Added 9 for Health Worker
+$officialRoles = [3,4,5,6,7]; // e.g. Captain, Secretary, Treasurer, etc.
 if (in_array($_SESSION['role_id'], $officialRoles, true) && $_SESSION['barangay_id']) {
     $stmt2 = $pdo->prepare('
         SELECT name
@@ -211,7 +211,6 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
       <ul class="space-y-1">
 
         <!-- Dashboard -->
-        <?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7,9])): ?>
         <li>
   <a href="../pages/barangay_admin_dashboard.php" class="nav-link">
     <span class="icon-container">
@@ -223,10 +222,8 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Dashboard</span>
   </a>
 </li>
-        <?php endif; ?>
 
 <!-- Residents -->
-        <?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7,9])): ?>
 <li>
   <a href="../pages/residents.php" class="nav-link">
     <span class="icon-container">
@@ -238,10 +235,8 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Resident Accounts</span>
   </a>
 </li>
-        <?php endif; ?>
 
 <!-- Manage Census -->
-        <?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,9])): // Captain, Secretary, Treasurer, Councilor, Health Worker ?>
 <li>
   <a href="../pages/manage_census.php" class="nav-link">
     <span class="icon-container">
@@ -253,7 +248,6 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Manage Census</span>
   </a>
 </li>
-        <?php endif; ?>
 
 <?php if ((int)$_SESSION['role_id'] === 3): ?>
 <!-- Staff Officials - Only visible to Barangay Captain (role_id = 3) -->
@@ -271,7 +265,6 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
 <?php endif; ?>
 
 <!-- Document Requests -->
-<?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6])): // Captain, Secretary, Treasurer, Councilor ?>
 <li>
   <a href="../pages/doc_request.php" class="nav-link">
     <span class="icon-container">
@@ -283,9 +276,8 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Document Requests</span>
   </a>
 </li>
-<?php endif; ?>
 
-<?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6])): // Captain, Secretary, Treasurer, Councilor ?>
+<?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7])): ?>
 <!-- Manage Services (Officials Only) -->
 <li>
   <a href="../pages/manage_services.php" class="nav-link">
@@ -303,7 +295,6 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
 
 
 <!-- Blotter -->
-<?php if (in_array((int)$_SESSION['role_id'], [3,4,7])): // Captain, Secretary, Chief ?>
 <li>
   <a href="../pages/blotter.php" class="nav-link">
     <span class="icon-container">
@@ -315,10 +306,8 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Blotter</span>
   </a>
 </li>
-<?php endif; ?>
 
 <!-- Events -->
-        <?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7,9])): ?>
 <li>
   <a href="../pages/events.php" class="nav-link">
     <span class="icon-container">
@@ -330,10 +319,8 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Events</span>
   </a>
 </li>
-        <?php endif; ?>
 
 <!-- Audit Trail -->
-        <?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7,9])): ?>
 <li>
   <a href="../pages/audit_trail.php" class="nav-link">
     <span class="icon-container">
@@ -345,9 +332,7 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Audit Trail</span>
   </a>
 </li>
-        <?php endif; ?>
 
-        <?php if (in_array((int)$_SESSION['role_id'], [3,4,5,6,7,9])): ?>
 <li>
   <a href="../pages/barangay_backup.php" class="nav-link">
     <span class="icon-container">
@@ -359,7 +344,6 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     <span class="font-medium text-gray-700">Backup and Restoration</span>
   </a>
 </li>
-        <?php endif; ?>
 
 <!-- Log out -->
 <li>
@@ -405,4 +389,4 @@ error_log("User ID: " . $userId . ", Role ID: " . $_SESSION['role_id'] . ", Bara
     });
   });
 });
-</script
+</script>
