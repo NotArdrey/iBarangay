@@ -65,6 +65,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['update_prices'])) {
 
 // Handle AJAX actions
 if (isset($_GET['action'])) {
+    ob_start(); // Start output buffering
     header('Content-Type: application/json');
     $action   = $_GET['action'];
     $reqId    = isset($_GET['id']) ? intval($_GET['id']) : 0;
@@ -195,7 +196,26 @@ if (isset($_GET['action'])) {
             $stmtCompleted->execute([':bid'=>$bid]);
             $completed = $stmtCompleted->fetchAll(PDO::FETCH_ASSOC);
 
-            echo json_encode(['pending'=>$pending,'completed'=>$completed]);
+            // Get archived requests
+            $stmtArchived = $pdo->prepare("
+                SELECT 
+                    dr.id AS document_request_id,
+                    dr.request_date,
+                    dr.status,
+                    dr.remarks AS request_remarks,
+                    dt.name AS document_name,
+                    CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                JOIN persons p ON dr.person_id = p.id
+                WHERE dr.barangay_id = :bid
+                  AND dr.is_archived = TRUE
+                ORDER BY dr.request_date DESC
+            ");
+            $stmtArchived->execute([':bid'=>$bid]);
+            $archived = $stmtArchived->fetchAll(PDO::FETCH_ASSOC);
+
+            echo json_encode(['pending'=>$pending,'completed'=>$completed, 'archived'=>$archived]);
             exit;
 
         } elseif ($action === 'ban_user') {
@@ -268,7 +288,7 @@ if (isset($_GET['action'])) {
                 $response['message'] = 'Unable to mark complete.';
             }
 
-        } elseif ($action === 'delete') {
+        } elseif ($action === 'archive') {
             $remarks = $_POST['remarks'] ?? '';
             
             // Get request info first
@@ -289,12 +309,12 @@ if (isset($_GET['action'])) {
             $requestInfo = $stmt->fetch();
             
             if (!$requestInfo) {
-                $response['message'] = 'Request not found; cannot delete.';
+                $response['message'] = 'Request not found; cannot archive.';
                 echo json_encode($response);
                 exit;
             }
             
-            // Send notification email if user has email
+            // Send notification email if user has email - kept for now, user can decide if this is appropriate for "archive"
             if (!empty($requestInfo['email'])) {
                 $mail = new PHPMailer(true);
                 try {
@@ -308,25 +328,27 @@ if (isset($_GET['action'])) {
                     $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                     $mail->addAddress($requestInfo['email'], $requestInfo['requester_name']);
                     $mail->isHTML(true);
-                    $mail->Subject = 'Document Request Not Processed';
-                    $mail->Body = getDocumentReadyTemplate($requestInfo['document_name'], false);
+                    $mail->Subject = 'Document Request Update'; // Changed subject
+                    $mail->Body = "Hello " . htmlspecialchars($requestInfo['requester_name']) . ",<br><br>Your request for the document: <strong>" . htmlspecialchars($requestInfo['document_name']) . "</strong> has been archived.<br><br>Reason/Remarks: " . htmlspecialchars($remarks) . "<br><br>If you have any questions, please contact the barangay office.<br><br>Thank you.";
                     $mail->send();
                 } catch (Exception $e) {
                     error_log('Email send failed: ' . $e->getMessage());
                 }
             }
             
-            // Delete the request
-            $stmtDel = $pdo->prepare("
-                DELETE FROM document_requests
+            // Archive the request
+            $stmtArchive = $pdo->prepare("
+                UPDATE document_requests
+                SET is_archived = TRUE, status = 'archived', remarks = CONCAT(COALESCE(remarks, ''), :new_remarks)
                 WHERE id = :id AND barangay_id = :bid
             ");
-            if ($stmtDel->execute([':id'=>$reqId,':bid'=>$bid])) {
-                logAuditTrail($pdo,$current_admin_id,'DELETE','document_requests',$reqId,'Deleted request with remarks: '.$remarks);
+            $archiveRemarks = "\\nArchived with remarks: " . $remarks;
+            if ($stmtArchive->execute([':id'=>$reqId, ':bid'=>$bid, ':new_remarks' => $archiveRemarks])) {
+                logAuditTrail($pdo,$current_admin_id,'ARCHIVE','document_requests',$reqId,'Archived request with remarks: '.$remarks);
                 $response['success'] = true;
-                $response['message'] = 'Request deleted.';
+                $response['message'] = 'Request archived.';
             } else {
-                $response['message'] = 'Unable to delete request.';
+                $response['message'] = 'Unable to archive request.';
             }
 
         } elseif ($action === 'print') {
@@ -450,9 +472,11 @@ if (isset($_GET['action'])) {
         }
         
     } catch (Exception $ex) {
+        $response['success'] = false; // Ensure success is false on exception
         $response['message'] = 'Server Error: '.$ex->getMessage();
     }
 
+    ob_end_clean(); // Clean (discard) the output buffer
     echo json_encode($response);
     exit;
 }
@@ -511,6 +535,25 @@ $stmtHist = $pdo->prepare("
 ");
 $stmtHist->execute([':bid'=>$bid]);
 $completedRequests = $stmtHist->fetchAll();
+
+// 3) Fetch all "Archived" doc requests
+$stmtArchived = $pdo->prepare("
+    SELECT 
+        dr.id AS document_request_id,
+        dr.request_date,
+        dr.status,
+        dr.remarks AS request_remarks,
+        dt.name AS document_name,
+        CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name
+    FROM document_requests dr
+    JOIN document_types dt ON dr.document_type_id = dt.id
+    JOIN persons p ON dr.person_id = p.id
+    WHERE dr.barangay_id = :bid
+      AND dr.is_archived = TRUE
+    ORDER BY dr.request_date DESC
+");
+$stmtArchived->execute([':bid'=>$bid]);
+$archivedRequests = $stmtArchived->fetchAll(PDO::FETCH_ASSOC);
 ?>
 
 <!DOCTYPE html>
@@ -647,6 +690,7 @@ $completedRequests = $stmtHist->fetchAll();
     <div class="tabs-navigation mb-4">
       <button class="tab-button active" data-tab="pending">Pending Requests</button>
       <button class="tab-button" data-tab="completed">Completed Requests</button>
+      <button class="tab-button" data-tab="archived">Archived Requests</button>
     </div>
 
     <!-- Pending Requests Tab -->
@@ -744,8 +788,8 @@ $completedRequests = $stmtHist->fetchAll();
                       <button class="completeDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
                         <i class="fas fa-check"></i> Complete
                       </button>
-                      <button class="deleteDocRequestBtn p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50" data-id="<?= $req['document_request_id'] ?>">
-                        <i class="fas fa-trash"></i> Delete
+                      <button class="archiveDocRequestBtn p-2 text-yellow-600 hover:text-yellow-900 rounded-lg hover:bg-yellow-50" data-id="<?= $req['document_request_id'] ?>">
+                        <i class="fas fa-archive"></i> Archive
                       </button>
                     </div>
                   </td>
@@ -821,6 +865,73 @@ $completedRequests = $stmtHist->fetchAll();
               <?php else: ?>
                 <tr>
                   <td colspan="5" class="px-4 py-4 text-center text-gray-500">No completed document requests found.</td>
+                </tr>
+              <?php endif; ?>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- Archived Requests Tab -->
+    <section id="archived" class="tab-content">
+      <header class="mb-6">
+        <h1 class="text-3xl font-bold text-gray-800">Archived Document Requests</h1>
+        <p class="text-gray-600 mt-2">Total archived requests: <span class="font-semibold"><?= count($archivedRequests) ?></span></p>
+      </header>
+
+      <input type="text" id="archivedSearch" 
+             class="p-2 border rounded mb-4" 
+             placeholder="Search archived requests...">
+
+      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+        <div class="overflow-x-auto">
+          <table class="min-w-full divide-y divide-gray-200" id="docRequestsArchivedTable">
+            <thead class="bg-gray-50">
+              <tr>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Requested By
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Document Type
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Request Date
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
+                  Status
+                </th>
+                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Remarks
+                </th>
+              </tr>
+            </thead>
+            <tbody class="bg-white divide-y divide-gray-200">
+              <?php if (!empty($archivedRequests)): ?>
+                <?php foreach ($archivedRequests as $req): ?>
+                <tr class="hover:bg-gray-50 transition-colors">
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= htmlspecialchars($req['requester_name']) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= htmlspecialchars($req['document_name']) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
+                    <?= date('M d, Y h:i A', strtotime($req['request_date'])) ?>
+                  </td>
+                  <td class="px-4 py-3 text-sm border-b">
+                    <span class="px-3 py-1 bg-gray-200 text-gray-800 rounded">
+                      <?= ucfirst(htmlspecialchars($req['status'])) ?>
+                    </span>
+                  </td>
+                   <td class="px-4 py-3 text-sm text-gray-700 border-b">
+                    <?= nl2br(htmlspecialchars($req['request_remarks'] ?? 'N/A')) ?>
+                  </td>
+                </tr>
+                <?php endforeach; ?>
+              <?php else: ?>
+                <tr>
+                  <td colspan="5" class="px-4 py-4 text-center text-gray-500">No archived document requests found.</td>
                 </tr>
               <?php endif; ?>
             </tbody>
@@ -944,6 +1055,12 @@ $completedRequests = $stmtHist->fetchAll();
       const docRequestsHistoryTable = document.getElementById('docRequestsHistoryTable');
       tableSearch(completedSearch, docRequestsHistoryTable);
 
+      const archivedSearch = document.getElementById('archivedSearch');
+      const docRequestsArchivedTable = document.getElementById('docRequestsArchivedTable');
+      if (archivedSearch && docRequestsArchivedTable) {
+          tableSearch(archivedSearch, docRequestsArchivedTable);
+      }
+
       // Add sorting to tables
       docRequestsTable.querySelectorAll('thead th.sortable').forEach((th, idx) => {
         th.addEventListener('click', () => {
@@ -955,6 +1072,13 @@ $completedRequests = $stmtHist->fetchAll();
           sortTableByColumn(docRequestsHistoryTable, idx);
         });
       });
+      if (docRequestsArchivedTable) {
+          docRequestsArchivedTable.querySelectorAll('thead th.sortable').forEach((th, idx) => {
+            th.addEventListener('click', () => {
+              sortTableByColumn(docRequestsArchivedTable, idx);
+            });
+          });
+      }
 
       // Document Prices Modal functionality
       const pricesModal = document.getElementById('pricesModal');
@@ -1188,23 +1312,23 @@ $completedRequests = $stmtHist->fetchAll();
         });
       });
 
-      document.querySelectorAll('.deleteDocRequestBtn').forEach(btn => {
+      document.querySelectorAll('.archiveDocRequestBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           let requestId = this.getAttribute('data-id');
           Swal.fire({
-            title: 'Delete Document Request?',
-            text: 'Please provide remarks/reason for not processing this request. It will be emailed to the user.',
+            title: 'Archive Document Request?',
+            text: 'Please provide remarks/reason for archiving this request. This information will be saved and may be sent to the user.',
             icon: 'warning',
             input: 'textarea',
             inputPlaceholder: 'Enter your remarks here...',
             showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Delete',
+            confirmButtonColor: '#f59e0b',
+            cancelButtonColor: '#6b7280',
+            confirmButtonText: 'Yes, Archive it',
             cancelButtonText: 'Cancel',
             preConfirm: (remarks) => {
               if (!remarks) {
-                Swal.showValidationMessage('Remarks are required to proceed.');
+                Swal.showValidationMessage('Remarks are required to proceed with archiving.');
               }
               return remarks;
             }
@@ -1215,7 +1339,7 @@ $completedRequests = $stmtHist->fetchAll();
               const formData = new FormData();
               formData.append('remarks', userRemarks);
 
-              fetch(`doc_request.php?action=delete&id=${requestId}`, {
+              fetch(`doc_request.php?action=archive&id=${requestId}`, {
                 method: 'POST',
                 body: formData
               })
@@ -1229,7 +1353,7 @@ $completedRequests = $stmtHist->fetchAll();
               .then(data => {
                 hideLoading();
                 if (data.success) {
-                  Swal.fire('Deleted', data.message, 'success')
+                  Swal.fire('Archived', data.message, 'success')
                     .then(() => location.reload());
                 } else {
                   Swal.fire('Error', data.message, 'error');
