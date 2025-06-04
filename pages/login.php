@@ -1,6 +1,11 @@
 <?php
+// Only start session if one hasn't been started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+require_once "../config/dbconn.php";
+require_once "../functions/login.php";
 
-session_start();
 $error = isset($_SESSION['login_error']) ? $_SESSION['login_error'] : '';
 $success = isset($_SESSION['success']) ? $_SESSION['success'] : '';
 unset($_SESSION['login_error'], $_SESSION['success']);
