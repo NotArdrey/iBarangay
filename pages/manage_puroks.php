@@ -185,6 +185,9 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
             <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                 Temporary Records
             </a>
+            <a href="archived_records.php" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Archived Records
+            </a>
         </div>
 
         <section class="bg-white rounded-lg shadow p-6 mb-8">

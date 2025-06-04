@@ -54,7 +54,7 @@ if (
         }
 
         $record_id = $_POST['record_id'];
-        error_log("Attempting to delete record ID: " . $record_id);
+        error_log("Attempting to archive record ID: " . $record_id);
 
         // First check if the record exists and get its details for audit trail
         $checkStmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
@@ -67,12 +67,12 @@ if (
             exit;
         }
 
-        // If record exists, proceed with deletion
-        $stmt = $pdo->prepare("DELETE FROM temporary_records WHERE id = ?");
+        // If record exists, proceed with archiving
+        $stmt = $pdo->prepare("UPDATE temporary_records SET is_archived = TRUE WHERE id = ?");
         $result = $stmt->execute([$record_id]);
 
         if ($result) {
-            // Log the deletion in audit trail
+            // Log the archiving in audit trail
             $auditStmt = $pdo->prepare("
                 INSERT INTO audit_trails (
                     user_id, action, table_name, record_id, old_values, description
@@ -80,22 +80,79 @@ if (
             ");
             $auditStmt->execute([
                 $_SESSION['user_id'],
-                'DELETE',
+                'ARCHIVE',
                 'temporary_records',
                 $record_id,
                 json_encode($record),
-                "Deleted temporary record for {$record['last_name']}, {$record['first_name']}"
+                "Archived temporary record for {$record['last_name']}, {$record['first_name']}"
             ]);
 
-            error_log("Successfully deleted record ID: " . $record_id);
-            echo json_encode(['success' => true, 'message' => 'Record deleted successfully']);
+            error_log("Successfully archived record ID: " . $record_id);
+            echo json_encode(['success' => true, 'message' => 'Record archived successfully']);
         } else {
-            error_log("Failed to delete record ID: " . $record_id);
-            echo json_encode(['success' => false, 'message' => 'Failed to delete record']);
+            error_log("Failed to archive record ID: " . $record_id);
+            echo json_encode(['success' => false, 'message' => 'Failed to archive record']);
         }
         exit;
     } catch (PDOException $e) {
-        error_log("Delete Error for record ID " . ($_POST['record_id'] ?? 'unknown') . ": " . $e->getMessage());
+        error_log("Archive Error for record ID " . ($_POST['record_id'] ?? 'unknown') . ": " . $e->getMessage());
+        echo json_encode(['success' => false, 'message' => 'Database error occurred']);
+        exit;
+    }
+}
+
+// Handle restore request
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['action']) && $_POST['action'] === 'restore') {
+    header('Content-Type: application/json');
+    try {
+        if (!isset($_POST['record_id']) || empty($_POST['record_id'])) {
+            echo json_encode(['success' => false, 'message' => 'Record ID is required']);
+            exit;
+        }
+
+        $record_id = $_POST['record_id'];
+        error_log("Attempting to restore record ID: " . $record_id);
+
+        // First check if the record exists and get its details for audit trail
+        $checkStmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
+        $checkStmt->execute([$record_id]);
+        $record = $checkStmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$record) {
+            error_log("Record not found: " . $record_id);
+            echo json_encode(['success' => false, 'message' => 'Record not found']);
+            exit;
+        }
+
+        // If record exists, proceed with restoring
+        $stmt = $pdo->prepare("UPDATE temporary_records SET is_archived = FALSE WHERE id = ?");
+        $result = $stmt->execute([$record_id]);
+
+        if ($result) {
+            // Log the restoration in audit trail
+            $auditStmt = $pdo->prepare("
+                INSERT INTO audit_trails (
+                    user_id, action, table_name, record_id, old_values, description
+                ) VALUES (?, ?, ?, ?, ?, ?)
+            ");
+            $auditStmt->execute([
+                $_SESSION['user_id'],
+                'RESTORE',
+                'temporary_records',
+                $record_id,
+                json_encode($record),
+                "Restored temporary record for {$record['last_name']}, {$record['first_name']}"
+            ]);
+
+            error_log("Successfully restored record ID: " . $record_id);
+            echo json_encode(['success' => true, 'message' => 'Record restored successfully']);
+        } else {
+            error_log("Failed to restore record ID: " . $record_id);
+            echo json_encode(['success' => false, 'message' => 'Failed to restore record']);
+        }
+        exit;
+    } catch (PDOException $e) {
+        error_log("Restore Error for record ID " . ($_POST['record_id'] ?? 'unknown') . ": " . $e->getMessage());
         echo json_encode(['success' => false, 'message' => 'Database error occurred']);
         exit;
     }
@@ -237,6 +294,7 @@ require_once '../components/header.php';
 // Fetch existing records
 $stmt = $pdo->query("
     SELECT * FROM temporary_records 
+    WHERE is_archived = FALSE
     ORDER BY created_at DESC
 ");
 $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
@@ -265,11 +323,15 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
         <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
             Temporary Records
         </a>
+        <a href="archived_records.php" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+            Archived Records
+        </a>
     </div>
     <!-- Tabs -->
     <div class="mb-6 flex space-x-2">
         <button id="tabForm" class="tab-btn px-4 py-2 rounded-t bg-blue-600 text-white font-semibold focus:outline-none">Add Temporary Record</button>
         <button id="tabList" class="tab-btn px-4 py-2 rounded-t bg-gray-200 text-gray-700 font-semibold focus:outline-none">Temporary Records List</button>
+        <button id="tabArchived" class="tab-btn px-4 py-2 rounded-t bg-gray-200 text-gray-700 font-semibold focus:outline-none">Archived Records</button>
     </div>
     <!-- Form Tab Content -->
     <div id="formTabContent">
@@ -487,7 +549,93 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                                 <div class="flex items-center space-x-4">
                                     <button class="viewBtn text-blue-600 hover:text-blue-900 focus:underline">View</button>
                                     <button class="editBtn text-green-600 hover:text-green-800 focus:underline">Edit</button>
-                                    <button class="deleteBtn text-red-600 hover:text-red-800 focus:underline">Delete</button>
+                                    <button class="deleteBtn text-red-600 hover:text-red-800 focus:underline">Archive</button>
+                                </div>
+                            </td>
+                        </tr>
+                    <?php endforeach; ?>
+                </tbody>
+            </table>
+        </div>
+    </div>
+    <!-- Archived Tab Content -->
+    <div id="archivedTabContent" class="hidden">
+        <section class="mb-6">
+            <div class="flex flex-col md:flex-row justify-between items-center space-y-4 md:space-y-0">
+                <div class="flex items-center space-x-3">
+                    <h3 class="text-3xl font-bold text-red-800">Archived Temporary Records</h3>
+                </div>
+                <input id="searchArchivedInput" type="text" placeholder="Search archived records..." class="p-2 border rounded w-1/3">
+            </div>
+        </section>
+
+        <div class="bg-white rounded-lg shadow border border-gray-200 overflow-x-auto">
+            <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Address</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Length of Residency</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date Added</th>
+                        <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200" id="archivedRecordsTableBody">
+                    <?php
+                    // Fetch archived records
+                    $archivedStmt = $pdo->query("
+                        SELECT * FROM temporary_records 
+                        WHERE is_archived = TRUE
+                        ORDER BY created_at DESC
+                    ");
+                    $archivedRecords = $archivedStmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    foreach ($archivedRecords as $record): 
+                        $barangayName = '';
+                        foreach ($barangays as $b) {
+                            if ($b['id'] == $record['barangay_id']) {
+                                $barangayName = $b['name'];
+                                break;
+                            }
+                        }
+                    ?>
+                        <tr
+                            data-id="<?= htmlspecialchars($record['id']) ?>"
+                            data-lastname="<?= htmlspecialchars($record['last_name']) ?>"
+                            data-firstname="<?= htmlspecialchars($record['first_name']) ?>"
+                            data-middlename="<?= htmlspecialchars($record['middle_name']) ?>"
+                            data-suffix="<?= htmlspecialchars($record['suffix']) ?>"
+                            data-dob="<?= htmlspecialchars($record['date_of_birth']) ?>"
+                            data-pob="<?= htmlspecialchars($record['place_of_birth']) ?>"
+                            data-housenumber="<?= htmlspecialchars($record['house_number']) ?>"
+                            data-street="<?= htmlspecialchars($record['street']) ?>"
+                            data-barangay="<?= htmlspecialchars(strtoupper($barangayName)) ?>"
+                            data-municipality="<?= htmlspecialchars($record['municipality']) ?>"
+                            data-province="<?= htmlspecialchars($record['province']) ?>"
+                            data-region="<?= htmlspecialchars($record['region']) ?>"
+                            data-idtype="<?= htmlspecialchars($record['id_type']) ?>"
+                            data-idnumber="<?= htmlspecialchars($record['id_number']) ?>"
+                            data-monthsresidency="<?= htmlspecialchars($record['months_residency']) ?>"
+                            data-daysresidency="<?= htmlspecialchars($record['days_residency']) ?>"
+                            data-createdat="<?= htmlspecialchars(date('M d, Y', strtotime($record['created_at']))) ?>">
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                <?= htmlspecialchars($record['last_name'] . ', ' . $record['first_name'] . ' ' .
+                                    ($record['middle_name'] ? $record['middle_name'][0] . '.' : '') .
+                                    ($record['suffix'] ? ' ' . $record['suffix'] : '')) ?>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                <?= htmlspecialchars($record['house_number'] . ', ' . $record['street'] . ', ' . strtoupper($barangayName) . ', ' . $record['municipality'] . ', ' . $record['province'] . ', ' . $record['region']) ?>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                <?= htmlspecialchars($record['months_residency'] . 'm ' . $record['days_residency'] . 'd') ?>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                <?= date('M d, Y', strtotime($record['created_at'])) ?>
+                            </td>
+                            <td class="px-4 py-3 text-sm text-gray-900">
+                                <div class="flex items-center space-x-4">
+                                    <button class="viewArchivedBtn text-blue-600 hover:text-blue-900 focus:underline">View</button>
+                                    <button class="restoreBtn text-green-600 hover:text-green-800 focus:underline">Restore</button>
                                 </div>
                             </td>
                         </tr>
@@ -608,16 +756,16 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                 const recordId = row.getAttribute('data-id');
                 const recordName = row.querySelector('td:first-child').textContent;
 
-                console.log('Attempting to delete record:', recordId); // Debug log
+                console.log('Attempting to archive record:', recordId); // Debug log
 
                 Swal.fire({
                     title: 'Are you sure?',
-                    text: `Do you want to delete the record for "${recordName}"?`,
+                    text: `Do you want to archive the record for "${recordName}"?`,
                     icon: 'warning',
                     showCancelButton: true,
                     confirmButtonColor: '#3085d6',
                     cancelButtonColor: '#dc3545',
-                    confirmButtonText: 'Yes, delete it!',
+                    confirmButtonText: 'Yes, archive it!',
                     cancelButtonText: 'No, cancel',
                     customClass: {
                         confirmButton: 'swal2-confirm-button',
@@ -625,12 +773,12 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                     }
                 }).then((result) => {
                     if (result.isConfirmed) {
-                        // Send delete request
+                        // Send archive request
                         const formData = new FormData();
                         formData.append('action', 'delete');
                         formData.append('record_id', recordId);
 
-                        console.log('Sending delete request for record:', recordId); // Debug log
+                        console.log('Sending archive request for record:', recordId); // Debug log
 
                         fetch(window.location.href, {
                                 method: 'POST',
@@ -651,21 +799,21 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                                 if (data.success) {
                                     Swal.fire({
                                         icon: 'success',
-                                        title: 'Deleted!',
+                                        title: 'Archived!',
                                         text: data.message,
                                         confirmButtonColor: '#3085d6',
                                         customClass: {
                                             confirmButton: 'swal2-confirm-button'
                                         }
                                     }).then(() => {
-                                        // Remove the row from the table
-                                        row.remove();
+                                        // Reload the page to update both tables
+                                        window.location.reload();
                                     });
                                 } else {
                                     Swal.fire({
                                         icon: 'error',
                                         title: 'Error!',
-                                        text: data.message || 'Failed to delete record',
+                                        text: data.message || 'Failed to archive record',
                                         confirmButtonColor: '#3085d6',
                                         customClass: {
                                             confirmButton: 'swal2-confirm-button'
@@ -674,7 +822,7 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
                                 }
                             })
                             .catch(error => {
-                                console.error('Delete error:', error);
+                                console.error('Archive error:', error);
                                 window.location.reload();
                             });
                     }
@@ -1004,23 +1152,211 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
         // Tab switching logic
         const tabForm = document.getElementById('tabForm');
         const tabList = document.getElementById('tabList');
+        const tabArchived = document.getElementById('tabArchived');
         const formTabContent = document.getElementById('formTabContent');
         const listTabContent = document.getElementById('listTabContent');
-        tabForm.addEventListener('click', function() {
-            tabForm.classList.add('bg-blue-600', 'text-white');
-            tabForm.classList.remove('bg-gray-200', 'text-gray-700');
-            tabList.classList.remove('bg-blue-600', 'text-white');
-            tabList.classList.add('bg-gray-200', 'text-gray-700');
-            formTabContent.classList.remove('hidden');
-            listTabContent.classList.add('hidden');
+        const archivedTabContent = document.getElementById('archivedTabContent');
+
+        function setActiveTab(activeTab, activeContent) {
+            // Reset all tabs
+            [tabForm, tabList, tabArchived].forEach(tab => {
+                tab.classList.remove('bg-blue-600', 'text-white');
+                tab.classList.add('bg-gray-200', 'text-gray-700');
+            });
+            [formTabContent, listTabContent, archivedTabContent].forEach(content => {
+                content.classList.add('hidden');
+            });
+
+            // Set active tab
+            activeTab.classList.remove('bg-gray-200', 'text-gray-700');
+            activeTab.classList.add('bg-blue-600', 'text-white');
+            activeContent.classList.remove('hidden');
+        }
+
+        tabForm.addEventListener('click', () => setActiveTab(tabForm, formTabContent));
+        tabList.addEventListener('click', () => setActiveTab(tabList, listTabContent));
+        tabArchived.addEventListener('click', () => setActiveTab(tabArchived, archivedTabContent));
+
+        // Search functionality for archived records
+        const searchArchivedInput = document.getElementById('searchArchivedInput');
+        const archivedTableBody = document.getElementById('archivedRecordsTableBody');
+        const archivedRows = archivedTableBody.getElementsByTagName('tr');
+
+        searchArchivedInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                const searchTerm = this.value.toLowerCase().trim();
+
+                Array.from(archivedRows).forEach(row => {
+                    const name = row.querySelector('td:first-child').textContent.toLowerCase();
+                    const address = row.querySelector('td:nth-child(2)').textContent.toLowerCase();
+                    const residency = row.querySelector('td:nth-child(3)').textContent.toLowerCase();
+                    const dateAdded = row.querySelector('td:nth-child(4)').textContent.toLowerCase();
+
+                    const matches = name.includes(searchTerm) ||
+                        address.includes(searchTerm) ||
+                        residency.includes(searchTerm) ||
+                        dateAdded.includes(searchTerm);
+
+                    row.style.display = matches ? '' : 'none';
+                });
+
+                // Show "no results" message if no matches found
+                const visibleRows = Array.from(archivedRows).filter(row => row.style.display !== 'none');
+                const noResultsRow = document.getElementById('noResultsArchivedRow');
+
+                if (visibleRows.length === 0 && searchTerm !== '') {
+                    if (!noResultsRow) {
+                        const newRow = document.createElement('tr');
+                        newRow.id = 'noResultsArchivedRow';
+                        newRow.innerHTML = `
+                            <td colspan="5" class="px-4 py-3 text-center text-gray-500">
+                                No records found matching "${searchTerm}"
+                            </td>
+                        `;
+                        archivedTableBody.appendChild(newRow);
+                    }
+                } else {
+                    if (noResultsRow) {
+                        noResultsRow.remove();
+                    }
+                }
+            }
         });
-        tabList.addEventListener('click', function() {
-            tabList.classList.add('bg-blue-600', 'text-white');
-            tabList.classList.remove('bg-gray-200', 'text-gray-700');
-            tabForm.classList.remove('bg-blue-600', 'text-white');
-            tabForm.classList.add('bg-gray-200', 'text-gray-700');
-            formTabContent.classList.add('hidden');
-            listTabContent.classList.remove('hidden');
+
+        // Clear search when input is cleared
+        searchArchivedInput.addEventListener('input', function() {
+            if (this.value === '') {
+                Array.from(archivedRows).forEach(row => {
+                    row.style.display = '';
+                });
+                const noResultsRow = document.getElementById('noResultsArchivedRow');
+                if (noResultsRow) {
+                    noResultsRow.remove();
+                }
+            }
+        });
+
+        // View archived record details
+        document.querySelectorAll('.viewArchivedBtn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const row = btn.closest('tr');
+                // Compose full name
+                const lastName = row.querySelector('td').textContent.split(',')[0].trim();
+                const rest = row.querySelector('td').textContent.split(',')[1].trim();
+                const [firstName, middleInitialAndSuffix] = rest.split(' ', 2);
+                const middleName = row.getAttribute('data-middlename') || '';
+                const suffix = row.getAttribute('data-suffix') || '';
+                let fullName = lastName + ', ' + firstName;
+                if (middleName) fullName += ' ' + middleName;
+                if (suffix) fullName += ' ' + suffix;
+                document.getElementById('viewFullName').textContent = fullName;
+                // Format DOB
+                let dob = row.getAttribute('data-dob') || '';
+                if (dob) {
+                    const d = new Date(dob);
+                    document.getElementById('viewDOB').textContent = d.toLocaleDateString('en-US', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric'
+                    });
+                } else {
+                    document.getElementById('viewDOB').textContent = '';
+                }
+                document.getElementById('viewPOB').textContent = row.getAttribute('data-pob') || '';
+                document.getElementById('viewIDType').textContent = row.getAttribute('data-idtype') || '';
+                document.getElementById('viewIDNumber').textContent = row.getAttribute('data-idnumber') || '';
+                // Compose address
+                const address = [
+                    row.getAttribute('data-housenumber'),
+                    row.getAttribute('data-street'),
+                    row.getAttribute('data-barangay'),
+                    row.getAttribute('data-municipality'),
+                    row.getAttribute('data-province'),
+                    row.getAttribute('data-region')
+                ].filter(Boolean).join(', ');
+                document.getElementById('viewAddress').textContent = address;
+                // Residency
+                document.getElementById('viewResidency').textContent = (row.getAttribute('data-monthsresidency') || '0') + 'm ' + (row.getAttribute('data-daysresidency') || '0') + 'd';
+                // Date added
+                document.getElementById('viewDateAdded').textContent = row.getAttribute('data-createdat') || '';
+                viewModal.classList.remove('hidden');
+            });
+        });
+
+        // Restore functionality
+        document.querySelectorAll('.restoreBtn').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                const row = btn.closest('tr');
+                const recordId = row.getAttribute('data-id');
+                const recordName = row.querySelector('td:first-child').textContent;
+
+                Swal.fire({
+                    title: 'Are you sure?',
+                    text: `Do you want to restore the record for "${recordName}"?`,
+                    icon: 'warning',
+                    showCancelButton: true,
+                    confirmButtonColor: '#3085d6',
+                    cancelButtonColor: '#dc3545',
+                    confirmButtonText: 'Yes, restore it!',
+                    cancelButtonText: 'No, cancel',
+                    customClass: {
+                        confirmButton: 'swal2-confirm-button',
+                        cancelButton: 'swal2-cancel-button'
+                    }
+                }).then((result) => {
+                    if (result.isConfirmed) {
+                        // Send restore request
+                        const formData = new FormData();
+                        formData.append('action', 'restore');
+                        formData.append('record_id', recordId);
+
+                        fetch(window.location.href, {
+                                method: 'POST',
+                                body: formData,
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest'
+                                }
+                            })
+                            .then(response => {
+                                if (!response.ok) {
+                                    throw new Error('Network response was not ok');
+                                }
+                                return response.json();
+                            })
+                            .then(data => {
+                                if (data.success) {
+                                    Swal.fire({
+                                        icon: 'success',
+                                        title: 'Restored!',
+                                        text: data.message,
+                                        confirmButtonColor: '#3085d6',
+                                        customClass: {
+                                            confirmButton: 'swal2-confirm-button'
+                                        }
+                                    }).then(() => {
+                                        // Reload the page to update both tables
+                                        window.location.reload();
+                                    });
+                                } else {
+                                    Swal.fire({
+                                        icon: 'error',
+                                        title: 'Error!',
+                                        text: data.message || 'Failed to restore record',
+                                        confirmButtonColor: '#3085d6',
+                                        customClass: {
+                                            confirmButton: 'swal2-confirm-button'
+                                        }
+                                    });
+                                }
+                            })
+                            .catch(error => {
+                                console.error('Restore error:', error);
+                                window.location.reload();
+                            });
+                    }
+                });
+            });
         });
     });
 </script>

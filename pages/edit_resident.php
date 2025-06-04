@@ -308,11 +308,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         ];
 
         // Update person information
-        $person_sql = "UPDATE persons SET " . 
-            implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($person_data))) . 
+        $person_sql = "UPDATE persons SET " .
+            implode(', ', array_map(function ($key) {
+                return "$key = :$key";
+            }, array_keys($person_data))) .
             " WHERE id = :id";
         $person_data['id'] = $person_id;
-        
+
         $stmt = $pdo->prepare($person_sql);
         $stmt->execute($person_data);
 
@@ -335,16 +337,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($exists) {
             // Update existing record
-            $id_sql = "UPDATE person_identification SET " . 
-                implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($id_data))) . 
+            $id_sql = "UPDATE person_identification SET " .
+                implode(', ', array_map(function ($key) {
+                    return "$key = :$key";
+                }, array_keys($id_data))) .
                 " WHERE person_id = :person_id";
         } else {
             // Insert new record
-            $id_sql = "INSERT INTO person_identification (person_id, " . 
-                implode(', ', array_keys($id_data)) . 
+            $id_sql = "INSERT INTO person_identification (person_id, " .
+                implode(', ', array_keys($id_data)) .
                 ") VALUES (:person_id, :" . implode(', :', array_keys($id_data)) . ")";
         }
-        
+
         $id_data['person_id'] = $person_id;
         $stmt = $pdo->prepare($id_sql);
         $stmt->execute($id_data);
@@ -367,17 +371,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         if ($exists) {
             // Update existing address
-            $address_sql = "UPDATE addresses SET " . 
-                implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($address_data))) . 
+            $address_sql = "UPDATE addresses SET " .
+                implode(', ', array_map(function ($key) {
+                    return "$key = :$key";
+                }, array_keys($address_data))) .
                 " WHERE person_id = :person_id AND is_primary = 1";
         } else {
             // Insert new address
             $address_data['is_primary'] = 1;
-            $address_sql = "INSERT INTO addresses (person_id, is_primary, " . 
-                implode(', ', array_keys($address_data)) . 
+            $address_sql = "INSERT INTO addresses (person_id, is_primary, " .
+                implode(', ', array_keys($address_data)) .
                 ") VALUES (:person_id, :is_primary, :" . implode(', :', array_keys($address_data)) . ")";
         }
-        
+
         $address_data['person_id'] = $person_id;
         $stmt = $pdo->prepare($address_sql);
         $stmt->execute($address_data);
@@ -398,16 +404,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             if ($exists) {
                 // Update existing membership
-                $household_sql = "UPDATE household_members SET " . 
-                    implode(', ', array_map(function($key) { return "$key = :$key"; }, array_keys($household_data))) . 
+                $household_sql = "UPDATE household_members SET " .
+                    implode(', ', array_map(function ($key) {
+                        return "$key = :$key";
+                    }, array_keys($household_data))) .
                     " WHERE person_id = :person_id";
             } else {
                 // Insert new membership
-                $household_sql = "INSERT INTO household_members (person_id, " . 
-                    implode(', ', array_keys($household_data)) . 
+                $household_sql = "INSERT INTO household_members (person_id, " .
+                    implode(', ', array_keys($household_data)) .
                     ") VALUES (:person_id, :" . implode(', :', array_keys($household_data)) . ")";
             }
-            
+
             $household_data['person_id'] = $person_id;
             $stmt = $pdo->prepare($household_sql);
             $stmt->execute($household_data);
@@ -454,8 +462,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $others_type_id = $arrangement_types['others'] ?? null;
             if ($others_type_id !== null) {
                 $living_stmt->execute([
-                    $person_id, 
-                    $others_type_id, 
+                    $person_id,
+                    $others_type_id,
                     $_POST['living_others_specify'] ?? null
                 ]);
             }
@@ -507,10 +515,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'other_health_concerns' => trim($_POST['other_health_concerns'] ?? '')
         ];
 
-        $health_sql = "INSERT INTO person_health_info (" . 
-            implode(', ', array_keys($health_data)) . 
+        $health_sql = "INSERT INTO person_health_info (" .
+            implode(', ', array_keys($health_data)) .
             ") VALUES (:" . implode(', :', array_keys($health_data)) . ")";
-        
+
         $stmt = $pdo->prepare($health_sql);
         $stmt->execute($health_data);
 
@@ -570,17 +578,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
             // Insert new records
             $data['person_id'] = $person_id;
-            $sql = "INSERT INTO $table (" . 
-                implode(', ', array_keys($data)) . 
+            $sql = "INSERT INTO $table (" .
+                implode(', ', array_keys($data)) .
                 ") VALUES (:" . implode(', :', array_keys($data)) . ")";
-            
+
             $stmt = $pdo->prepare($sql);
             $stmt->execute($data);
         }
 
         $pdo->commit();
         $success = "Resident record updated successfully!";
-        
+
         // Refresh the data
         header("Location: edit_resident.php?id=" . $person_id . "&success=1");
         exit;
@@ -659,31 +667,37 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 Manage Households
             </a>
             <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
+            <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Temporary Records
+            </a>
+            <a href="archived_records.php" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Archived Records
+            </a>
         </div>
         <section id="edit-resident" class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800 mb-6">EDIT RESIDENT RECORD</h2>
             <?php if ($error): ?>
                 <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    Swal.fire({
-                        icon: 'error',
-                        title: 'Error',
-                        text: <?= json_encode($error) ?>,
-                        confirmButtonColor: '#3085d6'
+                    document.addEventListener('DOMContentLoaded', function() {
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Error',
+                            text: <?= json_encode($error) ?>,
+                            confirmButtonColor: '#3085d6'
+                        });
                     });
-                });
                 </script>
             <?php endif; ?>
             <?php if (isset($_GET['success'])): ?>
                 <script>
-                document.addEventListener('DOMContentLoaded', function() {
-                    Swal.fire({
-                        icon: 'success',
-                        title: 'Success',
-                        text: 'Record updated successfully!',
-                        confirmButtonColor: '#3085d6'
+                    document.addEventListener('DOMContentLoaded', function() {
+                        Swal.fire({
+                            icon: 'success',
+                            title: 'Success',
+                            text: 'Record updated successfully!',
+                            confirmButtonColor: '#3085d6'
+                        });
                     });
-                });
                 </script>
             <?php endif; ?>
             <div class="mb-6">
@@ -698,32 +712,32 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 <!-- Column 1: Basic Personal Information -->
                 <div class="space-y-4">
                     <h3 class="font-semibold text-lg">Basic Information</h3>
-                        <div>
+                    <div>
                         <label class="block text-sm font-medium">First Name *</label>
                         <input type="text" name="first_name" required value="<?= htmlspecialchars($person['first_name']) ?>"
                             class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Middle Name</label>
-                            <input type="text" name="middle_name" value="<?= htmlspecialchars($person['middle_name'] ?? '') ?>"
+                        <input type="text" name="middle_name" value="<?= htmlspecialchars($person['middle_name'] ?? '') ?>"
                             class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Last Name *</label>
                         <input type="text" name="last_name" required value="<?= htmlspecialchars($person['last_name']) ?>"
                             class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Suffix</label>
-                            <input type="text" name="suffix" value="<?= htmlspecialchars($person['suffix'] ?? '') ?>"
+                        <input type="text" name="suffix" value="<?= htmlspecialchars($person['suffix'] ?? '') ?>"
                             class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" maxlength="5">
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Citizenship</label>
                         <input type="text" name="citizenship" value="<?= htmlspecialchars($person['citizenship'] ?? 'Filipino') ?>"
                             class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Contact Number</label>
                         <input type="text" name="contact_number" value="<?= htmlspecialchars($person['contact_number'] ?? '') ?>"
                             placeholder="e.g. 09123456789"
@@ -732,17 +746,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             title="Please enter a valid 11-digit phone number"
                             oninput="this.value = this.value.replace(/[^0-9]/g, '')">
                         <p class="text-xs text-gray-500 mt-1">Format: 11-digit number (e.g. 09123456789)</p>
-                        </div>
+                    </div>
                 </div>
                 <!-- Column 2: Birth and Identity -->
                 <div class="space-y-4">
                     <h3 class="font-semibold text-lg">Birth & Identity</h3>
-                        <div>
+                    <div>
                         <label class="block text-sm font-medium">Birth Date *</label>
                         <input type="date" name="birth_date" id="birth_date" value="<?= htmlspecialchars($person['birth_date']) ?>" required
                             class="mt-1 block w-full border rounded p-2">
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Age</label>
                         <input type="number" name="age" id="age" value="" readonly
                             class="mt-1 block w-full border rounded p-2 bg-gray-100">
@@ -770,7 +784,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="SEPARATED" <?= ($person['civil_status'] ?? '') === 'SEPARATED' ? 'selected' : '' ?>>SEPARATED</option>
                         </select>
                     </div>
-                        <div>
+                    <div>
                         <label class="block text-sm font-medium">Religion</label>
                         <select name="religion" class="mt-1 block w-full border rounded p-2">
                             <option value="">-- SELECT RELIGION --</option>
@@ -780,12 +794,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="ISLAM" <?= ($person['religion'] ?? '') === 'ISLAM' ? 'selected' : '' ?>>ISLAM</option>
                             <option value="OTHERS" <?= ($person['religion'] ?? '') === 'OTHERS' ? 'selected' : '' ?>>OTHERS</option>
                         </select>
-                        </div>
-                        </div>
+                    </div>
+                </div>
                 <!-- Column 3: Socio-Economic Information -->
                 <div class="space-y-4">
                     <h3 class="font-semibold text-lg">Socio-Economic Profile</h3>
-                        <div>
+                    <div>
                         <label class="block text-sm font-medium">Education Attainment</label>
                         <select name="education_level" class="mt-1 block w-full border rounded p-2">
                             <option value="">-- SELECT EDUCATION LEVEL --</option>
@@ -799,13 +813,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="COLLEGE GRADUATE" <?= ($person['education_level'] ?? '') === 'COLLEGE GRADUATE' ? 'selected' : '' ?>>COLLEGE GRADUATE</option>
                             <option value="POST GRADUATE" <?= ($person['education_level'] ?? '') === 'POST GRADUATE' ? 'selected' : '' ?>>POST GRADUATE</option>
                         </select>
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Occupation</label>
-                            <input type="text" name="occupation" value="<?= htmlspecialchars($person['occupation'] ?? '') ?>"
+                        <input type="text" name="occupation" value="<?= htmlspecialchars($person['occupation'] ?? '') ?>"
                             class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Monthly Income</label>
                         <select name="monthly_income" class="mt-1 block w-full border rounded p-2">
                             <option value="">-- SELECT INCOME RANGE --</option>
@@ -822,13 +836,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <option value="9500" <?= ($person['monthly_income'] ?? '') == '9500' ? 'selected' : '' ?>>₱9,000-9,999</option>
                             <option value="10000" <?= ($person['monthly_income'] ?? '') == '10000' ? 'selected' : '' ?>>₱10,000 & ABOVE</option>
                         </select>
-                        </div>
-                        <div>
+                    </div>
+                    <div>
                         <label class="block text-sm font-medium">Years of Residency *</label>
                         <input type="number" name="years_of_residency" id="years_of_residency" value="<?= htmlspecialchars($person['years_of_residency'] ?? '0') ?>"
                             class="mt-1 block w-full border rounded p-2" min="0" max="150">
                         <small class="text-red-600" id="residency_age_validation"></small>
-                        </div>
+                    </div>
                 </div>
                 <!-- Full width sections below -->
                 <div class="md:col-span-3 space-y-8 mt-8">
@@ -840,31 +854,31 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <h4 class="font-semibold text-md mb-4">Present Address</h4>
                             <p class="text-sm text-gray-600 mb-4">Where you currently reside</p>
                             <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
+                                <div>
                                     <label class="block text-sm font-medium">House No.</label>
                                     <input type="text" name="present_house_no" value="<?= htmlspecialchars($person['house_no'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
+                                </div>
+                                <div>
                                     <label class="block text-sm font-medium">Street</label>
                                     <input type="text" name="present_street" value="<?= htmlspecialchars($person['street'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
+                                </div>
                                 <div>
                                     <label class="block text-sm font-medium">Barangay</label>
                                     <input type="text" name="present_barangay" value="<?= htmlspecialchars($barangay_name) ?>" class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
                                     <input type="hidden" name="present_barangay_id" value="<?= htmlspecialchars($_SESSION['barangay_id']) ?>">
-                    </div>
+                                </div>
                                 <div>
                                     <label class="block text-sm font-medium">City/Municipality</label>
                                     <input type="text" name="present_municipality" value="SAN RAFAEL" class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
-                </div>
-                        <div>
+                                </div>
+                                <div>
                                     <label class="block text-sm font-medium">Province</label>
                                     <input type="text" name="present_province" value="BULACAN" class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
-                        </div>
-                        <div>
+                                </div>
+                                <div>
                                     <label class="block text-sm font-medium">Region</label>
                                     <input type="text" name="present_region" value="III" class="mt-1 block w-full border rounded p-2 uppercase bg-gray-100" readonly>
-                        </div>
+                                </div>
                             </div>
                         </div>
                         <!-- Permanent Address -->
@@ -878,18 +892,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 </label>
                             </div>
                             <div id="permanentAddressFields" class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
+                                <div>
                                     <label class="block text-sm font-medium">House No.</label>
                                     <input type="text" name="permanent_house_no" value="<?= htmlspecialchars($person['permanent_house_no'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
+                                </div>
                                 <div>
                                     <label class="block text-sm font-medium">Street</label>
                                     <input type="text" name="permanent_street" value="<?= htmlspecialchars($person['permanent_street'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                    </div>
+                                </div>
                                 <div>
                                     <label class="block text-sm font-medium">Barangay</label>
                                     <input type="text" name="permanent_barangay" value="<?= htmlspecialchars($person['permanent_barangay'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                </div>
+                                </div>
                                 <div>
                                     <label class="block text-sm font-medium">City/Municipality</label>
                                     <input type="text" name="permanent_municipality" value="<?= htmlspecialchars($person['permanent_municipality'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
@@ -905,11 +919,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </div>
                     </div>
-                <!-- Household Information -->
+                    <!-- Household Information -->
                     <div class="space-y-4 md:col-span-3 border-t border-gray-200 pt-4 mt-6">
                         <h3 class="font-semibold text-lg">Household Information</h3>
                         <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
+                            <div>
                                 <label class="block text-sm font-medium">Purok</label>
                                 <select name="purok_id" id="purok_id_select" class="mt-1 block w-full border rounded p-2">
                                     <option value="">-- SELECT PUROK --</option>
@@ -925,10 +939,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                 <select name="household_id" id="household_id_select" class="mt-1 block w-full border rounded p-2">
                                     <option value="">-- Select Household --</option>
                                     <?php foreach ($households as $household): ?>
-                                        <option value="<?= $household['household_id'] ?>" 
-                                                data-purok="<?= $household['purok_id'] ?>"
-                                                <?= ($household['household_id'] == ($person['household_id'] ?? '')) ? 'selected' : '' ?>>
-                                            <?= htmlspecialchars($household['household_number']) ?> 
+                                        <option value="<?= $household['household_id'] ?>"
+                                            data-purok="<?= $household['purok_id'] ?>"
+                                            <?= ($household['household_id'] == ($person['household_id'] ?? '')) ? 'selected' : '' ?>>
+                                            <?= htmlspecialchars($household['household_number']) ?>
                                             (<?= htmlspecialchars($household['purok_name']) ?>)
                                         </option>
                                     <?php endforeach; ?>
@@ -937,208 +951,243 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             <div>
                                 <label class="block text-sm font-medium">Relationship to Head</label>
                                 <select name="relationship" class="mt-1 block w-full border rounded p-2">
-                                <option value="">-- Select Relationship --</option>
-                                <?php foreach ($relationships as $rel): ?>
+                                    <option value="">-- Select Relationship --</option>
+                                    <?php foreach ($relationships as $rel): ?>
                                         <option value="<?= $rel['id'] ?>" <?= $rel['id'] == $person['relationship_type_id'] ? 'selected' : '' ?>>
-                                        <?= htmlspecialchars($rel['name']) ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                        </div>
+                                            <?= htmlspecialchars($rel['name']) ?>
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                            </div>
                             <div class="flex items-center mt-6">
-                            <label class="inline-flex items-center">
+                                <label class="inline-flex items-center">
                                     <input type="checkbox" name="is_household_head" value="1" <?= $person['is_household_head'] ? 'checked' : '' ?> class="form-checkbox">
                                     <span class="ml-2 text-sm font-medium">Is Household Head</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                <!-- Government Program Participation -->
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <h2 class="text-lg font-semibold mb-4">Government Program Participation</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="nhts_pr_listahanan" value="1" class="form-checkbox" <?= (isset($person['nhts_pr_listahanan']) && $person['nhts_pr_listahanan'] == 1) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">NHTS-PR (Listahanan)</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="indigenous_people" value="1" class="form-checkbox" <?= (isset($person['indigenous_people']) && $person['indigenous_people'] == 1) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Indigenous People</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="pantawid_beneficiary" value="1" class="form-checkbox" <?= (isset($person['pantawid_beneficiary']) && $person['pantawid_beneficiary'] == 1) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Pantawid Beneficiary</span>
-                            </label>
-                        </div>
-                    </div>
-                </div>
-                <!-- ID Numbers -->
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <h2 class="text-lg font-semibold mb-4">ID Information</h2>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm font-medium">OSCA ID Number</label>
-                            <input type="text" name="osca_id" value="<?= htmlspecialchars($person['osca_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">GSIS ID Number</label>
-                            <input type="text" name="gsis_id" value="<?= htmlspecialchars($person['gsis_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">SSS ID Number</label>
-                            <input type="text" name="sss_id" value="<?= htmlspecialchars($person['sss_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">TIN ID Number</label>
-                            <input type="text" name="tin_id" value="<?= htmlspecialchars($person['tin_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
-                            <label class="block text-sm font-medium">PhilHealth ID Number</label>
-                            <input type="text" name="philhealth_id" value="<?= htmlspecialchars($person['philhealth_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div class="grid grid-cols-2 gap-2">
-                            <div>
-                                <label class="block text-sm font-medium">Other ID Type</label>
-                                <input type="text" name="other_id_type" value="<?= htmlspecialchars($person['other_id_type'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
-                            </div>
-                            <div>
-                                <label class="block text-sm font-medium">Other ID Number</label>
-                                <input type="text" name="other_id_number" value="<?= htmlspecialchars($person['other_id_number'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </label>
                             </div>
                         </div>
                     </div>
-                </div>
-                <!-- Source of Income & Assistance (Check all applicable) -->
-                <div class="mt-6 border-t border-gray-200 pt-4">
-                    <h3 class="font-semibold text-lg mb-4">Source of Income & Assistance (Check all applicable)</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_own_earnings" value="1" class="form-checkbox" <?= isset($income_data['own_earnings/salaries/wages']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Own Earnings, Salaries/Wages</span>
-                            </label>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <label class="inline-flex items-center whitespace-nowrap">
-                                <input type="checkbox" name="income_own_pension" value="1" class="form-checkbox" <?= isset($income_data['own_pension']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Own Pension</span>
-                            </label>
-                            <input type="text" name="income_own_pension_amount" placeholder="Amount" value="<?= htmlspecialchars($income_data['own_pension']['amount'] ?? '') ?>"
-                                class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_stocks_dividends" value="1" class="form-checkbox" <?= isset($income_data['stocks/dividends']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Stocks/Dividends</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_dependent_on_children" value="1" class="form-checkbox" <?= isset($income_data['dependent_on_children/relatives']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Dependent on Children/Relatives</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_spouse_salary" value="1" class="form-checkbox" <?= isset($income_data['spouse_salary']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Spouse's Salary</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_insurances" value="1" class="form-checkbox" <?= isset($income_data['insurances']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Insurances</span>
-                            </label>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <label class="inline-flex items-center whitespace-nowrap">
-                                <input type="checkbox" name="income_spouse_pension" value="1" class="form-checkbox" <?= isset($income_data['spouse_pension']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Spouse's Pension</span>
-                            </label>
-                            <input type="text" name="income_spouse_pension_amount" placeholder="Amount" value="<?= htmlspecialchars($income_data['spouse_pension']['amount'] ?? '') ?>"
-                                class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_rentals_sharecrops" value="1" class="form-checkbox" <?= isset($income_data['rentals/sharecrops']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Rentals/Sharecrops</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_savings" value="1" class="form-checkbox" <?= isset($income_data['savings']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Savings</span>
-                            </label>
-                        </div>
-                        <div>
-                            <label class="inline-flex items-center">
-                                <input type="checkbox" name="income_livestock_orchards" value="1" class="form-checkbox" <?= isset($income_data['livestock/orchards']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Livestock/Orchards</span>
-                            </label>
-                        </div>
-                        <div class="flex items-center gap-2">
-                            <label class="inline-flex items-center whitespace-nowrap">
-                                <input type="checkbox" name="income_others" value="1" class="form-checkbox" <?= isset($income_data['others']) ? 'checked' : '' ?>>
-                                <span class="ml-2 text-sm font-medium">Others</span>
-                            </label>
-                            <input type="text" name="income_others_specify" placeholder="Specify" value="<?= htmlspecialchars($income_data['others']['details'] ?? '') ?>"
-                                class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                    <!-- Government Program Participation -->
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h2 class="text-lg font-semibold mb-4">Government Program Participation</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="nhts_pr_listahanan" value="1" class="form-checkbox" <?= (isset($person['nhts_pr_listahanan']) && $person['nhts_pr_listahanan'] == 1) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">NHTS-PR (Listahanan)</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="indigenous_people" value="1" class="form-checkbox" <?= (isset($person['indigenous_people']) && $person['indigenous_people'] == 1) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Indigenous People</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="pantawid_beneficiary" value="1" class="form-checkbox" <?= (isset($person['pantawid_beneficiary']) && $person['pantawid_beneficiary'] == 1) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Pantawid Beneficiary</span>
+                                </label>
+                            </div>
                         </div>
                     </div>
-                </div>
-                <!-- Family Composition -->
-                <div class="mt-6 border-t border-gray-200 pt-4">
-                    <h3 class="font-semibold text-lg mb-4">II. Family Composition</h3>
-                    <div class="mb-4">
-                        <table class="min-w-full bg-white border border-gray-200">
-                            <thead>
-                                <tr>
-                                    <th class="border border-gray-200 px-4 py-2 text-sm">Name</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-sm">Relationship</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-sm">Age</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-sm">Civil Status</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-sm">Occupation</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-sm">Income</th>
-                                    <th class="border border-gray-200 px-4 py-2 text-sm">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody id="familyMembersTable">
-                                <?php if (!empty($family_members)): ?>
-                                    <?php foreach ($family_members as $i => $member): ?>
+                    <!-- ID Numbers -->
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h2 class="text-lg font-semibold mb-4">ID Information</h2>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-medium">OSCA ID Number</label>
+                                <input type="text" name="osca_id" value="<?= htmlspecialchars($person['osca_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">GSIS ID Number</label>
+                                <input type="text" name="gsis_id" value="<?= htmlspecialchars($person['gsis_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">SSS ID Number</label>
+                                <input type="text" name="sss_id" value="<?= htmlspecialchars($person['sss_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">TIN ID Number</label>
+                                <input type="text" name="tin_id" value="<?= htmlspecialchars($person['tin_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium">PhilHealth ID Number</label>
+                                <input type="text" name="philhealth_id" value="<?= htmlspecialchars($person['philhealth_id'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div class="grid grid-cols-2 gap-2">
+                                <div>
+                                    <label class="block text-sm font-medium">Other ID Type</label>
+                                    <input type="text" name="other_id_type" value="<?= htmlspecialchars($person['other_id_type'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                                <div>
+                                    <label class="block text-sm font-medium">Other ID Number</label>
+                                    <input type="text" name="other_id_number" value="<?= htmlspecialchars($person['other_id_number'] ?? '') ?>" class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Source of Income & Assistance (Check all applicable) -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">Source of Income & Assistance (Check all applicable)</h3>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_own_earnings" value="1" class="form-checkbox" <?= isset($income_data['own_earnings/salaries/wages']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Own Earnings, Salaries/Wages</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="income_own_pension" value="1" class="form-checkbox" <?= isset($income_data['own_pension']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Own Pension</span>
+                                </label>
+                                <input type="text" name="income_own_pension_amount" placeholder="Amount" value="<?= htmlspecialchars($income_data['own_pension']['amount'] ?? '') ?>"
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_stocks_dividends" value="1" class="form-checkbox" <?= isset($income_data['stocks/dividends']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Stocks/Dividends</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_dependent_on_children" value="1" class="form-checkbox" <?= isset($income_data['dependent_on_children/relatives']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Dependent on Children/Relatives</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_spouse_salary" value="1" class="form-checkbox" <?= isset($income_data['spouse_salary']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Spouse's Salary</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_insurances" value="1" class="form-checkbox" <?= isset($income_data['insurances']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Insurances</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="income_spouse_pension" value="1" class="form-checkbox" <?= isset($income_data['spouse_pension']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Spouse's Pension</span>
+                                </label>
+                                <input type="text" name="income_spouse_pension_amount" placeholder="Amount" value="<?= htmlspecialchars($income_data['spouse_pension']['amount'] ?? '') ?>"
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_rentals_sharecrops" value="1" class="form-checkbox" <?= isset($income_data['rentals/sharecrops']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Rentals/Sharecrops</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_savings" value="1" class="form-checkbox" <?= isset($income_data['savings']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Savings</span>
+                                </label>
+                            </div>
+                            <div>
+                                <label class="inline-flex items-center">
+                                    <input type="checkbox" name="income_livestock_orchards" value="1" class="form-checkbox" <?= isset($income_data['livestock/orchards']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Livestock/Orchards</span>
+                                </label>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <label class="inline-flex items-center whitespace-nowrap">
+                                    <input type="checkbox" name="income_others" value="1" class="form-checkbox" <?= isset($income_data['others']) ? 'checked' : '' ?>>
+                                    <span class="ml-2 text-sm font-medium">Others</span>
+                                </label>
+                                <input type="text" name="income_others_specify" placeholder="Specify" value="<?= htmlspecialchars($income_data['others']['details'] ?? '') ?>"
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                            </div>
+                        </div>
+                    </div>
+                    <!-- Family Composition -->
+                    <div class="mt-6 border-t border-gray-200 pt-4">
+                        <h3 class="font-semibold text-lg mb-4">II. Family Composition</h3>
+                        <div class="mb-4">
+                            <table class="min-w-full bg-white border border-gray-200">
+                                <thead>
+                                    <tr>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Name</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Relationship</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Age</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Civil Status</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Occupation</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Income</th>
+                                        <th class="border border-gray-200 px-4 py-2 text-sm">Action</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="familyMembersTable">
+                                    <?php if (!empty($family_members)): ?>
+                                        <?php foreach ($family_members as $i => $member): ?>
+                                            <tr class="family-member-row">
+                                                <td class="border border-gray-200 px-2 py-2">
+                                                    <input type="text" name="family_member_name[]" class="w-full border-0 p-0 text-sm uppercase"
+                                                        value="<?= htmlspecialchars($member['name']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                </td>
+                                                <td class="border border-gray-200 px-2 py-2">
+                                                    <input type="text" name="family_member_relationship[]" class="w-full border-0 p-0 text-sm uppercase"
+                                                        value="<?= htmlspecialchars($member['relationship']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                </td>
+                                                <td class="border border-gray-200 px-2 py-2">
+                                                    <input type="number" name="family_member_age[]" class="w-full border-0 p-0 text-sm"
+                                                        value="<?= htmlspecialchars($member['age']) ?>" min="0" max="120">
+                                                </td>
+                                                <td class="border border-gray-200 px-2 py-2">
+                                                    <select name="family_member_civil_status[]" class="w-full border-0 p-0 text-sm bg-transparent">
+                                                        <option value="">-- SELECT --</option>
+                                                        <option value="SINGLE" <?= $member['civil_status'] == 'SINGLE' ? 'selected' : '' ?>>SINGLE</option>
+                                                        <option value="MARRIED" <?= $member['civil_status'] == 'MARRIED' ? 'selected' : '' ?>>MARRIED</option>
+                                                        <option value="WIDOW/WIDOWER" <?= $member['civil_status'] == 'WIDOW/WIDOWER' ? 'selected' : '' ?>>WIDOW/WIDOWER</option>
+                                                        <option value="SEPARATED" <?= $member['civil_status'] == 'SEPARATED' ? 'selected' : '' ?>>SEPARATED</option>
+                                                    </select>
+                                                </td>
+                                                <td class="border border-gray-200 px-2 py-2">
+                                                    <input type="text" name="family_member_occupation[]" class="w-full border-0 p-0 text-sm uppercase"
+                                                        value="<?= htmlspecialchars($member['occupation']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                </td>
+                                                <td class="border border-gray-200 px-2 py-2">
+                                                    <input type="text" name="family_member_income[]" class="w-full border-0 p-0 text-sm uppercase"
+                                                        value="<?= htmlspecialchars($member['monthly_income']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                </td>
+                                                <td class="border border-gray-200 px-2 py-2 text-center">
+                                                    <button type="button" class="delete-family-member text-red-500 hover:text-red-700" title="Delete member">
+                                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                                        </svg>
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        <?php endforeach; ?>
+                                    <?php else: ?>
                                         <tr class="family-member-row">
                                             <td class="border border-gray-200 px-2 py-2">
-                                                <input type="text" name="family_member_name[]" class="w-full border-0 p-0 text-sm uppercase"
-                                                    value="<?= htmlspecialchars($member['name']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                <input type="text" name="family_member_name[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                             </td>
                                             <td class="border border-gray-200 px-2 py-2">
-                                                <input type="text" name="family_member_relationship[]" class="w-full border-0 p-0 text-sm uppercase"
-                                                    value="<?= htmlspecialchars($member['relationship']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                <input type="text" name="family_member_relationship[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                             </td>
                                             <td class="border border-gray-200 px-2 py-2">
-                                                <input type="number" name="family_member_age[]" class="w-full border-0 p-0 text-sm"
-                                                    value="<?= htmlspecialchars($member['age']) ?>" min="0" max="120">
+                                                <input type="number" name="family_member_age[]" class="w-full border-0 p-0 text-sm" min="0" max="120">
                                             </td>
                                             <td class="border border-gray-200 px-2 py-2">
                                                 <select name="family_member_civil_status[]" class="w-full border-0 p-0 text-sm bg-transparent">
                                                     <option value="">-- SELECT --</option>
-                                                    <option value="SINGLE" <?= $member['civil_status'] == 'SINGLE' ? 'selected' : '' ?>>SINGLE</option>
-                                                    <option value="MARRIED" <?= $member['civil_status'] == 'MARRIED' ? 'selected' : '' ?>>MARRIED</option>
-                                                    <option value="WIDOW/WIDOWER" <?= $member['civil_status'] == 'WIDOW/WIDOWER' ? 'selected' : '' ?>>WIDOW/WIDOWER</option>
-                                                    <option value="SEPARATED" <?= $member['civil_status'] == 'SEPARATED' ? 'selected' : '' ?>>SEPARATED</option>
+                                                    <option value="SINGLE">SINGLE</option>
+                                                    <option value="MARRIED">MARRIED</option>
+                                                    <option value="WIDOW/WIDOWER">WIDOW/WIDOWER</option>
+                                                    <option value="SEPARATED">SEPARATED</option>
                                                 </select>
                                             </td>
                                             <td class="border border-gray-200 px-2 py-2">
-                                                <input type="text" name="family_member_occupation[]" class="w-full border-0 p-0 text-sm uppercase"
-                                                    value="<?= htmlspecialchars($member['occupation']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                <input type="text" name="family_member_occupation[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                             </td>
                                             <td class="border border-gray-200 px-2 py-2">
-                                                <input type="text" name="family_member_income[]" class="w-full border-0 p-0 text-sm uppercase"
-                                                    value="<?= htmlspecialchars($member['monthly_income']) ?>" oninput="this.value = this.value.toUpperCase()">
+                                                <input type="text" name="family_member_income[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
                                             </td>
                                             <td class="border border-gray-200 px-2 py-2 text-center">
                                                 <button type="button" class="delete-family-member text-red-500 hover:text-red-700" title="Delete member">
@@ -1148,51 +1197,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                                                 </button>
                                             </td>
                                         </tr>
-                                    <?php endforeach; ?>
-                                <?php else: ?>
-                                    <tr class="family-member-row">
-                                        <td class="border border-gray-200 px-2 py-2">
-                                            <input type="text" name="family_member_name[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
-                                        </td>
-                                        <td class="border border-gray-200 px-2 py-2">
-                                            <input type="text" name="family_member_relationship[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
-                                        </td>
-                                        <td class="border border-gray-200 px-2 py-2">
-                                            <input type="number" name="family_member_age[]" class="w-full border-0 p-0 text-sm" min="0" max="120">
-                                        </td>
-                                        <td class="border border-gray-200 px-2 py-2">
-                                            <select name="family_member_civil_status[]" class="w-full border-0 p-0 text-sm bg-transparent">
-                                                <option value="">-- SELECT --</option>
-                                                <option value="SINGLE">SINGLE</option>
-                                                <option value="MARRIED">MARRIED</option>
-                                                <option value="WIDOW/WIDOWER">WIDOW/WIDOWER</option>
-                                                <option value="SEPARATED">SEPARATED</option>
-                                            </select>
-                                        </td>
-                                        <td class="border border-gray-200 px-2 py-2">
-                                            <input type="text" name="family_member_occupation[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
-                                        </td>
-                                        <td class="border border-gray-200 px-2 py-2">
-                                            <input type="text" name="family_member_income[]" class="w-full border-0 p-0 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
-                                        </td>
-                                        <td class="border border-gray-200 px-2 py-2 text-center">
-                                            <button type="button" class="delete-family-member text-red-500 hover:text-red-700" title="Delete member">
-                                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                </svg>
-                                            </button>
-                                        </td>
-                                    </tr>
-                                <?php endif; ?>
-                            </tbody>
-                        </table>
+                                    <?php endif; ?>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="flex justify-end">
+                            <button type="button" id="addFamilyMember" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded-md text-sm">
+                                Add Family Member
+                            </button>
+                        </div>
                     </div>
-                    <div class="flex justify-end">
-                        <button type="button" id="addFamilyMember" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded-md text-sm">
-                            Add Family Member
-                        </button>
-                    </div>
-                </div>
                     <!-- Assets & Properties (Check all applicable) -->
                     <div class="bg-gray-50 p-4 rounded-lg">
                         <h2 class="text-lg font-semibold mb-4">Assets & Properties (Check all applicable)</h2>
@@ -1379,258 +1393,257 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </div>
                         </div>
                     </div>
-                <!-- Problems/Needs Commonly Encountered (Check all applicable) -->
-                <div class="bg-gray-50 p-4 rounded-lg">
-                    <h2 class="text-lg font-semibold mb-4">Problems/Needs Commonly Encountered (Check all applicable)</h2>
-                    <!-- Economic -->
-                    <div class="mb-6">
-                        <h4 class="font-semibold text-md mb-3">A. Economic</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_lack_income" value="1" class="form-checkbox" <?= !empty($economic_problems['unemployment']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Lack of Income/Resources</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_loss_income" value="1" class="form-checkbox" <?= !empty($economic_problems['loss_income']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Loss of Income/Resources</span>
-                                </label>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="problem_skills_training" value="1" class="form-checkbox" <?= !empty($economic_problems['skills_training']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Skills/Capability Training</span>
-                                </label>
-                                <input type="text" name="problem_skills_training_specify" placeholder="Specify" value="<?= htmlspecialchars($economic_problems['skills_training_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($economic_problems['skills_training']) ? '' : 'disabled' ?>>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="problem_livelihood" value="1" class="form-checkbox" <?= !empty($economic_problems['livelihood']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Livelihood Opportunities</span>
-                                </label>
-                                <input type="text" name="problem_livelihood_specify" placeholder="Specify" value="<?= htmlspecialchars($economic_problems['livelihood_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($economic_problems['livelihood']) ? '' : 'disabled' ?>>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="problem_economic_others" value="1" class="form-checkbox" <?= !empty($economic_problems['other_economic']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Others</span>
-                                </label>
-                                <input type="text" name="problem_economic_others_specify" placeholder="Specify" value="<?= htmlspecialchars($economic_problems['other_economic_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($economic_problems['other_economic']) ? '' : 'disabled' ?>>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Social/Emotional -->
-                    <div class="mb-6">
-                        <h4 class="font-semibold text-md mb-3">B. Social/Emotional</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_neglect_rejection" value="1" class="form-checkbox" <?= !empty($social_problems['neglect']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Feeling of Neglect & Rejection</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_helplessness" value="1" class="form-checkbox" <?= !empty($social_problems['isolation']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Feeling of Helplessness & Worthlessness</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_loneliness" value="1" class="form-checkbox" <?= !empty($social_problems['loneliness']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Feeling of Loneliness & Isolation</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_recreational" value="1" class="form-checkbox" <?= !empty($social_problems['recreational']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Inadequate Leisure/Recreational Activities</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_senior_friendly" value="1" class="form-checkbox" <?= !empty($social_problems['senior_friendly']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Senior Citizen Friendly Environment</span>
-                                </label>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="problem_social_others" value="1" class="form-checkbox" <?= !empty($social_problems['other_social']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Others</span>
-                                </label>
-                                <input type="text" name="problem_social_others_specify" placeholder="Specify" value="<?= htmlspecialchars($social_problems['other_social_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($social_problems['other_social']) ? '' : 'disabled' ?>>
+                    <!-- Problems/Needs Commonly Encountered (Check all applicable) -->
+                    <div class="bg-gray-50 p-4 rounded-lg">
+                        <h2 class="text-lg font-semibold mb-4">Problems/Needs Commonly Encountered (Check all applicable)</h2>
+                        <!-- Economic -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">A. Economic</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_lack_income" value="1" class="form-checkbox" <?= !empty($economic_problems['unemployment']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Lack of Income/Resources</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_loss_income" value="1" class="form-checkbox" <?= !empty($economic_problems['loss_income']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Loss of Income/Resources</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_skills_training" value="1" class="form-checkbox" <?= !empty($economic_problems['skills_training']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Skills/Capability Training</span>
+                                    </label>
+                                    <input type="text" name="problem_skills_training_specify" placeholder="Specify" value="<?= htmlspecialchars($economic_problems['skills_training_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($economic_problems['skills_training']) ? '' : 'disabled' ?>>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_livelihood" value="1" class="form-checkbox" <?= !empty($economic_problems['livelihood']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Livelihood Opportunities</span>
+                                    </label>
+                                    <input type="text" name="problem_livelihood_specify" placeholder="Specify" value="<?= htmlspecialchars($economic_problems['livelihood_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($economic_problems['livelihood']) ? '' : 'disabled' ?>>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_economic_others" value="1" class="form-checkbox" <?= !empty($economic_problems['other_economic']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_economic_others_specify" placeholder="Specify" value="<?= htmlspecialchars($economic_problems['other_economic_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($economic_problems['other_economic']) ? '' : 'disabled' ?>>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                    <!-- Health -->
-                    <div class="mb-6">
-                        <h4 class="font-semibold text-md mb-3">C. Health</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="problem_condition_illness" value="1" class="form-checkbox" <?= !empty($health_problems['condition_illness']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Condition/Illness</span>
-                                </label>
-                                <input type="text" name="problem_condition_illness_specify" placeholder="Specify" value="<?= htmlspecialchars($health_problems['condition_illness_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($health_problems['condition_illness']) ? '' : 'disabled' ?>>
+                        <!-- Social/Emotional -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">B. Social/Emotional</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_neglect_rejection" value="1" class="form-checkbox" <?= !empty($social_problems['neglect']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Feeling of Neglect & Rejection</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_helplessness" value="1" class="form-checkbox" <?= !empty($social_problems['isolation']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Feeling of Helplessness & Worthlessness</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_loneliness" value="1" class="form-checkbox" <?= !empty($social_problems['loneliness']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Feeling of Loneliness & Isolation</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_recreational" value="1" class="form-checkbox" <?= !empty($social_problems['recreational']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Inadequate Leisure/Recreational Activities</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_senior_friendly" value="1" class="form-checkbox" <?= !empty($social_problems['senior_friendly']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Senior Citizen Friendly Environment</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_social_others" value="1" class="form-checkbox" <?= !empty($social_problems['other_social']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_social_others_specify" placeholder="Specify" value="<?= htmlspecialchars($social_problems['other_social_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($social_problems['other_social']) ? '' : 'disabled' ?>>
+                                </div>
                             </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <span class="text-sm font-medium">With Maintenance</span>
-                                </label>
-                                <label class="inline-flex items-center ml-2">
-                                    <input type="radio" name="problem_with_maintenance" value="YES" class="form-radio" <?= isset($health_problems['has_maintenance']) && $health_problems['has_maintenance'] == 1 ? 'checked' : '' ?>>
-                                    <span class="ml-1 text-sm">YES</span>
-                                </label>
-                                <input type="text" name="problem_with_maintenance_specify" placeholder="Specify" value="<?= htmlspecialchars($health_problems['maintenance_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= isset($health_problems['has_maintenance']) && $health_problems['has_maintenance'] == 1 ? '' : 'disabled' ?>>
-                                <label class="inline-flex items-center ml-2">
-                                    <input type="radio" name="problem_with_maintenance" value="NO" class="form-radio" <?= isset($health_problems['has_maintenance']) && $health_problems['has_maintenance'] == 0 ? 'checked' : '' ?>>
-                                    <span class="ml-1 text-sm">NO</span>
-                                </label>
-                            </div>
-                            <div class="md:col-span-2">
-                                <label class="text-sm font-medium block mb-2">Concerns/Issues</label>
-                                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-                                    <div>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" name="problem_high_cost_medicine" value="1" class="form-checkbox" <?= !empty($health_problems['high_cost_medicine']) ? 'checked' : '' ?>>
-                                            <span class="ml-2 text-sm font-medium">High Cost Medicines</span>
-                                        </label>
-                                    </div>
-                                    <div>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" name="problem_lack_medical_professionals" value="1" class="form-checkbox" <?= !empty($health_problems['lack_medical_professionals']) ? 'checked' : '' ?>>
-                                            <span class="ml-2 text-sm font-medium">Lack of Medical Professionals</span>
-                                        </label>
-                                    </div>
-                                    <div>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" name="problem_lack_sanitation" value="1" class="form-checkbox" <?= !empty($health_problems['lack_sanitation']) ? 'checked' : '' ?>>
-                                            <span class="ml-2 text-sm font-medium">Lack/No Access to Sanitation</span>
-                                        </label>
-                                    </div>
-                                    <div>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" name="problem_lack_health_insurance" value="1" class="form-checkbox" <?= !empty($health_problems['lack_health_insurance']) ? 'checked' : '' ?>>
-                                            <span class="ml-2 text-sm font-medium">Lack/No Health Insurance/s</span>
-                                        </label>
-                                    </div>
-                                    <div>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" name="problem_inadequate_health_services" value="1" class="form-checkbox" <?= !empty($health_problems['inadequate_health_services']) ? 'checked' : '' ?>>
-                                            <span class="ml-2 text-sm font-medium">Inadequate Health Services</span>
-                                        </label>
-                                    </div>
-                                    <div>
-                                        <label class="inline-flex items-center">
-                                            <input type="checkbox" name="problem_lack_medical_facilities" value="1" class="form-checkbox" <?= !empty($health_problems['lack_medical_facilities']) ? 'checked' : '' ?>>
-                                            <span class="ml-2 text-sm font-medium">Lack of Hospitals/Medical Facilities</span>
-                                        </label>
-                                    </div>
-                                    <div class="flex items-center gap-2 md:col-span-2">
-                                        <label class="inline-flex items-center whitespace-nowrap">
-                                            <input type="checkbox" name="problem_health_others" value="1" class="form-checkbox" <?= !empty($health_problems['other_health']) ? 'checked' : '' ?>>
-                                            <span class="ml-2 text-sm font-medium">Others</span>
-                                        </label>
-                                        <input type="text" name="problem_health_others_specify" placeholder="Specify" value="<?= htmlspecialchars($health_problems['other_health_details'] ?? '') ?>"
-                                            class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($health_problems['other_health']) ? '' : 'disabled' ?>>
+                        </div>
+                        <!-- Health -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">C. Health</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_condition_illness" value="1" class="form-checkbox" <?= !empty($health_problems['condition_illness']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Condition/Illness</span>
+                                    </label>
+                                    <input type="text" name="problem_condition_illness_specify" placeholder="Specify" value="<?= htmlspecialchars($health_problems['condition_illness_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($health_problems['condition_illness']) ? '' : 'disabled' ?>>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <span class="text-sm font-medium">With Maintenance</span>
+                                    </label>
+                                    <label class="inline-flex items-center ml-2">
+                                        <input type="radio" name="problem_with_maintenance" value="YES" class="form-radio" <?= isset($health_problems['has_maintenance']) && $health_problems['has_maintenance'] == 1 ? 'checked' : '' ?>>
+                                        <span class="ml-1 text-sm">YES</span>
+                                    </label>
+                                    <input type="text" name="problem_with_maintenance_specify" placeholder="Specify" value="<?= htmlspecialchars($health_problems['maintenance_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= isset($health_problems['has_maintenance']) && $health_problems['has_maintenance'] == 1 ? '' : 'disabled' ?>>
+                                    <label class="inline-flex items-center ml-2">
+                                        <input type="radio" name="problem_with_maintenance" value="NO" class="form-radio" <?= isset($health_problems['has_maintenance']) && $health_problems['has_maintenance'] == 0 ? 'checked' : '' ?>>
+                                        <span class="ml-1 text-sm">NO</span>
+                                    </label>
+                                </div>
+                                <div class="md:col-span-2">
+                                    <label class="text-sm font-medium block mb-2">Concerns/Issues</label>
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_high_cost_medicine" value="1" class="form-checkbox" <?= !empty($health_problems['high_cost_medicine']) ? 'checked' : '' ?>>
+                                                <span class="ml-2 text-sm font-medium">High Cost Medicines</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_medical_professionals" value="1" class="form-checkbox" <?= !empty($health_problems['lack_medical_professionals']) ? 'checked' : '' ?>>
+                                                <span class="ml-2 text-sm font-medium">Lack of Medical Professionals</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_sanitation" value="1" class="form-checkbox" <?= !empty($health_problems['lack_sanitation']) ? 'checked' : '' ?>>
+                                                <span class="ml-2 text-sm font-medium">Lack/No Access to Sanitation</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_health_insurance" value="1" class="form-checkbox" <?= !empty($health_problems['lack_health_insurance']) ? 'checked' : '' ?>>
+                                                <span class="ml-2 text-sm font-medium">Lack/No Health Insurance/s</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_inadequate_health_services" value="1" class="form-checkbox" <?= !empty($health_problems['inadequate_health_services']) ? 'checked' : '' ?>>
+                                                <span class="ml-2 text-sm font-medium">Inadequate Health Services</span>
+                                            </label>
+                                        </div>
+                                        <div>
+                                            <label class="inline-flex items-center">
+                                                <input type="checkbox" name="problem_lack_medical_facilities" value="1" class="form-checkbox" <?= !empty($health_problems['lack_medical_facilities']) ? 'checked' : '' ?>>
+                                                <span class="ml-2 text-sm font-medium">Lack of Hospitals/Medical Facilities</span>
+                                            </label>
+                                        </div>
+                                        <div class="flex items-center gap-2 md:col-span-2">
+                                            <label class="inline-flex items-center whitespace-nowrap">
+                                                <input type="checkbox" name="problem_health_others" value="1" class="form-checkbox" <?= !empty($health_problems['other_health']) ? 'checked' : '' ?>>
+                                                <span class="ml-2 text-sm font-medium">Others</span>
+                                            </label>
+                                            <input type="text" name="problem_health_others_specify" placeholder="Specify" value="<?= htmlspecialchars($health_problems['other_health_details'] ?? '') ?>"
+                                                class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($health_problems['other_health']) ? '' : 'disabled' ?>>
+                                        </div>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
-                    <!-- Housing -->
-                    <div class="mb-6">
-                        <h4 class="font-semibold text-md mb-3">D. Housing</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_overcrowding" value="1" class="form-checkbox" <?= !empty($housing_problems['overcrowding']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Overcrowding in the Family Home</span>
-                                </label>
+                        <!-- Housing -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">D. Housing</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_overcrowding" value="1" class="form-checkbox" <?= !empty($housing_problems['overcrowding']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Overcrowding in the Family Home</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_no_permanent_housing" value="1" class="form-checkbox" <?= !empty($housing_problems['no_permanent_housing']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">No Permanent Housing</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_independent_living" value="1" class="form-checkbox" <?= !empty($housing_problems['independent_living']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Longing for Independent Living/Quiet Atmosphere</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_lost_privacy" value="1" class="form-checkbox" <?= !empty($housing_problems['lost_privacy']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Lost Privacy</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_squatters" value="1" class="form-checkbox" <?= !empty($housing_problems['squatters']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Living in Squatter's Areas</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_high_rent" value="1" class="form-checkbox" <?= !empty($housing_problems['high_rent']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">High Cost Rent</span>
+                                    </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_housing_others" value="1" class="form-checkbox" <?= !empty($housing_problems['other_housing']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_housing_others_specify" placeholder="Specify" value="<?= htmlspecialchars($housing_problems['other_housing_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($housing_problems['other_housing']) ? '' : 'disabled' ?>>
+                                </div>
                             </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_no_permanent_housing" value="1" class="form-checkbox" <?= !empty($housing_problems['no_permanent_housing']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">No Permanent Housing</span>
-                                </label>
+                        </div>
+                        <!-- Community Service -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">E. Community Service</h4>
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_desire_participate" value="1" class="form-checkbox" <?= !empty($community_problems['desire_participate']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Desire to Participate</span>
+                                    </label>
+                                </div>
+                                <div>
+                                    <label class="inline-flex items-center">
+                                        <input type="checkbox" name="problem_skills_to_share" value="1" class="form-checkbox" <?= !empty($community_problems['skills_to_share']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Skills/Resources to Share<n </label>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <label class="inline-flex items-center whitespace-nowrap">
+                                        <input type="checkbox" name="problem_community_others" value="1" class="form-checkbox" <?= !empty($community_problems['other_community']) ? 'checked' : '' ?>>
+                                        <span class="ml-2 text-sm font-medium">Others</span>
+                                    </label>
+                                    <input type="text" name="problem_community_others_specify" placeholder="Specify" value="<?= htmlspecialchars($community_problems['other_community_details'] ?? '') ?>"
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($community_problems['other_community']) ? '' : 'disabled' ?>>
+                                </div>
                             </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_independent_living" value="1" class="form-checkbox" <?= !empty($housing_problems['independent_living']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Longing for Independent Living/Quiet Atmosphere</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_lost_privacy" value="1" class="form-checkbox" <?= !empty($housing_problems['lost_privacy']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Lost Privacy</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_squatters" value="1" class="form-checkbox" <?= !empty($housing_problems['squatters']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Living in Squatter's Areas</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_high_rent" value="1" class="form-checkbox" <?= !empty($housing_problems['high_rent']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">High Cost Rent</span>
-                                </label>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="problem_housing_others" value="1" class="form-checkbox" <?= !empty($housing_problems['other_housing']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Others</span>
-                                </label>
-                                <input type="text" name="problem_housing_others_specify" placeholder="Specify" value="<?= htmlspecialchars($housing_problems['other_housing_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($housing_problems['other_housing']) ? '' : 'disabled' ?>>
+                        </div>
+                        <!-- Other Specific Needs -->
+                        <div class="mb-6">
+                            <h4 class="font-semibold text-md mb-3">F. Other Specific Needs</h4>
+                            <div class="pl-4">
+                                <textarea name="other_specific_needs" rows="3" class="w-full border rounded p-2 uppercase"
+                                    oninput="this.value = this.value.toUpperCase()"><?= htmlspecialchars($other_specific_needs ?? '') ?></textarea>
                             </div>
                         </div>
                     </div>
-                    <!-- Community Service -->
-                    <div class="mb-6">
-                        <h4 class="font-semibold text-md mb-3">E. Community Service</h4>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 pl-4">
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_desire_participate" value="1" class="form-checkbox" <?= !empty($community_problems['desire_participate']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Desire to Participate</span>
-                                </label>
-                            </div>
-                            <div>
-                                <label class="inline-flex items-center">
-                                    <input type="checkbox" name="problem_skills_to_share" value="1" class="form-checkbox" <?= !empty($community_problems['skills_to_share']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Skills/Resources to Share</span>
-                                </label>
-                            </div>
-                            <div class="flex items-center gap-2">
-                                <label class="inline-flex items-center whitespace-nowrap">
-                                    <input type="checkbox" name="problem_community_others" value="1" class="form-checkbox" <?= !empty($community_problems['other_community']) ? 'checked' : '' ?>>
-                                    <span class="ml-2 text-sm font-medium">Others</span>
-                                </label>
-                                <input type="text" name="problem_community_others_specify" placeholder="Specify" value="<?= htmlspecialchars($community_problems['other_community_details'] ?? '') ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !empty($community_problems['other_community']) ? '' : 'disabled' ?>>
-                            </div>
-                        </div>
-                    </div>
-                    <!-- Other Specific Needs -->
-                    <div class="mb-6">
-                        <h4 class="font-semibold text-md mb-3">F. Other Specific Needs</h4>
-                        <div class="pl-4">
-                            <textarea name="other_specific_needs" rows="3" class="w-full border rounded p-2 uppercase"
-                                oninput="this.value = this.value.toUpperCase()"><?= htmlspecialchars($other_specific_needs ?? '') ?></textarea>
-                        </div>
-                    </div>
-                </div>
                 </div>
                 <div class="md:col-span-3 flex justify-end space-x-4 mt-8">
                     <a href="census_records.php" class="px-4 py-2 bg-gray-500 text-white rounded hover:bg-gray-600">Cancel</a>
@@ -1725,7 +1738,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     const name = row.querySelector('[name="family_member_name[]"]').value.trim();
                     const relationship = row.querySelector('[name="family_member_relationship[]"]').value.trim();
                     const age = row.querySelector('[name="family_member_age[]"]').value.trim();
-                    
+
                     if (name || relationship || age) {
                         if (!name) errors.push(`Family member #${index + 1}: Name is required`);
                         if (!relationship) errors.push(`Family member #${index + 1}: Relationship is required`);
@@ -1744,7 +1757,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if (form) {
                 form.addEventListener('submit', function(e) {
                     e.preventDefault();
-                    
+
                     // Validate form
                     const errors = validateForm();
                     if (errors.length > 0) {
@@ -1770,7 +1783,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         if (result.isConfirmed) {
                             // Show loading overlay
                             loadingOverlay.style.display = 'flex';
-                            
+
                             // Submit the form
                             form.submit();
                         }
@@ -1901,7 +1914,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 // Remove all except the first option
                 householdSelect.innerHTML = '';
                 householdSelect.appendChild(originalOption.cloneNode(true));
-                
+
                 if (householdsByPurok[purokId]) {
                     householdsByPurok[purokId].forEach(hh => {
                         const opt = document.createElement('option');
@@ -1986,4 +1999,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     </script>
 </body>
 
-</html> 
+</html>

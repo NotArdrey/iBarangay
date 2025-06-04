@@ -854,6 +854,7 @@ CREATE TABLE temporary_records (
     place_of_birth VARCHAR(255) NOT NULL,
     months_residency INT NOT NULL,
     days_residency INT NOT NULL,
+    is_archived BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
@@ -1768,6 +1769,3 @@ MODIFY COLUMN status ENUM('pending','completed','rejected', 'processing', 'for_p
 ALTER TABLE custom_services
 ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER additional_notes,
 ADD COLUMN archived_at TIMESTAMP NULL DEFAULT NULL AFTER is_archived;
-
-
-ALTER TABLE temporary_records ADD COLUMN is_archived VARCHAR(50) DEFAULT FALSE AFTER days_residency;

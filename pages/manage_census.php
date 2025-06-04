@@ -499,7 +499,7 @@ function isCheckboxChecked($form_data, $key)
             const householdSelect = document.getElementById('household_id_select');
             const relationshipSelect = document.querySelector('select[name="relationship"]');
             const isHouseholdHeadCheckbox = document.querySelector('input[name="is_household_head"]');
-            
+
             if (birthDateInput) {
                 // Add event listener for input change
                 birthDateInput.addEventListener('input', calculateAge);
@@ -649,6 +649,9 @@ function isCheckboxChecked($form_data, $key)
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
                 <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                     Temporary Records
+                </a>
+                <a href="archived_records.php" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                    Archived Records
                 </a>
             </div>
         </div>
