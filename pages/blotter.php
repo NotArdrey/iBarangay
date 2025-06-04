@@ -7,7 +7,7 @@ use Dompdf\Dompdf;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;  
 
-// Define role constants - Updated to match database IDs
+// Define role constants
 const ROLE_PROGRAMMER   = 1;
 const ROLE_SUPER_ADMIN  = 2;
 const ROLE_CAPTAIN      = 3;
@@ -528,12 +528,12 @@ function generateReportForm($pdo, $caseId) {
 // --- add missing helpers for e-signature paths ---
 function getCaptainEsignature($pdo, $barangayId) {
     $stmt = $pdo->prepare("
-        SELECT u.esignature_path
-        FROM users u
-        WHERE u.role_id = 3
-          AND u.barangay_id = ?
-          AND u.is_active = 1
-          AND u.esignature_path IS NOT NULL
+        SELECT esignature_path
+        FROM users
+        WHERE role_id = 3
+          AND barangay_id = ?
+          AND is_active = 1
+          AND esignature_path IS NOT NULL
         LIMIT 1
     ");
     $stmt->execute([$barangayId]);
@@ -550,12 +550,12 @@ function getCaptainEsignature($pdo, $barangayId) {
 
 function getChiefOfficerEsignature($pdo, $barangayId) {
     $stmt = $pdo->prepare("
-        SELECT u.chief_officer_esignature_path
-        FROM users u
-        WHERE u.role_id = 7
-          AND u.barangay_id = ?
-          AND u.is_active = 1
-          AND u.chief_officer_esignature_path IS NOT NULL
+        SELECT chief_officer_esignature_path
+        FROM users
+        WHERE role_id = 7
+          AND barangay_id = ?
+          AND is_active = 1
+          AND chief_officer_esignature_path IS NOT NULL
         LIMIT 1
     ");
     $stmt->execute([$barangayId]);
@@ -629,7 +629,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
 
         $pdo->prepare("UPDATE blotter_cases SET filing_date = NOW() WHERE id = ?")->execute([$caseId]);
 
-        // REMOVE: Notify Captain and Chief Officer (case_notifications table does not exist)
+        // Notify Captain and Chief Officer
+        $stmt = $pdo->prepare("
+            INSERT INTO case_notifications (blotter_case_id, notified_user_id, notification_type)
+            SELECT ?, id, 'case_filed' 
+            FROM users 
+            WHERE role_id IN (3, 7) AND barangay_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$caseId, $bid]);
 
         // Categories
         if (!empty($_POST['categories'])) {
@@ -670,7 +677,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
         ");
 
         $insertedParticipants = [];
-        $participantIds = [];
         foreach ($participants as $p) {
             if (!empty($p['user_id'])) {
                 // Build a unique key for registered participant
@@ -680,8 +686,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
                 }
                 $insertedParticipants[$key] = true;
                 $regStmt->execute([$caseId, (int)$p['user_id'], $p['role']]);
-                $participantId = $pdo->lastInsertId();
-                $participantIds[] = $participantId;
             } else {
                 $fname = trim($p['first_name']);
                 $lname = trim($p['last_name']);
@@ -701,35 +705,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
                 ]);
                 $externalId = $pdo->lastInsertId();
                 $bpStmt->execute([$caseId, $externalId, $p['role']]);
-                $participantId = $pdo->lastInsertId();
-                $participantIds[] = $participantId;
             }
-        }
-
-        // --- Insert participant_notifications for all participants (if not already present) ---
-        $notifStmt = $pdo->prepare("
-            INSERT IGNORE INTO participant_notifications
-                (blotter_case_id, participant_id, delivery_method, delivery_status, delivery_address)
-            VALUES (?, ?, ?, 'pending', ?)
-        ");
-        foreach ($participantIds as $pid) {
-            // Determine delivery method and address
-            $info = $pdo->prepare("
-                SELECT bp.id, p.user_id, u.email, a.house_no, a.street, b.name AS barangay_name
-                FROM blotter_participants bp
-                LEFT JOIN persons p ON bp.person_id = p.id
-                LEFT JOIN users u ON p.user_id = u.id
-                LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
-                LEFT JOIN barangay b ON a.barangay_id = b.id
-                WHERE bp.id = ?
-            ");
-            $info->execute([$pid]);
-            $row = $info->fetch(PDO::FETCH_ASSOC);
-            $method = (!empty($row['email'])) ? 'email' : 'physical';
-            $address = (!empty($row['house_no']) && !empty($row['street']) && !empty($row['barangay_name']))
-                ? ($row['house_no'] . ' ' . $row['street'] . ', ' . $row['barangay_name'])
-                : 'Address not provided';
-            $notifStmt->execute([$caseId, $pid, $method, $address]);
         }
 
         $pdo->commit();
@@ -807,11 +783,7 @@ if (!empty($_GET['action'])) {
 
                 // Update the correct signature field based on role
                 $dbPath = 'uploads/signatures/' . $filename;
-                if ($role === ROLE_CAPTAIN) {
-                    $signatureColumn = 'esignature_path';
-                } else {
-                    $signatureColumn = 'chief_officer_esignature_path';
-                }
+                $signatureColumn = ($role === ROLE_CAPTAIN) ? 'esignature_path' : 'chief_officer_esignature_path';
                 
                 $stmt = $pdo->prepare("UPDATE users SET $signatureColumn = ? WHERE id = ?");
                 if ($stmt->execute([$dbPath, $current_admin_id])) {
@@ -906,8 +878,6 @@ if (!empty($_GET['action'])) {
                       echo json_encode(['success'=>false,'message'=>'Failed to sign case']);
                   }
                   break;
-
-                case 'generate_report':
                 $year  = intval($_GET['year']  ?? date('Y'));
                 $month = intval($_GET['month'] ?? date('n'));
 
@@ -1355,6 +1325,15 @@ if (!empty($_GET['action'])) {
                   $pdo->prepare("UPDATE blotter_cases SET scheduling_status='schedule_proposed' WHERE id=?")
                       ->execute([$id]);
 
+                  // notify the other party (Captain⇄Chief)
+                  $otherRole = ($role === ROLE_CAPTAIN ? ROLE_CHIEF : ROLE_CAPTAIN);
+                  $notify = $pdo->prepare("
+                      INSERT INTO case_notifications(blotter_case_id, notified_user_id, notification_type)
+                      SELECT ?, id, 'schedule_confirmation'
+                      FROM users WHERE role_id=? AND barangay_id=? AND is_active=1
+                  ");
+                  $notify->execute([$id, $otherRole, $bid]);
+
                   $pdo->commit();
                   logAuditTrail($pdo, $current_admin_id,'INSERT','schedule_proposals',$proposalId,
                       "Scheduled hearing pending confirmation by role $otherRole"
@@ -1366,157 +1345,151 @@ if (!empty($_GET['action'])) {
                   break;
 
             case 'approve_schedule':
-    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
-        echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can approve schedules']);
-        exit;
-    }
-    try {
-        $pdo->beginTransaction();
-        
-        // Fetch the proposal
-        $stmt = $pdo->prepare("
-            SELECT sp.*, bc.id as case_id, bc.hearing_count 
-            FROM schedule_proposals sp
-            JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
-            WHERE sp.blotter_case_id = ? 
-              AND bc.barangay_id = ?
-            ORDER BY sp.id DESC LIMIT 1
-        ");
-        $stmt->execute([$id, $bid]);
-        $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$proposal) {
-            echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
-            exit;
-        }
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                    echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can approve schedules']);
+                    exit;
+                }
+                
+                try {
+                    $pdo->beginTransaction();
+                    
+                    // Determine which status to look for based on current role
+                    $pendingStatus = ($role === ROLE_CAPTAIN) ? 'pending_user_confirmation' : 'pending_officer_confirmation';
+                    
+                    // Get the proposal details - note we're checking for the specific pending status
+                    $stmt = $pdo->prepare("
+                        SELECT sp.*, bc.id as case_id, bc.hearing_count
+                        FROM schedule_proposals sp
+                        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+                        WHERE sp.blotter_case_id = ? 
+                          AND bc.barangay_id = ?
+                          AND sp.status = ?
+                        ORDER BY sp.id DESC LIMIT 1
+                    ");
+                    $stmt->execute([$id, $bid, $pendingStatus]);
+                    $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if (!$proposal) {
+                        echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
+                        exit;
+                    }
+                    
+                    // Create a hearing since we have approval
+                    $stmt = $pdo->prepare("
+                        INSERT INTO case_hearings
+                        (blotter_case_id, hearing_date, hearing_type, hearing_outcome, 
+                         presiding_officer_name, presiding_officer_position, hearing_number)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        $id,
+                        $proposal['proposed_date'] . ' ' . $proposal['proposed_time'],
+                        ($proposal['hearing_count'] === 0) ? 'initial' : 'mediation',
+                        'scheduled',
+                        $proposal['presiding_officer'],
+                        $proposal['presiding_officer_position'],
+                        ($proposal['hearing_count'] ?? 0) + 1
+                    ]);
+                    
+                    // Update proposal status to approved
+                    $pdo->prepare("
+                        UPDATE schedule_proposals
+                        SET status = 'both_confirmed' 
+                        WHERE blotter_case_id = ? AND id = ?
+                    ")->execute([$id, $proposal['id']]);
+                    
+                    // Update the case status
+                    $pdo->prepare("
+                        UPDATE blotter_cases
+                        SET status = 'open', 
+                            scheduling_status = 'scheduled',
+                            scheduled_hearing = CONCAT(?, ' '),
+                            hearing_count = COALESCE(hearing_count, 0) + 1
+                        WHERE id = ?
+                    ")->execute([$proposal['proposed_date'], $id]);
+                    
+                    // Notify all participants
+                    $notifyStmt = $pdo->prepare("
+                        INSERT INTO case_notifications(blotter_case_id, notified_user_id, notification_type)
+                        SELECT ?, id, 'hearing_scheduled'
+                        FROM users 
+                        WHERE role_id IN (3, 7) AND barangay_id = ? AND is_active = 1
+                    ");
+                    $notifyStmt->execute([$id, $bid]);
+                    
+                    $pdo->commit();
+                    
+                    echo json_encode(['success'=>true,'message'=>'Schedule approved successfully']);
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
+                }
+                break;
 
-        // Update only the captain confirmation
-        $pdo->prepare("
-            UPDATE schedule_proposals
-            SET captain_confirmed = 1,
-                captain_confirmed_at = NOW()
-            WHERE id = ?
-        ")->execute([$proposal['id']]);
-
-        // Check if BOTH parties have confirmed
-        $checkStmt = $pdo->prepare("
-            SELECT complainant_confirmed, respondent_confirmed, captain_confirmed
-            FROM schedule_proposals
-            WHERE id = ?
-        ");
-        $checkStmt->execute([$proposal['id']]);
-        $confirmations = $checkStmt->fetch(PDO::FETCH_ASSOC);
-
-        // Only finalize if ALL THREE are confirmed
-        if ($confirmations['complainant_confirmed'] && 
-            $confirmations['respondent_confirmed'] && 
-            $confirmations['captain_confirmed']) {
-            
-            // Insert into case_hearings
-            $pdo->prepare("
-                INSERT INTO case_hearings
-                (blotter_case_id, hearing_date, hearing_type, hearing_outcome,
-                 presiding_officer_name, presiding_officer_position, hearing_number)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
-            ")->execute([
-                $id,
-                $proposal['proposed_date'] . ' ' . $proposal['proposed_time'],
-                ($proposal['hearing_count'] === 0) ? 'initial' : 'mediation',
-                'scheduled',
-                $proposal['presiding_officer'],
-                $proposal['presiding_officer_position'],
-                ($proposal['hearing_count'] ?? 0) + 1
-            ]);
-            
-            // Update statuses
-            $pdo->prepare("
-                UPDATE schedule_proposals
-                SET status = 'both_confirmed'
-                WHERE id = ?
-            ")->execute([$proposal['id']]);
-            
-            $pdo->prepare("
-                UPDATE blotter_cases
-                SET status = 'open',
-                    scheduling_status = 'scheduled',
-                    hearing_count = COALESCE(hearing_count, 0) + 1
-                WHERE id = ?
-            ")->execute([$id]);
-            
-            $pdo->commit();
-            echo json_encode(['success'=>true,'message'=>'All parties confirmed. Hearing scheduled.']);
-        } else {
-            $pdo->commit();
-            $missing = [];
-            if (!$confirmations['complainant_confirmed']) $missing[] = 'complainant';
-            if (!$confirmations['respondent_confirmed']) $missing[] = 'respondent';
-            
-            echo json_encode([
-                'success'=>true,
-                'message'=>'Your approval is recorded. Still waiting for: ' . implode(' and ', $missing)
-            ]);
-        }
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
-    }
-    break;
-
-               case 'reject_schedule':
-    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
-        echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can reject schedules']);
-        exit;
-    }
-    
-    $data = json_decode(file_get_contents('php://input'), true);
-    $reason = $data['reason'] ?? 'Schedule conflict with officer availability';
-    
-    try {
-        $pdo->beginTransaction();
-        
-        // Get the latest proposal
-        $stmt = $pdo->prepare("
-            SELECT sp.*, bc.id as case_id
-            FROM schedule_proposals sp
-            JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
-            WHERE sp.blotter_case_id = ? 
-              AND bc.barangay_id = ?
-            ORDER BY sp.id DESC LIMIT 1
-        ");
-        $stmt->execute([$id, $bid]);
-        $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
-        
-        if (!$proposal) {
-            echo json_encode(['success'=>false,'message'=>'No valid proposal found']);
-            exit;
-        }
-        
-        // Mark as officer conflict (not participant conflict)
-        $stmt = $pdo->prepare("
-            UPDATE schedule_proposals
-            SET status = 'officer_conflict', 
-                conflict_reason = ?,
-                captain_confirmed = 0
-            WHERE id = ?
-        ");
-        $stmt->execute([$reason, $proposal['id']]);
-        
-        // Reset scheduling status to allow new proposal
-        $stmt = $pdo->prepare("
-            UPDATE blotter_cases
-            SET scheduling_status = 'pending_schedule'
-            WHERE id = ?
-        ");
-        $stmt->execute([$id]);
-        
-        $pdo->commit();
-        
-        echo json_encode(['success'=>true,'message'=>'Schedule rejected by officer. A new schedule can be proposed.']);
-    } catch (Exception $e) {
-        $pdo->rollBack();
-        echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
-    }
-    break;
+            case 'reject_schedule':
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                    echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can reject schedules']);
+                    exit;
+                }
+                
+                $data = json_decode(file_get_contents('php://input'), true);
+                $reason = $data['reason'] ?? 'No reason provided';
+                
+                try {
+                    $pdo->beginTransaction();
+                    
+                    // Determine which status to look for based on current role
+                    $pendingStatus = ($role === ROLE_CAPTAIN) ? 'pending_user_confirmation' : 'pending_officer_confirmation';
+                    
+                    // Get the proposal details - note we're checking for the specific pending status
+                    $stmt = $pdo->prepare("
+                        SELECT sp.*, bc.id as case_id
+                        FROM schedule_proposals sp
+                        JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
+                        WHERE sp.blotter_case_id = ? 
+                          AND bc.barangay_id = ?
+                          AND sp.status = ?
+                        ORDER BY sp.id DESC LIMIT 1
+                    ");
+                    $stmt->execute([$id, $bid, $pendingStatus]);
+                    $proposal = $stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if (!$proposal) {
+                        echo json_encode(['success'=>false,'message'=>'No valid pending proposal found']);
+                        exit;
+                    }
+                    
+                    // Update proposal status as rejected
+                    $stmt = $pdo->prepare("
+                        UPDATE schedule_proposals
+                        SET status = 'conflict', conflict_reason = ?
+                        WHERE blotter_case_id = ? AND id = ?
+                    ");
+                    $stmt->execute([$reason, $id, $proposal['id']]);
+                    
+                    // Reset the case scheduling status
+                    $stmt = $pdo->prepare("
+                        UPDATE blotter_cases
+                        SET scheduling_status = 'pending_schedule'
+                        WHERE id = ?
+                    ");
+                    $stmt->execute([$id]);
+                    
+                    // Notify the proposer
+                    $notifyStmt = $pdo->prepare("
+                        INSERT INTO case_notifications(blotter_case_id, notified_user_id, notification_type)
+                        VALUES (?, ?, 'schedule_rejected')
+                    ");
+                    $notifyStmt->execute([$id, $proposal['proposed_by_user_id']]);
+                    
+                    $pdo->commit();
+                    
+                    echo json_encode(['success'=>true,'message'=>'Schedule rejected successfully']);
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    echo json_encode(['success'=>false,'message'=>'Error: '.$e->getMessage()]);
+                }
+                break;
 
             case 'get_available_slots':
                 header('Content-Type: application/json');
@@ -1596,7 +1569,7 @@ if (!empty($_GET['action'])) {
                       VALUES(?,CONCAT(?, ' ',?), 'mediation','scheduled',?,?,?)
                     ")->execute([
                       $proposal['blotter_case_id'],
-                      $proposal['proposed_date'],
+                                                                                                                                                                                                                                                                                                          $proposal['proposed_date'],
                       $proposal['proposed_time'],
                       $proposal['presiding_officer'],
                       $proposal['presiding_officer_position'],
@@ -1614,6 +1587,7 @@ if (!empty($_GET['action'])) {
                     echo json_encode(['success'=>true,'message'=>'Your confirmation is recorded. Waiting on other party']);
                 }
                 exit;
+
         }
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
@@ -1657,21 +1631,6 @@ $stmt = $pdo->prepare("
       bc.captain_signature_date,
       bc.chief_signature_date,
       COUNT(ch.id) AS hearing_count,
-      -- Get primary complainant name for 'Reported By' column
-      (
-        SELECT COALESCE(
-          CONCAT(p.first_name, ' ', p.last_name),
-          CONCAT(ep.first_name, ' ', ep.last_name),
-          'Unknown'
-        )
-        FROM blotter_participants bp
-        LEFT JOIN persons p ON bp.person_id = p.id
-        LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
-        WHERE bp.blotter_case_id = bc.id 
-          AND bp.role = 'complainant'
-        ORDER BY bp.id ASC
-        LIMIT 1
-      ) AS reported_by_name,
       EXISTS(
         SELECT 1
         FROM case_hearings
@@ -2051,11 +2010,6 @@ require_once "../components/header.php";
       <div class="flex items-start justify-between p-5 border-b rounded-t">
         <h3 class="text-xl font-semibold text-gray-900">Add New Case</h3>
         <button type="button" onclick="toggleAddBlotterModal()"
-    <div class="relative bg-white rounded-lg shadow">
-      <!-- Header -->
-      <div class="flex items-start justify-between p-5 border-b rounded-t">
-        <h3 class="text-xl font-semibold text-gray-900">Add New Case</h3>
-        <button type="button" onclick="toggleAddBlotterModal()"
                 class="text-gray-400 hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ml-auto inline-flex justify-center items-center">
           <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none"
                viewBox="0 0 14 14">
@@ -2188,9 +2142,9 @@ require_once "../components/header.php";
         <tr class="hover:bg-gray-50 transition-colors">
           <td class="px-4 py-3 text-sm text-gray-900">
             <?php
-              // Use the reported_by_name from the query, fallback to 'Unknown' if empty
-              $reporter = !empty($case['reported_by_name']) ? $case['reported_by_name'] : 'Unknown';
-              echo htmlspecialchars($reporter);
+              $reporter = 'System Filed';
+              $date = $case['incident_date'] ?: $case['created_at'];
+              echo htmlspecialchars($reporter ?: '—');
             ?>
           </td>
           <td class="px-4 py-3 text-sm text-gray-900">
@@ -2998,12 +2952,20 @@ document.addEventListener('DOMContentLoaded', function() {
                     showConfirmButton: false
                   }).then(() => location.reload());
                 } else {
-                  Swal.fire('Error', data.message || 'Failed to approve schedule', 'error');
+                  Swal.fire({
+                    title: 'Error',
+                    text: data.message || 'Failed to approve schedule',
+                    icon: 'error'
+                  });
                 }
               })
               .catch(error => {
                 console.error('Error approving schedule:', error);
-                Swal.fire('Error', 'An unexpected error occurred', 'error');
+                Swal.fire({
+                  title: 'Error',
+                  text: 'An unexpected error occurred',
+                  icon: 'error'
+                });
               });
           }
         });

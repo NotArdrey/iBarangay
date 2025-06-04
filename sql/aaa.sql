@@ -897,17 +897,13 @@ CREATE TABLE document_attribute_types (
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE
 );
 
+-- Document requests
 CREATE TABLE document_requests (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    
-    -- Core relationships (normalized)
     person_id INT NOT NULL,
-    user_id INT NULL,
     document_type_id INT NOT NULL,
     barangay_id INT NOT NULL,
-    
-    -- Request status and processing
-    status ENUM('pending','completed','rejected') DEFAULT 'pending',
+    status ENUM('pending', 'processing', 'for_payment', 'paid', 'for_pickup', 'completed', 'cancelled', 'rejected') DEFAULT 'pending',
     price DECIMAL(10,2) DEFAULT 0.00,
     remarks TEXT,
     proof_image_path VARCHAR(255) NULL,
@@ -915,49 +911,13 @@ CREATE TABLE document_requests (
     processed_by_user_id INT,
     completed_at DATETIME,
     request_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    
-    -- Document-specific information (only what's unique to this request)
-    purpose TEXT NULL,
-    ctc_number VARCHAR(100) NULL,
-    or_number VARCHAR(100) NULL,
-    
-    -- Business-related information (for business permits only)
-    business_name VARCHAR(100) NULL,
-    business_location VARCHAR(200) NULL,
-    business_nature VARCHAR(200) NULL,
-    business_type VARCHAR(100) NULL,
-    
-    -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    
-    -- Foreign Key Constraints
     FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL,
     FOREIGN KEY (document_type_id) REFERENCES document_types(id) ON DELETE CASCADE,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
     FOREIGN KEY (requested_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-    FOREIGN KEY (processed_by_user_id) REFERENCES users(id) ON DELETE SET NULL,
-    
-    -- Indexes for performance
-    INDEX idx_doc_requests_status_barangay (status, barangay_id, request_date),
-    INDEX idx_doc_requests_person (person_id),
-    INDEX idx_doc_requests_doctype (document_type_id),
-    INDEX idx_doc_requests_user (user_id)
-);
-
--- Fix 2: Add unique constraint for First Time Job Seeker (one per person)
-CREATE TABLE document_request_restrictions (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    person_id INT NOT NULL,
-    document_type_code VARCHAR(50) NOT NULL,
-    first_requested_at DATETIME NOT NULL,
-    request_count INT DEFAULT 1,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    UNIQUE KEY uk_person_document_restriction (person_id, document_type_code),
-    FOREIGN KEY (person_id) REFERENCES persons(id) ON DELETE CASCADE,
-    INDEX idx_document_restrictions (document_type_code, person_id)
+    FOREIGN KEY (processed_by_user_id) REFERENCES users(id) ON DELETE SET NULL
 );
 
 -- Document request attributes
@@ -1383,16 +1343,6 @@ CREATE TABLE password_reset_tokens (
     FOREIGN KEY (email) REFERENCES users(email) ON DELETE CASCADE
 );
 
-CREATE TABLE password_history (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    user_id INT NOT NULL,
-    password_hash VARCHAR(255) NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_id_created (user_id, created_at)
-);
-
-
 -- Personal access tokens (for API authentication)
 CREATE TABLE personal_access_tokens (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1524,14 +1474,14 @@ INSERT INTO blotter_participants (blotter_case_id, external_participant_id, role
 INSERT INTO blotter_case_categories (blotter_case_id, category_id) VALUES
     (1, 8), (2, 8), (3, 8), (4, 8);
 
--- Insert Document Requests (corrected statuses)
-INSERT INTO document_requests (person_id, user_id, document_type_id, barangay_id, requested_by_user_id, status) VALUES
-    (10, NULL, 1, 32, 3, 'pending'),    -- Luis Santos (no user account)
-    (11, NULL, 3, 32, 3, 'pending'),    -- Sofia Reyes (no user account)
-    (12, NULL, 4, 32, 3, 'pending'),    -- Miguel Cruz (no user account)
-    (13, NULL, 1, 32, 3, 'pending'),    -- Carlos Dela Cruz (no user account)
-    (14, NULL, 3, 32, 3, 'pending'),    -- Elena Santos (no user account)
-    (5, 5, 5, 32, 3, 'pending');        -- Test Resident (user_id=5)
+-- Insert Document Requests
+INSERT INTO document_requests (person_id, document_type_id, barangay_id, requested_by_user_id, status) VALUES
+    (10, 1, 32, 3, 'pending'),
+    (11, 3, 32, 3, 'processing'),
+    (12, 4, 32, 3, 'for_payment'),
+    (13, 1, 32, 3, 'pending'),
+    (14, 3, 32, 3, 'processing'),
+    (15, 5, 32, 3, 'for_payment');
 
 -- Insert Events
 INSERT INTO events (title, description, start_datetime, end_datetime, location, barangay_id, created_by_user_id) VALUES

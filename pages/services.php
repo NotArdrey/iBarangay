@@ -1083,6 +1083,23 @@ require_once '../components/navbar.php';
                     </div>
 
                     <div id="businessPermitFields" class="document-fields" style="display: none;">
+
+                            
+                        <hr style="margin: 1.5rem 0;">
+
+                        <div class="form-row">
+                            <label for="previous_clearance_upload">Upload Previous Business Clearance (Optional):</label>
+                            <input type="file" id="previous_clearance_upload" name="previous_clearance_upload" accept=".pdf,.jpg,.jpeg,.png" class="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <div id="scanStatusMessage" style="margin-top:10px; font-size:0.9rem;"></div>
+                        </div>
+                        <div class="form-row" style="display: flex; gap: 10px; margin-top: 0.5rem;">
+                            <button type="button" id="scanButton" class="upload-btn" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <i class="fas fa-search"></i> Scan Previous Clearance
+                            </button>
+                            <button type="button" id="clearScanButton" class="upload-btn" style="display:none; background-color: #6c757d;">
+                                <i class="fas fa-eraser"></i> Clear Scan & Edit
+                            </button>
+                        </div>
                         <div class="form-row">
                             <label for="businessName">Business Name <span style="color: red;">*</span></label>
                             <input type="text" id="businessName" name="businessName" placeholder="Enter business name" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
@@ -1100,6 +1117,7 @@ require_once '../components/navbar.php';
                             <input type="text" id="businessPurpose" name="businessPurpose" placeholder="Describe the nature of business operations" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <small class="input-help">Describe what your business does (e.g., Food Service, General Merchandise, etc.)</small>
                         </div>
+
                     </div>
 
                     <div id="firstTimeJobSeekerFields" class="document-fields" style="display: none;">
@@ -1283,6 +1301,17 @@ require_once '../components/navbar.php';
         const form = document.getElementById('docRequestForm');
         const submitBtn = document.getElementById('submitBtn');
         const userPhotoInput = document.getElementById('userPhoto');
+
+        // Add event listeners for scan and clear buttons
+        const scanButton = document.getElementById('scanButton');
+        if (scanButton) {
+            scanButton.addEventListener('click', uploadAndProcessPreviousClearance);
+        }
+
+        const clearScanButton = document.getElementById('clearScanButton');
+        if (clearScanButton) {
+            clearScanButton.addEventListener('click', clearScannedDataAndEnableFields);
+        }
 
         // Handle file selection
         if (userPhotoInput) {
@@ -1595,6 +1624,160 @@ require_once '../components/navbar.php';
                 }
             }
         }
+
+        // ++ Functions for Document AI Scanning ++
+        function uploadAndProcessPreviousClearance() {
+            console.log('uploadAndProcessPreviousClearance function called.');
+            const fileInput = document.getElementById('previous_clearance_upload');
+            const scanStatusMessage = document.getElementById('scanStatusMessage');
+            const scanButton = document.getElementById('scanButton');
+            const clearScanButton = document.getElementById('clearScanButton');
+            const businessNameInput = document.getElementById('businessName');
+            const businessTypeInput = document.getElementById('businessType');
+            const businessAddressInput = document.getElementById('businessAddress');
+            const businessPurposeInput = document.getElementById('businessPurpose');
+
+            if (!fileInput || !fileInput.files || fileInput.files.length === 0) {
+                Swal.fire('No File Selected', 'Please select a previous business clearance file to scan.', 'warning');
+                scanStatusMessage.innerHTML = '<i class="fas fa-times-circle" style="color: red;"></i> No file selected for scanning.';
+                console.warn('No file selected for scanning.');
+                return;
+            }
+
+            const file = fileInput.files[0];
+            console.log('File selected:', file.name, 'Type:', file.type, 'Size:', file.size);
+
+            const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg', 'image/gif', 'image/tiff'];
+            if (!allowedTypes.includes(file.type)) {
+                Swal.fire('Invalid File Type', 'Please upload a PDF, JPG, PNG, GIF, or TIFF file. Detected: ' + file.type, 'error');
+                fileInput.value = ''; // Clear the invalid file
+                scanStatusMessage.innerHTML = '<i class="fas fa-times-circle" style="color: red;"></i> Invalid file type: ' + file.type;
+                console.error('Invalid file type:', file.type);
+                return;
+            }
+
+            scanStatusMessage.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Scanning document... Please wait.';
+            if(scanButton) scanButton.disabled = true;
+
+            const formData = new FormData();
+            formData.append('previous_clearance_upload', file);
+            console.log('FormData prepared:', formData);
+
+            fetch('../api/scan_document.php', {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => {
+                console.log('Received response from server:', response);
+                if (!response.ok) {
+                    // Server responded with an error status (4xx, 5xx)
+                    return response.text().then(text => {
+                        console.error('Server error response text:', text);
+                        throw new Error(`Server error: ${response.status} ${response.statusText}. ${text}`);
+                    });
+                }
+                return response.text(); // Get raw text first to avoid JSON parse error if not JSON
+            })
+            .then(text => {
+                console.log('Raw response text:', text);
+                let data;
+                try {
+                    data = JSON.parse(text);
+                    console.log('Parsed JSON data:', data);
+                } catch (e) {
+                    console.error('Failed to parse JSON response:', e);
+                    console.error('Non-JSON response received was:', text);
+                    throw new Error('Invalid JSON response from server. Check console for raw output.');
+                }
+
+                if (data.success && data.extracted_data) {
+                    const extracted = data.extracted_data;
+                    let fieldsPopulatedCount = 0;
+
+                    if (extracted.business_name && businessNameInput) {
+                        businessNameInput.value = extracted.business_name;
+                        fieldsPopulatedCount++;
+                    }
+                    if (extracted.business_type && businessTypeInput) {
+                        businessTypeInput.value = extracted.business_type;
+                        fieldsPopulatedCount++;
+                    }
+                    if (extracted.business_address && businessAddressInput) {
+                        businessAddressInput.value = extracted.business_address;
+                        fieldsPopulatedCount++;
+                    }
+                    if (extracted.business_nature && businessPurposeInput) {
+                        businessPurposeInput.value = extracted.business_nature;
+                        fieldsPopulatedCount++;
+                    }
+
+                    if (fieldsPopulatedCount > 0) {
+                        Swal.fire('Scan Successful', data.message || 'Extracted data has been populated. Please review.', 'success');
+                        scanStatusMessage.innerHTML = `<i class="fas fa-check-circle" style="color: green;"></i> ${data.message || 'Scan successful. Fields populated. Review and submit.'}`;
+                        
+                        [businessNameInput, businessTypeInput, businessAddressInput, businessPurposeInput].forEach(input => {
+                            if (input) {
+                                input.readOnly = true;
+                                input.style.backgroundColor = '#e9ecef'; // Visual cue for readonly
+                            }
+                        });
+                        if(scanButton) scanButton.style.display = 'none';
+                        if(clearScanButton) clearScanButton.style.display = 'inline-block';
+                    } else {
+                        Swal.fire('Scan Complete', data.message || 'No specific business data was extracted from the document. Please fill manually.', 'info');
+                        scanStatusMessage.innerHTML = `<i class="fas fa-info-circle" style="color: orange;"></i> ${data.message || 'Scan complete. No specific business data extracted.'}`;
+                    }
+                } else {
+                    // Use message from server response if available, even if success is false
+                    const errorMessage = data.message || `Scan failed. Please check details or fill manually.`;
+                    Swal.fire('Scan Unsuccessful', errorMessage, 'error');
+                    scanStatusMessage.innerHTML = `<i class="fas fa-times-circle" style="color: red;"></i> Scan unsuccessful: ${errorMessage}`;
+                    console.error('Scan unsuccessful. Server data:', data);
+                }
+            })
+            .catch(error => {
+                console.error('Error during scanning process:', error);
+                Swal.fire('Scan Error', 'An error occurred during scanning: ' + error.message, 'error');
+                scanStatusMessage.innerHTML = `<i class="fas fa-exclamation-triangle" style="color: red;"></i> Error: ${error.message}`;
+            })
+            .finally(() => {
+                // Re-enable scan button only if it's still visible (i.e., scan didn't lead to clear button showing)
+                if (scanButton && scanButton.style.display !== 'none') {
+                    scanButton.disabled = false;
+                }
+            });
+        }
+
+        function clearScannedDataAndEnableFields() {
+            console.log('clearScannedDataAndEnableFields function called.');
+            const fileInput = document.getElementById('previous_clearance_upload');
+            const scanStatusMessage = document.getElementById('scanStatusMessage');
+            const scanButton = document.getElementById('scanButton');
+            const clearScanButton = document.getElementById('clearScanButton');
+            const businessNameInput = document.getElementById('businessName');
+            const businessTypeInput = document.getElementById('businessType');
+            const businessAddressInput = document.getElementById('businessAddress');
+            const businessPurposeInput = document.getElementById('businessPurpose');
+
+            businessNameInput.value = '';
+            businessTypeInput.value = '';
+            businessAddressInput.value = '';
+            businessPurposeInput.value = '';
+            if(fileInput) fileInput.value = ''; // Clear the file input as well
+
+            [businessNameInput, businessTypeInput, businessAddressInput, businessPurposeInput].forEach(input => {
+                input.readOnly = false;
+                input.style.backgroundColor = ''; // Reset background
+            });
+
+            scanButton.style.display = 'inline-block';
+            scanButton.disabled = false;
+            clearScanButton.style.display = 'none';
+            scanStatusMessage.innerHTML = 'Previous scan cleared. You can manually edit or upload a new file.';
+            
+            Swal.fire('Data Cleared', 'Scanned data has been cleared. You can now edit fields or scan a new document.', 'info');
+        }
+        // -- End Functions for Document AI Scanning --
     });
     </script>
     
