@@ -3,53 +3,271 @@
 session_start();
 require_once "../config/dbconn.php";
 
+/**
+ * Check if PayMongo integration is available for a barangay
+ * @param int $barangay_id The barangay ID to check
+ * @return bool True if PayMongo is available, false otherwise
+ */
+function isPayMongoAvailable($barangay_id) {
+    global $pdo;
+    
+    try {
+        // Check if the barangay has PayMongo settings configured
+        $stmt = $pdo->prepare("
+            SELECT is_enabled, public_key, secret_key 
+            FROM barangay_paymongo_settings 
+            WHERE barangay_id = ? 
+            LIMIT 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // PayMongo is available if enabled and keys are provided
+        if ($settings && 
+            isset($settings['is_enabled']) && 
+            $settings['is_enabled'] == 1 && 
+            !empty($settings['public_key']) && 
+            !empty($settings['secret_key'])) {
+            return true;
+        }
+        
+        return false;
+    } catch (Exception $e) {
+        // Log error or handle exception
+        error_log("Error checking PayMongo availability: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Create a PayMongo checkout session
+ * @param array $lineItems Array of items to be purchased
+ * @param string $successUrl URL to redirect on successful payment
+ * @param string $cancelUrl URL to redirect on cancelled payment
+ * @param int $barangay_id Barangay ID to get PayMongo credentials
+ * @return array|bool Checkout data on success, false on failure
+ */
+function createPayMongoCheckout($lineItems, $successUrl, $cancelUrl, $barangay_id) {
+    global $pdo;
+    
+    try {
+        // Get PayMongo credentials for the barangay
+        $stmt = $pdo->prepare("
+            SELECT public_key, secret_key 
+            FROM barangay_paymongo_settings 
+            WHERE barangay_id = ? 
+            LIMIT 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $settings = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$settings || empty($settings['public_key']) || empty($settings['secret_key'])) {
+            throw new Exception("PayMongo not configured for this barangay");
+        }
+        
+        $secretKey = $settings['secret_key'];
+        
+        // Create a unique reference for this checkout
+        $reference = 'DOC-' . time() . '-' . rand(1000, 9999);
+        
+        // Prepare the checkout session data
+        $data = [
+            'data' => [
+                'attributes' => [
+                    'line_items' => $lineItems,
+                    'payment_method_types' => ['card', 'gcash', 'grab_pay'],
+                    'success_url' => $successUrl,
+                    'cancel_url' => $cancelUrl,
+                    'reference_number' => $reference,
+                    'description' => 'Document Request Payment'
+                ]
+            ]
+        ];
+        
+        // Initialize cURL session to PayMongo API
+        $ch = curl_init('https://api.paymongo.com/v1/checkout_sessions');
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            'Content-Type: application/json',
+            'Authorization: Basic ' . base64_encode($secretKey . ':')
+        ]);
+        
+        // Execute the request
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+        
+        // Parse the response
+        $responseData = json_decode($response, true);
+        
+        // Check if the request was successful
+        if ($httpCode == 200 && isset($responseData['data'])) {
+            // Return the checkout URL and ID
+            return [
+                'id' => $responseData['data']['id'],
+                'checkout_url' => $responseData['data']['attributes']['checkout_url']
+            ];
+        } else {
+            // Log error information
+            $errorMsg = isset($responseData['errors']) ? json_encode($responseData['errors']) : 'Unknown error';
+            error_log("PayMongo API Error: " . $errorMsg);
+            return false;
+        }
+    } catch (Exception $e) {
+        error_log("Error creating PayMongo checkout: " . $e->getMessage());
+        return false;
+    }
+}
+
 // Handle form submission for document requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
         // Validate required fields
         $documentTypeId = $_POST['document_type_id'] ?? '';
+        $deliveryMethod = $_POST['delivery_method'] ?? '';
+        $paymentMethod = $_POST['payment_method'] ?? 'cash';
+        
         if (empty($documentTypeId)) {
             throw new Exception("Please select a document type");
         }
+        
+        if (empty($deliveryMethod)) {
+            throw new Exception("Please select a delivery method");
+        }
+
         // Get user info
         if (!isset($_SESSION['user_id'])) {
             throw new Exception("Please log in to submit a request");
         }
         $user_id = $_SESSION['user_id'];
 
-        // Get user's person_id from the persons table
-        $stmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = ?");
+        // Get user's person_id and barangay_id
+        $stmt = $pdo->prepare("
+            SELECT p.id as person_id, u.barangay_id, COALESCE(u.email, '') as email 
+            FROM persons p 
+            JOIN users u ON p.user_id = u.id 
+            WHERE u.id = ?
+        ");
         $stmt->execute([$user_id]);
-        $person = $stmt->fetch();
+        $userInfo = $stmt->fetch();
         
-        if (!$person) {
+        if (!$userInfo) {
             throw new Exception("User profile not found");
         }
 
-        // Begin transaction for the main request
+        // Optional: Warn if no email for certain delivery methods
+        if ($deliveryMethod === 'softcopy' && empty($userInfo['email'])) {
+            throw new Exception("Email address is required for soft copy delivery. Please update your profile with an email address.");
+        }
+
+        // Get document type and fee information
+        $stmt = $pdo->prepare("
+            SELECT dt.id, dt.code, dt.name, dt.default_fee,
+                   COALESCE(bdp.price, dt.default_fee) as actual_fee
+            FROM document_types dt
+            LEFT JOIN barangay_document_prices bdp ON dt.id = bdp.document_type_id 
+                AND bdp.barangay_id = ?
+            WHERE dt.id = ?
+        ");
+        $stmt->execute([$userInfo['barangay_id'], $documentTypeId]);
+        $documentType = $stmt->fetch();
+        
+        if (!$documentType) {
+            throw new Exception("Invalid document type selected");
+        }
+
+        $documentFee = (float)$documentType['actual_fee'];
+        
+        // Validate payment method for paid documents
+        if ($documentFee > 0 && empty($paymentMethod)) {
+            throw new Exception("Please select a payment method");
+        }
+
+        // Handle online payment - ADD THIS SECTION
+        if ($paymentMethod === 'online' && $documentFee > 0) {
+            try {
+                // Check if PayMongo is available for this barangay
+                if (!isPayMongoAvailable($userInfo['barangay_id'])) {
+                    throw new Exception("Online payment is not available for your barangay. Please select cash payment.");
+                }
+                
+                $lineItems = [[
+                    'currency' => 'PHP',
+                    'amount' => (int)($documentFee * 100), // Convert to centavos
+                    'description' => $documentType['name'],
+                    'name' => $documentType['name'],
+                    'quantity' => 1
+                ]];
+
+                // Set up URLs - adjust these paths as needed
+                $baseUrl = 'http://localhost/iBarangay'; // Update this to your actual domain
+                $successUrl = $baseUrl . '/pages/payment_success.php';
+                $cancelUrl = $baseUrl . '/pages/services.php?payment=cancelled';
+
+                $checkout = createPayMongoCheckout($lineItems, $successUrl, $cancelUrl, $userInfo['barangay_id']);
+                
+                if (!$checkout) {
+                    throw new Exception("Failed to create payment session");
+                }
+
+                // Store pending request data in session
+                $_SESSION['pending_document_request'] = [
+                    'document_type_id' => $documentTypeId,
+                    'delivery_method' => $deliveryMethod,
+                    'payment_method' => $paymentMethod,
+                    'payment_amount' => $documentFee,
+                    'checkout_id' => $checkout['id'],
+                    'checkout_url' => $checkout['checkout_url'],
+                    'form_data' => $_POST
+                ];
+
+                // Redirect to PayMongo checkout
+                header('Location: ' . $checkout['checkout_url']);
+                exit;
+                
+            } catch (Exception $e) {
+                throw new Exception("Payment processing error: " . $e->getMessage());
+            }
+        }
+
+        // Begin transaction for the main request (for cash payments or free documents)
         $pdo->beginTransaction();
         
         try {
+            // Determine initial status based on payment
+            $initialStatus = 'pending';
+            $paymentStatus = 'pending';
+            
+            if ($documentFee == 0) {
+                $paymentStatus = 'paid'; // Free documents
+            } else if ($paymentMethod === 'cash') {
+                $initialStatus = 'for_payment';
+                $paymentStatus = 'pending';
+            }
+
             // Insert into document_requests table
             $stmt = $pdo->prepare("
                 INSERT INTO document_requests 
-                (document_type_id, person_id, user_id, barangay_id, status, request_date) 
-                VALUES (?, ?, ?, ?, 'pending', NOW())
+                (document_type_id, person_id, user_id, barangay_id, status, price, 
+                 delivery_method, payment_method, payment_status, request_date) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
             ");
             $stmt->execute([
                 $documentTypeId,
-                $person['id'],
+                $userInfo['person_id'],
                 $user_id,
-                $_SESSION['barangay_id']
+                $userInfo['barangay_id'],
+                $initialStatus,
+                $documentFee,
+                $deliveryMethod,
+                $paymentMethod,
+                $paymentStatus
             ]);
             $requestId = $pdo->lastInsertId();
 
-            // Get document type info 
-            $stmt = $pdo->prepare("SELECT id, code FROM document_types WHERE id = ?");
-            $stmt->execute([$documentTypeId]);
-            $documentType = $stmt->fetch();
-
-            // Get attribute type IDs
+            // Handle document-specific attributes
             $stmt = $pdo->prepare("
                 SELECT id, code 
                 FROM document_attribute_types 
@@ -58,7 +276,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $stmt->execute([$documentTypeId]);
             $attributeTypes = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
 
-            // Prepare attributes array based on document type
+            // Process attributes based on document type
             $attributes = [];
             switch($documentType['code']) {
                 case 'barangay_clearance':
@@ -91,43 +309,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             'type_id' => $attributeTypes['indigency_reason'] ?? null,
                             'value' => $_POST['indigencyReason']
                         ];
-                    }
-                    break;
-
-                case 'cedula':
-                case 'community_tax_certificate':
-                    // Handle occupation
-                    $occupation = !empty($_POST['cedulaOccupation']) ? $_POST['cedulaOccupation'] : $_POST['ctcOccupation'] ?? '';
-                    if (!empty($occupation)) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['occupation'] ?? null,
-                            'value' => $occupation
-                        ];
-                    }
-                    
-                    // Handle income fields
-                    $income = !empty($_POST['cedulaIncome']) ? $_POST['cedulaIncome'] : $_POST['ctcIncome'] ?? '';
-                    if (!empty($income)) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['income'] ?? null,
-                            'value' => number_format((float)$income, 2, '.', '')
-                        ];
-                    }
-
-                    // Handle optional fields specific to CTC
-                    if ($documentType['code'] === 'community_tax_certificate') {
-                        if (!empty($_POST['ctcPropertyValue'])) {
-                            $attributes[] = [
-                                'type_id' => $attributeTypes['property_value'] ?? null,
-                                'value' => number_format((float)$_POST['ctcPropertyValue'], 2, '.', '')
-                            ];
-                        }
-                        if (!empty($_POST['ctcBirthplace'])) {
-                            $attributes[] = [
-                                'type_id' => $attributeTypes['birthplace'] ?? null,
-                                'value' => $_POST['ctcBirthplace']
-                            ];
-                        }
                     }
                     break;
 
@@ -173,17 +354,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // If we got here, commit the transaction
+            // Commit transaction
             $pdo->commit();
 
-            // Set success notification
+            // Set success message based on payment method and fee
+            $title = 'Document Request Submitted';
+            $message = 'Your document request has been submitted successfully.';
+            $processing = '';
+
+            if ($documentFee > 0 && $paymentMethod === 'cash') {
+                $processing = "Please visit the barangay office to pay ₱" . number_format($documentFee, 2) . " and complete your request.";
+            } else if ($documentFee == 0) {
+                $processing = "Your free document request is being processed. You will be notified once it is ready.";
+            } else {
+                $processing = "Please complete your payment to process the document request.";
+            }
+
             $_SESSION['success'] = [
-                'title' => 'Document Request Submitted',
-                'message' => 'Your document request has been submitted successfully.',
-                'processing' => 'Please wait for the processing of your request. You will be notified once it is ready.'
+                'title' => $title,
+                'message' => $message,
+                'processing' => $processing
             ];
 
-            // Redirect back to the user dashboard
+            // Redirect to user dashboard
             header('Location: ../pages/user_dashboard.php');
             exit;
 
@@ -192,7 +385,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             throw $e;
         }
 
-    } catch (Exception $e) {        $_SESSION['error'] = $e->getMessage();
+    } catch (Exception $e) {
+        $_SESSION['error'] = $e->getMessage();
         $redirectTo = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '../pages/services.php';
         header('Location: ' . $redirectTo);
         exit;
@@ -429,7 +623,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
 
                     <div class="form-row">
                         <label for="deliveryMethod">Delivery Method *</label>
-                        <select id="deliveryMethod" name="deliveryMethod" required>
+                        <select id="deliveryMethod" name="delivery_method" required>
                             <option value="">Select Delivery Method</option>
                             <option value="Softcopy">Softcopy (Digital)</option>
                             <option value="Hardcopy">Hardcopy (Physical)</option>
@@ -723,6 +917,84 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
                 }
             }
         }
+
+        // Handle payment method change
+        const paymentMethodSelect = document.getElementById('paymentMethod');
+        const paymentInfo = document.getElementById('paymentInfo');
+        const paymentInfoText = document.getElementById('paymentInfoText');
+
+        if (paymentMethodSelect) {
+            // Update payment method options based on PayMongo availability
+            function updatePaymentMethodOptions() {
+                paymentMethodSelect.innerHTML = `
+                    <option value="">Select Payment Method</option>
+                    <option value="cash">Cash (Pay at Barangay Office)</option>
+                `;
+                
+                if (paymongoAvailable) {
+                    paymentMethodSelect.innerHTML += `<option value="online">Online Payment (PayMongo)</option>`;
+                }
+            }
+            
+            updatePaymentMethodOptions();
+            
+            paymentMethodSelect.addEventListener('change', function() {
+                const selectedMethod = this.value;
+                const selectedDoc = documentTypeSelect.options[documentTypeSelect.selectedIndex];
+                const fee = barangayPrices[selectedDoc.dataset.code] || 0;
+                
+                if (selectedMethod && fee > 0) {
+                    paymentInfo.style.display = 'block';
+                    
+                    if (selectedMethod === 'cash') {
+                        paymentInfoText.innerHTML = `
+                            <strong>Cash Payment:</strong><br>
+                            • Pay ₱${fee.toFixed(2)} at the Barangay Office<br>
+                            • Document will be processed after payment confirmation<br>
+                            • Bring valid ID when paying
+                        `;
+                    } else if (selectedMethod === 'online') {
+                        if (paymongoAvailable) {
+                            paymentInfoText.innerHTML = `
+                                <strong>Online Payment:</strong><br>
+                                • Pay ₱${fee.toFixed(2)} via PayMongo<br>
+                                • You will be redirected to secure payment page<br>
+                                • Document processing starts after successful payment<br>
+                                • Payment confirmation will be sent via email
+                            `;
+                        } else {
+                            paymentInfoText.innerHTML = `
+                                <strong>Online Payment Not Available:</strong><br>
+                                • Online payment is not configured for this barangay<br>
+                                • Please select cash payment instead
+                            `;
+                        }
+                    }
+                } else {
+                    paymentInfo.style.display = 'none';
+                }
+            });
+        }
+
+        // Validate form before submission
+        form.addEventListener('submit', function(e) {
+            const selectedDoc = documentTypeSelect.options[documentTypeSelect.selectedIndex];
+            const fee = barangayPrices[selectedDoc.dataset.code] || 0;
+            const paymentMethod = paymentMethodSelect.value;
+
+            // Validate payment method for paid documents
+            if (fee > 0 && !paymentMethod) {
+                Swal.fire('Error', 'Please select a payment method.', 'error');
+                return;
+            }
+            
+            // Check if online payment is available
+            if (paymentMethod === 'online' && !paymongoAvailable) {
+                Swal.fire('Error', 'Online payment is not available for this barangay. Please select cash payment.', 'error');
+                return;
+            }
+        });
+
     });
     </script>
 </body>

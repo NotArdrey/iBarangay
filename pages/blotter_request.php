@@ -2,7 +2,6 @@
 session_start();
 require "../config/dbconn.php";
 require "../vendor/autoload.php";
-require "../components/navbar.php"; // MOVED NAVBAR INCLUDE HERE
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -44,10 +43,7 @@ if ($user_id) {
         $barangay_name = $row['barangay_name'];
         $barangay_id = $row['barangay_id'];
     }
-    $stmt = null; // Added for consistency
 }
-
-
 
 // Get user's person record for participants
 $stmt = $conn->prepare("SELECT id FROM persons WHERE user_id = ?");
@@ -526,8 +522,8 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
     $caseNumber = $_GET['case_number'] ?? '';
 }
 
-// Only include navbar after all header() calls and redirects // THIS LINE COMMENT IS NOW MISLEADING
-// require "../components/navbar.php"; // OLD NAVBAR INCLUDE REMOVED FROM HERE
+// Only include navbar after all header() calls and redirects
+require "../components/navbar.php";
 ?>
 
 <!DOCTYPE html>
@@ -588,6 +584,14 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
             padding: 2rem;
         }
 
+        h2 {
+            color: var(--primary-color);
+            font-size: 1.75rem;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
 
         .form-section {
             margin-bottom: 2rem;
@@ -1081,15 +1085,6 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
     .notif-item { padding: 10px 14px; border-bottom: 1px solid #eee; }
     .notif-item:last-child { border-bottom: none; }
     </style>
-    <!-- Add to navbar (inside header.php or here if needed) -->
-    <div style="position:relative;display:inline-block;">
-      <span id="notifBell" style="font-size:22px;vertical-align:middle;">
-        <i class="fas fa-bell"></i>
-        <span id="notifCount"></span>
-      </span>
-      <div id="notifDropdown"></div>
-    </div>
-
     <!-- Show proposed schedules and allow user to confirm/reject -->
     <?php
     // Fetch latest schedule proposal for this user

@@ -5,15 +5,19 @@ if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
+require_once __DIR__ . '/env.php';
 
-$host = 'localhost';
-$dbname = 'barangay';
-$username = 'root';
-$password = 'password';
-$charset = 'utf8mb4';
+// Load environment variables
+Env::load();
+
+// Database configuration using environment variables
+$host = Env::get('DB_HOST', 'localhost');
+$dbname = Env::get('DB_NAME', 'ibarangay_db');
+$username = Env::get('DB_USER', 'root');
+$password = Env::get('DB_PASS', '');
 
 // DSN (Data Source Name)
-$dsn = "mysql:host=$host;dbname=$dbname;charset=$charset";
+$dsn = "mysql:host=$host;dbname=$dbname;charset=utf8mb4";
 
 // PDO options for better error handling and performance
 $options = [
