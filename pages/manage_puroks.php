@@ -397,6 +397,18 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                     }
                 }
             });
+            // Prevent delete actions
+            document.querySelectorAll('form[action*="delete"], form button[type="submit"].deleteBtn, form .deleteBtn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Permission Denied',
+                        text: 'You do not have permission to delete.',
+                        confirmButtonColor: '#3085d6'
+                    });
+                });
+            });
         });
         <?php endif; ?>
     </script>

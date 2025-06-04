@@ -1177,6 +1177,18 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     }
                 }
             });
+            // Prevent delete actions
+            document.querySelectorAll('.deleteBtn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Permission Denied',
+                        text: 'You do not have permission to delete.',
+                        confirmButtonColor: '#3085d6'
+                    });
+                });
+            });
             <?php endif; ?>
 
             // Make all text inputs uppercase while typing

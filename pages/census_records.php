@@ -401,6 +401,33 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
         }
       });
     }
+
+    document.addEventListener('DOMContentLoaded', function() {
+      // Make all form fields non-editable for users without $can_manage_census
+      <?php if (!$can_manage_census): ?>
+      document.querySelectorAll('form input, form select, form textarea, form button[type="submit"]').forEach(el => {
+          if (el.type !== 'hidden') {
+              if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'date' || el.type === 'number' || el.type === 'email' || el.type === 'tel')) {
+                  el.readOnly = true;
+              } else if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'))) {
+                  el.disabled = true;
+              }
+          }
+      });
+      // Prevent delete actions
+      document.querySelectorAll('.deleteBtn').forEach(btn => {
+          btn.addEventListener('click', function(e) {
+              e.preventDefault();
+              Swal.fire({
+                  icon: 'error',
+                  title: 'Permission Denied',
+                  text: 'You do not have permission to delete.',
+                  confirmButtonColor: '#3085d6'
+              });
+          });
+      });
+      <?php endif; ?>
+    });
   </script>
 </body>
 
