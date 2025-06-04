@@ -1675,7 +1675,7 @@ if (!empty($_GET['action'])) {
                     echo json_encode(['success'=>false,'message'=>'Not found']); exit;
                 }
                 // determine which flag to flip
-                $personId = // fetch current user’s person_id
+                $personId = // fetch current user's person_id
                   $pdo->prepare("SELECT id FROM persons WHERE user_id=?")
                       ->execute([$_SESSION['user_id']]) 
                   && ($pid = $pdo->lastInsertId()) ? $pid : null;
@@ -1774,7 +1774,6 @@ $stmt = $pdo->prepare("
       bc.*,
       bc.scheduling_status,
       GROUP_CONCAT(DISTINCT cc.name SEPARATOR ', ') AS categories,
-      bc.accepted_by_user_id,
       bc.filing_date,
       bc.scheduling_deadline,
       bc.captain_signature_date,
