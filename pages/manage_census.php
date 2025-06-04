@@ -1,16 +1,28 @@
 <?php
+// Ensure session is started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 
 require "../config/dbconn.php";
 require "../functions/manage_census.php";
 
+$current_admin_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+$current_role_id = isset($_SESSION['role_id']) ? (int)$_SESSION['role_id'] : null;
+$barangay_id = isset($_SESSION['barangay_id']) ? (int)$_SESSION['barangay_id'] : null;
+
+// Define roles for Census & Resident Records
+$census_full_access_roles = [1, 2, 3, 9]; // Programmer, Super Admin, Captain, Health Worker
+$census_view_only_roles = [4, 5, 6, 7];   // Secretary, Treasurer, Councilor, Chairperson
+
+$can_manage_census = in_array($current_role_id, $census_full_access_roles);
+$can_view_census = $can_manage_census || in_array($current_role_id, $census_view_only_roles);
+
 // Check admin permissions
-if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
+if ($current_admin_id === null || !$can_view_census) { // User must at least have view access
     header("Location: ../pages/login.php");
     exit;
 }
-
-$current_admin_id = $_SESSION['user_id'];
-$barangay_id = $_SESSION['barangay_id'];
 
 // Fetch households for selection
 $stmt = $pdo->prepare("
@@ -103,288 +115,297 @@ if (isset($_SESSION['success'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
-        // Collect and sanitize input data
-        $data = [
-            'first_name' => trim($_POST['first_name'] ?? ''),
-            'middle_name' => trim($_POST['middle_name'] ?? ''),
-            'last_name' => trim($_POST['last_name'] ?? ''),
-            'suffix' => trim($_POST['suffix'] ?? ''),
-            'birth_date' => $_POST['birth_date'] ?? '',
-            'birth_place' => trim($_POST['birth_place'] ?? ''),
-            'gender' => $_POST['gender'] ?? '',
-            'civil_status' => $_POST['civil_status'] ?? '',
-            'citizenship' => trim($_POST['citizenship'] ?? 'Filipino'),
-            'religion' => trim($_POST['religion'] ?? ''),
-            'education_level' => trim($_POST['education_level'] ?? ''),
-            'occupation' => trim($_POST['occupation'] ?? ''),
-            'monthly_income' => $_POST['monthly_income'] ?? '',
-            'present_house_no' => trim($_POST['present_house_no'] ?? ''),
-            'present_street' => trim($_POST['present_street'] ?? ''),
-            'present_municipality' => trim($_POST['present_municipality'] ?? 'SAN RAFAEL'),
-            'present_province' => trim($_POST['present_province'] ?? 'BULACAN'),
-            'present_region' => trim($_POST['present_region'] ?? 'III'),
-            'permanent_house_no' => trim($_POST['permanent_house_no'] ?? ''),
-            'permanent_street' => trim($_POST['permanent_street'] ?? ''),
-            'permanent_barangay' => trim($_POST['permanent_barangay'] ?? ''),
-            'permanent_municipality' => trim($_POST['permanent_municipality'] ?? ''),
-            'permanent_province' => trim($_POST['permanent_province'] ?? ''),
-            'permanent_region' => trim($_POST['permanent_region'] ?? ''),
-            'household_id' => isset($_POST['household_id']) && $_POST['household_id'] !== '' ? (int)$_POST['household_id'] : null,
-            'relationship' => $_POST['relationship'] ?? '',
-            'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0,
-            'resident_type' => $_POST['resident_type'] ?? 'regular',
-            'contact_number' => trim($_POST['contact_number'] ?? ''),
-            // Add ID fields
-            'osca_id' => trim($_POST['osca_id'] ?? ''),
-            'gsis_id' => trim($_POST['gsis_id'] ?? ''),
-            'sss_id' => trim($_POST['sss_id'] ?? ''),
-            'tin_id' => trim($_POST['tin_id'] ?? ''),
-            'philhealth_id' => trim($_POST['philhealth_id'] ?? ''),
-            'other_id_type' => trim($_POST['other_id_type'] ?? ''),
-            'other_id_number' => trim($_POST['other_id_number'] ?? ''),
-            'years_of_residency' => isset($_POST['years_of_residency']) ? (int)trim($_POST['years_of_residency']) : 0,
-            // Living arrangements
-            'living_alone' => isset($_POST['living_alone']) ? 1 : 0,
-            'living_spouse' => isset($_POST['living_spouse']) ? 1 : 0,
-            'living_children' => isset($_POST['living_children']) ? 1 : 0,
-            'living_grandchildren' => isset($_POST['living_grandchildren']) ? 1 : 0,
-            'living_in_laws' => isset($_POST['living_in_laws']) ? 1 : 0,
-            'living_relatives' => isset($_POST['living_relatives']) ? 1 : 0,
-            'living_househelps' => isset($_POST['living_househelps']) ? 1 : 0,
-            'living_care_institutions' => isset($_POST['living_care_institutions']) ? 1 : 0,
-            'living_common_law_spouse' => isset($_POST['living_common_law_spouse']) ? 1 : 0,
-            'living_others' => isset($_POST['living_others']) ? 1 : 0,
-            'living_others_specify' => trim($_POST['living_others_specify'] ?? ''),
+    if (!$can_manage_census) {
+        $_SESSION['error'] = "You do not have permission to add or edit resident data.";
+        // Redirect or set $add_error, then prevent further processing
+        // For this implementation, we'll set $add_error and let the form re-display with the error.
+        $add_error = "You do not have permission to perform this action.";
+        // To prevent actual data modification, ensure saveResident or other DB operations are not called.
+    } else {
+        try {
+            // Collect and sanitize input data
+            $data = [
+                'first_name' => trim($_POST['first_name'] ?? ''),
+                'middle_name' => trim($_POST['middle_name'] ?? ''),
+                'last_name' => trim($_POST['last_name'] ?? ''),
+                'suffix' => trim($_POST['suffix'] ?? ''),
+                'birth_date' => $_POST['birth_date'] ?? '',
+                'birth_place' => trim($_POST['birth_place'] ?? ''),
+                'gender' => $_POST['gender'] ?? '',
+                'civil_status' => $_POST['civil_status'] ?? '',
+                'citizenship' => trim($_POST['citizenship'] ?? 'Filipino'),
+                'religion' => trim($_POST['religion'] ?? ''),
+                'education_level' => trim($_POST['education_level'] ?? ''),
+                'occupation' => trim($_POST['occupation'] ?? ''),
+                'monthly_income' => $_POST['monthly_income'] ?? '',
+                'present_house_no' => trim($_POST['present_house_no'] ?? ''),
+                'present_street' => trim($_POST['present_street'] ?? ''),
+                'present_municipality' => trim($_POST['present_municipality'] ?? 'SAN RAFAEL'),
+                'present_province' => trim($_POST['present_province'] ?? 'BULACAN'),
+                'present_region' => trim($_POST['present_region'] ?? 'III'),
+                'permanent_house_no' => trim($_POST['permanent_house_no'] ?? ''),
+                'permanent_street' => trim($_POST['permanent_street'] ?? ''),
+                'permanent_barangay' => trim($_POST['permanent_barangay'] ?? ''),
+                'permanent_municipality' => trim($_POST['permanent_municipality'] ?? ''),
+                'permanent_province' => trim($_POST['permanent_province'] ?? ''),
+                'permanent_region' => trim($_POST['permanent_region'] ?? ''),
+                'household_id' => isset($_POST['household_id']) && $_POST['household_id'] !== '' ? (int)$_POST['household_id'] : null,
+                'relationship' => $_POST['relationship'] ?? '',
+                'is_household_head' => isset($_POST['is_household_head']) ? 1 : 0,
+                'resident_type' => $_POST['resident_type'] ?? 'regular',
+                'contact_number' => trim($_POST['contact_number'] ?? ''),
+                // Add ID fields
+                'osca_id' => trim($_POST['osca_id'] ?? ''),
+                'gsis_id' => trim($_POST['gsis_id'] ?? ''),
+                'sss_id' => trim($_POST['sss_id'] ?? ''),
+                'tin_id' => trim($_POST['tin_id'] ?? ''),
+                'philhealth_id' => trim($_POST['philhealth_id'] ?? ''),
+                'other_id_type' => trim($_POST['other_id_type'] ?? ''),
+                'other_id_number' => trim($_POST['other_id_number'] ?? ''),
+                'years_of_residency' => isset($_POST['years_of_residency']) ? (int)trim($_POST['years_of_residency']) : 0,
+                // Living arrangements
+                'living_alone' => isset($_POST['living_alone']) ? 1 : 0,
+                'living_spouse' => isset($_POST['living_spouse']) ? 1 : 0,
+                'living_children' => isset($_POST['living_children']) ? 1 : 0,
+                'living_grandchildren' => isset($_POST['living_grandchildren']) ? 1 : 0,
+                'living_in_laws' => isset($_POST['living_in_laws']) ? 1 : 0,
+                'living_relatives' => isset($_POST['living_relatives']) ? 1 : 0,
+                'living_househelps' => isset($_POST['living_househelps']) ? 1 : 0,
+                'living_care_institutions' => isset($_POST['living_care_institutions']) ? 1 : 0,
+                'living_common_law_spouse' => isset($_POST['living_common_law_spouse']) ? 1 : 0,
+                'living_others' => isset($_POST['living_others']) ? 1 : 0,
+                'living_others_specify' => trim($_POST['living_others_specify'] ?? ''),
 
-            // Skills
-            'skill_medical' => isset($_POST['skill_medical']) ? 1 : 0,
-            'skill_teaching' => isset($_POST['skill_teaching']) ? 1 : 0,
-            'skill_legal_services' => isset($_POST['skill_legal_services']) ? 1 : 0,
-            'skill_dental' => isset($_POST['skill_dental']) ? 1 : 0,
-            'skill_counseling' => isset($_POST['skill_counseling']) ? 1 : 0,
-            'skill_evangelization' => isset($_POST['skill_evangelization']) ? 1 : 0,
-            'skill_farming' => isset($_POST['skill_farming']) ? 1 : 0,
-            'skill_fishing' => isset($_POST['skill_fishing']) ? 1 : 0,
-            'skill_cooking' => isset($_POST['skill_cooking']) ? 1 : 0,
-            'skill_vocational' => isset($_POST['skill_vocational']) ? 1 : 0,
-            'skill_arts' => isset($_POST['skill_arts']) ? 1 : 0,
-            'skill_engineering' => isset($_POST['skill_engineering']) ? 1 : 0,
-            'skill_others' => isset($_POST['skill_others']) ? 1 : 0,
-            'skill_others_specify' => trim($_POST['skill_others_specify'] ?? ''),
+                // Skills
+                'skill_medical' => isset($_POST['skill_medical']) ? 1 : 0,
+                'skill_teaching' => isset($_POST['skill_teaching']) ? 1 : 0,
+                'skill_legal_services' => isset($_POST['skill_legal_services']) ? 1 : 0,
+                'skill_dental' => isset($_POST['skill_dental']) ? 1 : 0,
+                'skill_counseling' => isset($_POST['skill_counseling']) ? 1 : 0,
+                'skill_evangelization' => isset($_POST['skill_evangelization']) ? 1 : 0,
+                'skill_farming' => isset($_POST['skill_farming']) ? 1 : 0,
+                'skill_fishing' => isset($_POST['skill_fishing']) ? 1 : 0,
+                'skill_cooking' => isset($_POST['skill_cooking']) ? 1 : 0,
+                'skill_vocational' => isset($_POST['skill_vocational']) ? 1 : 0,
+                'skill_arts' => isset($_POST['skill_arts']) ? 1 : 0,
+                'skill_engineering' => isset($_POST['skill_engineering']) ? 1 : 0,
+                'skill_others' => isset($_POST['skill_others']) ? 1 : 0,
+                'skill_others_specify' => trim($_POST['skill_others_specify'] ?? ''),
 
-            // Community involvements
-            'involvement_medical' => isset($_POST['involvement_medical']) ? 1 : 0,
-            'involvement_resource_volunteer' => isset($_POST['involvement_resource_volunteer']) ? 1 : 0,
-            'involvement_community_beautification' => isset($_POST['involvement_community_beautification']) ? 1 : 0,
-            'involvement_community_leader' => isset($_POST['involvement_community_leader']) ? 1 : 0,
-            'involvement_dental' => isset($_POST['involvement_dental']) ? 1 : 0,
-            'involvement_friendly_visits' => isset($_POST['involvement_friendly_visits']) ? 1 : 0,
-            'involvement_neighborhood_support' => isset($_POST['involvement_neighborhood_support']) ? 1 : 0,
-            'involvement_religious' => isset($_POST['involvement_religious']) ? 1 : 0,
-            'involvement_counselling' => isset($_POST['involvement_counselling']) ? 1 : 0,
-            'involvement_sponsorship' => isset($_POST['involvement_sponsorship']) ? 1 : 0,
-            'involvement_legal_services' => isset($_POST['involvement_legal_services']) ? 1 : 0,
-            'involvement_others' => isset($_POST['involvement_others']) ? 1 : 0,
-            'involvement_others_specify' => trim($_POST['involvement_others_specify'] ?? ''),
+                // Community involvements
+                'involvement_medical' => isset($_POST['involvement_medical']) ? 1 : 0,
+                'involvement_resource_volunteer' => isset($_POST['involvement_resource_volunteer']) ? 1 : 0,
+                'involvement_community_beautification' => isset($_POST['involvement_community_beautification']) ? 1 : 0,
+                'involvement_community_leader' => isset($_POST['involvement_community_leader']) ? 1 : 0,
+                'involvement_dental' => isset($_POST['involvement_dental']) ? 1 : 0,
+                'involvement_friendly_visits' => isset($_POST['involvement_friendly_visits']) ? 1 : 0,
+                'involvement_neighborhood_support' => isset($_POST['involvement_neighborhood_support']) ? 1 : 0,
+                'involvement_religious' => isset($_POST['involvement_religious']) ? 1 : 0,
+                'involvement_counselling' => isset($_POST['involvement_counselling']) ? 1 : 0,
+                'involvement_sponsorship' => isset($_POST['involvement_sponsorship']) ? 1 : 0,
+                'involvement_legal_services' => isset($_POST['involvement_legal_services']) ? 1 : 0,
+                'involvement_others' => isset($_POST['involvement_others']) ? 1 : 0,
+                'involvement_others_specify' => trim($_POST['involvement_others_specify'] ?? ''),
 
-            // Government Programs
-            'nhts_pr_listahanan' => isset($_POST['nhts_pr_listahanan']) && $_POST['nhts_pr_listahanan'] == 1 ? 1 : 0,
-            'indigenous_people' => isset($_POST['indigenous_people']) && $_POST['indigenous_people'] == 1 ? 1 : 0,
-            'pantawid_beneficiary' => isset($_POST['pantawid_beneficiary']) && $_POST['pantawid_beneficiary'] == 1 ? 1 : 0,
+                // Government Programs
+                'nhts_pr_listahanan' => isset($_POST['nhts_pr_listahanan']) && $_POST['nhts_pr_listahanan'] == 1 ? 1 : 0,
+                'indigenous_people' => isset($_POST['indigenous_people']) && $_POST['indigenous_people'] == 1 ? 1 : 0,
+                'pantawid_beneficiary' => isset($_POST['pantawid_beneficiary']) && $_POST['pantawid_beneficiary'] == 1 ? 1 : 0,
 
-            // Assets
-            'asset_house' => isset($_POST['asset_house']) ? 1 : 0,
-            'asset_house_lot' => isset($_POST['asset_house_lot']) ? 1 : 0,
-            'asset_farmland' => isset($_POST['asset_farmland']) ? 1 : 0,
-            'asset_commercial' => isset($_POST['asset_commercial']) ? 1 : 0,
-            'asset_lot' => isset($_POST['asset_lot']) ? 1 : 0,
-            'asset_fishpond' => isset($_POST['asset_fishpond']) ? 1 : 0,
-            'asset_others' => isset($_POST['asset_others']) ? 1 : 0,
-            'asset_others_specify' => trim($_POST['asset_others_specify'] ?? ''),
+                // Assets
+                'asset_house' => isset($_POST['asset_house']) ? 1 : 0,
+                'asset_house_lot' => isset($_POST['asset_house_lot']) ? 1 : 0,
+                'asset_farmland' => isset($_POST['asset_farmland']) ? 1 : 0,
+                'asset_commercial' => isset($_POST['asset_commercial']) ? 1 : 0,
+                'asset_lot' => isset($_POST['asset_lot']) ? 1 : 0,
+                'asset_fishpond' => isset($_POST['asset_fishpond']) ? 1 : 0,
+                'asset_others' => isset($_POST['asset_others']) ? 1 : 0,
+                'asset_others_specify' => trim($_POST['asset_others_specify'] ?? ''),
 
-            // Income Sources
-            'income_own_earnings' => isset($_POST['income_own_earnings']) ? 1 : 0,
-            'income_own_pension' => isset($_POST['income_own_pension']) ? 1 : 0,
-            'income_own_pension_amount' => trim($_POST['income_own_pension_amount'] ?? ''),
-            'income_stocks' => isset($_POST['income_stocks']) ? 1 : 0,
-            'income_dependent_children' => isset($_POST['income_dependent_children']) ? 1 : 0,
-            'income_spouse_salary' => isset($_POST['income_spouse_salary']) ? 1 : 0,
-            'income_insurance' => isset($_POST['income_insurance']) ? 1 : 0,
-            'income_spouse_pension' => isset($_POST['income_spouse_pension']) ? 1 : 0,
-            'income_spouse_pension_amount' => trim($_POST['income_spouse_pension_amount'] ?? ''),
-            'income_rentals' => isset($_POST['income_rentals']) ? 1 : 0,
-            'income_savings' => isset($_POST['income_savings']) ? 1 : 0,
-            'income_livestock' => isset($_POST['income_livestock']) ? 1 : 0,
-            'income_others' => isset($_POST['income_others']) ? 1 : 0,
-            'income_others_specify' => trim($_POST['income_others_specify'] ?? ''),
+                // Income Sources
+                'income_own_earnings' => isset($_POST['income_own_earnings']) ? 1 : 0,
+                'income_own_pension' => isset($_POST['income_own_pension']) ? 1 : 0,
+                'income_own_pension_amount' => trim($_POST['income_own_pension_amount'] ?? ''),
+                'income_stocks' => isset($_POST['income_stocks']) ? 1 : 0,
+                'income_dependent_children' => isset($_POST['income_dependent_children']) ? 1 : 0,
+                'income_spouse_salary' => isset($_POST['income_spouse_salary']) ? 1 : 0,
+                'income_insurance' => isset($_POST['income_insurance']) ? 1 : 0,
+                'income_spouse_pension' => isset($_POST['income_spouse_pension']) ? 1 : 0,
+                'income_spouse_pension_amount' => trim($_POST['income_spouse_pension_amount'] ?? ''),
+                'income_rentals' => isset($_POST['income_rentals']) ? 1 : 0,
+                'income_savings' => isset($_POST['income_savings']) ? 1 : 0,
+                'income_livestock' => isset($_POST['income_livestock']) ? 1 : 0,
+                'income_others' => isset($_POST['income_others']) ? 1 : 0,
+                'income_others_specify' => trim($_POST['income_others_specify'] ?? ''),
 
-            // Problems - Economic
-            'problem_loss_income' => isset($_POST['problem_loss_income']) ? 1 : 0,
-            'problem_lack_income' => isset($_POST['problem_lack_income']) ? 1 : 0,
-            'problem_high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
-            'problem_skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
-            'problem_skills_training_specify' => trim($_POST['problem_skills_training_specify'] ?? ''),
-            'problem_livelihood' => isset($_POST['problem_livelihood']) ? 1 : 0,
-            'problem_livelihood_specify' => trim($_POST['problem_livelihood_specify'] ?? ''),
-            'problem_economic_others' => isset($_POST['problem_economic_others']) ? 1 : 0,
-            'problem_economic_others_specify' => trim($_POST['problem_economic_others_specify'] ?? ''),
+                // Problems - Economic
+                'problem_loss_income' => isset($_POST['problem_loss_income']) ? 1 : 0,
+                'problem_lack_income' => isset($_POST['problem_lack_income']) ? 1 : 0,
+                'problem_high_cost_living' => isset($_POST['problem_high_cost_living']) ? 1 : 0,
+                'problem_skills_training' => isset($_POST['problem_skills_training']) ? 1 : 0,
+                'problem_skills_training_specify' => trim($_POST['problem_skills_training_specify'] ?? ''),
+                'problem_livelihood' => isset($_POST['problem_livelihood']) ? 1 : 0,
+                'problem_livelihood_specify' => trim($_POST['problem_livelihood_specify'] ?? ''),
+                'problem_economic_others' => isset($_POST['problem_economic_others']) ? 1 : 0,
+                'problem_economic_others_specify' => trim($_POST['problem_economic_others_specify'] ?? ''),
 
-            // Problems - Social
-            'problem_loneliness' => isset($_POST['problem_loneliness']) ? 1 : 0,
-            'problem_helplessness' => isset($_POST['problem_helplessness']) ? 1 : 0,
-            'problem_neglect_rejection' => isset($_POST['problem_neglect_rejection']) ? 1 : 0,
-            'problem_recreational' => isset($_POST['problem_recreational']) ? 1 : 0,
-            'problem_senior_friendly' => isset($_POST['problem_senior_friendly']) ? 1 : 0,
-            'problem_social_others' => isset($_POST['problem_social_others']) ? 1 : 0,
-            'problem_social_others_specify' => trim($_POST['problem_social_others_specify'] ?? ''),
+                // Problems - Social
+                'problem_loneliness' => isset($_POST['problem_loneliness']) ? 1 : 0,
+                'problem_helplessness' => isset($_POST['problem_helplessness']) ? 1 : 0,
+                'problem_neglect_rejection' => isset($_POST['problem_neglect_rejection']) ? 1 : 0,
+                'problem_recreational' => isset($_POST['problem_recreational']) ? 1 : 0,
+                'problem_senior_friendly' => isset($_POST['problem_senior_friendly']) ? 1 : 0,
+                'problem_social_others' => isset($_POST['problem_social_others']) ? 1 : 0,
+                'problem_social_others_specify' => trim($_POST['problem_social_others_specify'] ?? ''),
 
-            // Problems - Health
-            'problem_condition_illness' => isset($_POST['problem_condition_illness']) ? 1 : 0,
-            'problem_condition_illness_specify' => trim($_POST['problem_condition_illness_specify'] ?? ''),
-            'problem_high_cost_medicine' => isset($_POST['problem_high_cost_medicine']) ? 1 : 0,
-            'problem_lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) ? 1 : 0,
-            'problem_lack_sanitation' => isset($_POST['problem_lack_sanitation']) ? 1 : 0,
-            'problem_lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) ? 1 : 0,
-            'problem_inadequate_health_services' => isset($_POST['problem_inadequate_health_services']) ? 1 : 0,
-            'problem_health_others' => isset($_POST['problem_health_others']) ? 1 : 0,
-            'problem_health_others_specify' => trim($_POST['problem_health_others_specify'] ?? ''),
+                // Problems - Health
+                'problem_condition_illness' => isset($_POST['problem_condition_illness']) ? 1 : 0,
+                'problem_condition_illness_specify' => trim($_POST['problem_condition_illness_specify'] ?? ''),
+                'problem_high_cost_medicine' => isset($_POST['problem_high_cost_medicine']) ? 1 : 0,
+                'problem_lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) ? 1 : 0,
+                'problem_lack_sanitation' => isset($_POST['problem_lack_sanitation']) ? 1 : 0,
+                'problem_lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) ? 1 : 0,
+                'problem_inadequate_health_services' => isset($_POST['problem_inadequate_health_services']) ? 1 : 0,
+                'problem_health_others' => isset($_POST['problem_health_others']) ? 1 : 0,
+                'problem_health_others_specify' => trim($_POST['problem_health_others_specify'] ?? ''),
 
-            // Problems - Housing
-            'problem_overcrowding' => isset($_POST['problem_overcrowding']) ? 1 : 0,
-            'problem_no_permanent_housing' => isset($_POST['problem_no_permanent_housing']) ? 1 : 0,
-            'problem_independent_living' => isset($_POST['problem_independent_living']) ? 1 : 0,
-            'problem_lost_privacy' => isset($_POST['problem_lost_privacy']) ? 1 : 0,
-            'problem_squatters' => isset($_POST['problem_squatters']) ? 1 : 0,
-            'problem_housing_others' => isset($_POST['problem_housing_others']) ? 1 : 0,
-            'problem_housing_others_specify' => trim($_POST['problem_housing_others_specify'] ?? ''),
+                // Problems - Housing
+                'problem_overcrowding' => isset($_POST['problem_overcrowding']) ? 1 : 0,
+                'problem_no_permanent_housing' => isset($_POST['problem_no_permanent_housing']) ? 1 : 0,
+                'problem_independent_living' => isset($_POST['problem_independent_living']) ? 1 : 0,
+                'problem_lost_privacy' => isset($_POST['problem_lost_privacy']) ? 1 : 0,
+                'problem_squatters' => isset($_POST['problem_squatters']) ? 1 : 0,
+                'problem_high_rent' => isset($_POST['problem_high_rent']) ? 1 : 0,
+                'problem_housing_others' => isset($_POST['problem_housing_others']) ? 1 : 0,
+                'problem_housing_others_specify' => trim($_POST['problem_housing_others_specify'] ?? ''),
 
-            // Problems - Community Service
-            'problem_desire_participate' => isset($_POST['problem_desire_participate']) ? 1 : 0,
-            'problem_skills_to_share' => isset($_POST['problem_skills_to_share']) ? 1 : 0,
-            'problem_community_others' => isset($_POST['problem_community_others']) ? 1 : 0,
-            'problem_community_others_specify' => trim($_POST['problem_community_others_specify'] ?? ''),
+                // Problems - Community Service
+                'problem_desire_participate' => isset($_POST['problem_desire_participate']) ? 1 : 0,
+                'problem_skills_to_share' => isset($_POST['problem_skills_to_share']) ? 1 : 0,
+                'problem_community_others' => isset($_POST['problem_community_others']) ? 1 : 0,
+                'problem_community_others_specify' => trim($_POST['problem_community_others_specify'] ?? ''),
 
-            // F. Other Specific Needs
-            'other_specific_needs' => trim($_POST['other_specific_needs'] ?? ''),
+                // F. Other Specific Needs
+                'other_specific_needs' => trim($_POST['other_specific_needs'] ?? ''),
 
-            // Health Conditions and Maintenance
-            'health_condition' => trim($_POST['problem_condition_illness_specify'] ?? ''),
-            'has_maintenance' => isset($_POST['problem_with_maintenance']) && $_POST['problem_with_maintenance'] === 'YES' ? 1 : 0,
-            'maintenance_details' => trim($_POST['problem_with_maintenance_specify'] ?? ''),
-            'high_cost_medicines' => isset($_POST['problem_high_cost_medicine']) && $_POST['problem_high_cost_medicine'] == 1 ? 1 : 0,
-            'lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) && $_POST['problem_lack_medical_professionals'] == 1 ? 1 : 0,
-            'lack_sanitation_access' => isset($_POST['problem_lack_sanitation']) && $_POST['problem_lack_sanitation'] == 1 ? 1 : 0,
-            'lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) && $_POST['problem_lack_health_insurance'] == 1 ? 1 : 0,
-            'lack_medical_facilities' => isset($_POST['problem_lack_medical_facilities']) && $_POST['problem_lack_medical_facilities'] == 1 ? 1 : 0,
-            'other_health_concerns' => trim($_POST['problem_health_others_specify'] ?? ''),
+                // Health Conditions and Maintenance
+                'health_condition' => trim($_POST['problem_condition_illness_specify'] ?? ''),
+                'has_maintenance' => isset($_POST['problem_with_maintenance']) && $_POST['problem_with_maintenance'] === 'YES' ? 1 : 0,
+                'maintenance_details' => trim($_POST['problem_with_maintenance_specify'] ?? ''),
+                'high_cost_medicines' => isset($_POST['problem_high_cost_medicine']) && $_POST['problem_high_cost_medicine'] == 1 ? 1 : 0,
+                'lack_medical_professionals' => isset($_POST['problem_lack_medical_professionals']) && $_POST['problem_lack_medical_professionals'] == 1 ? 1 : 0,
+                'lack_sanitation_access' => isset($_POST['problem_lack_sanitation']) && $_POST['problem_lack_sanitation'] == 1 ? 1 : 0,
+                'lack_health_insurance' => isset($_POST['problem_lack_health_insurance']) && $_POST['problem_lack_health_insurance'] == 1 ? 1 : 0,
+                'lack_medical_facilities' => isset($_POST['problem_lack_medical_facilities']) && $_POST['problem_lack_medical_facilities'] == 1 ? 1 : 0,
+                'other_health_concerns' => trim($_POST['problem_health_others_specify'] ?? ''),
 
-            // Health Concerns
-            'health_high_blood' => isset($_POST['health_high_blood']) ? 1 : 0,
-            'health_diabetes' => isset($_POST['health_diabetes']) ? 1 : 0,
-            'health_heart' => isset($_POST['health_heart']) ? 1 : 0,
-            'health_arthritis' => isset($_POST['health_arthritis']) ? 1 : 0,
-            'health_respiratory' => isset($_POST['health_respiratory']) ? 1 : 0,
-            'health_vision' => isset($_POST['health_vision']) ? 1 : 0,
-            'health_hearing' => isset($_POST['health_hearing']) ? 1 : 0,
-            'health_dental' => isset($_POST['health_dental']) ? 1 : 0,
-            'health_mental' => isset($_POST['health_mental']) ? 1 : 0,
-            'health_mobility' => isset($_POST['health_mobility']) ? 1 : 0,
-            'health_chronic_pain' => isset($_POST['health_chronic_pain']) ? 1 : 0,
-            'health_medication' => isset($_POST['health_medication']) ? 1 : 0,
-            'health_nutrition' => isset($_POST['health_nutrition']) ? 1 : 0,
-            'health_sleep' => isset($_POST['health_sleep']) ? 1 : 0,
-            'health_others' => isset($_POST['health_others']) ? 1 : 0,
-            'health_others_specify' => trim($_POST['health_others_specify'] ?? ''),
-            'purok_id' => $_POST['purok_id'] ?? '',
-        ];
+                // Health Concerns
+                'health_high_blood' => isset($_POST['health_high_blood']) ? 1 : 0,
+                'health_diabetes' => isset($_POST['health_diabetes']) ? 1 : 0,
+                'health_heart' => isset($_POST['health_heart']) ? 1 : 0,
+                'health_arthritis' => isset($_POST['health_arthritis']) ? 1 : 0,
+                'health_respiratory' => isset($_POST['health_respiratory']) ? 1 : 0,
+                'health_vision' => isset($_POST['health_vision']) ? 1 : 0,
+                'health_hearing' => isset($_POST['health_hearing']) ? 1 : 0,
+                'health_dental' => isset($_POST['health_dental']) ? 1 : 0,
+                'health_mental' => isset($_POST['health_mental']) ? 1 : 0,
+                'health_mobility' => isset($_POST['health_mobility']) ? 1 : 0,
+                'health_chronic_pain' => isset($_POST['health_chronic_pain']) ? 1 : 0,
+                'health_medication' => isset($_POST['health_medication']) ? 1 : 0,
+                'health_nutrition' => isset($_POST['health_nutrition']) ? 1 : 0,
+                'health_sleep' => isset($_POST['health_sleep']) ? 1 : 0,
+                'health_others' => isset($_POST['health_others']) ? 1 : 0,
+                'health_others_specify' => trim($_POST['health_others_specify'] ?? ''),
+                'purok_id' => $_POST['purok_id'] ?? '',
+            ];
 
-        // Add family member data as arrays
-        if (isset($_POST['family_member_name']) && is_array($_POST['family_member_name'])) {
-            $data['family_member_name'] = $_POST['family_member_name'];
-            $data['family_member_relationship'] = $_POST['family_member_relationship'] ?? [];
-            $data['family_member_age'] = $_POST['family_member_age'] ?? [];
-            $data['family_member_civil_status'] = $_POST['family_member_civil_status'] ?? [];
-            $data['family_member_occupation'] = $_POST['family_member_occupation'] ?? [];
-            $data['family_member_income'] = $_POST['family_member_income'] ?? [];
-        }
-
-        // Store form data for repopulation
-        $form_data = $data;
-
-        // Basic validation
-        $validation_errors = [];
-
-        if (empty($data['first_name'])) {
-            $validation_errors[] = "First name is required.";
-        }
-
-        if (empty($data['last_name'])) {
-            $validation_errors[] = "Last name is required.";
-        }
-
-        if (empty($data['birth_date'])) {
-            $validation_errors[] = "Birth date is required.";
-        } elseif (!strtotime($data['birth_date'])) {
-            $validation_errors[] = "Invalid birth date format.";
-        }
-
-        if (empty($data['birth_place'])) {
-            $validation_errors[] = "Birth place is required.";
-        }
-
-        if (empty($data['gender'])) {
-            $validation_errors[] = "Gender is required.";
-        }
-
-        if (empty($data['civil_status'])) {
-            $validation_errors[] = "Civil status is required.";
-        }
-
-        // Household ID is optional, but if specified, relationship must be provided
-        if (!empty($data['household_id']) && empty($data['relationship'])) {
-            $validation_errors[] = "Relationship to household head is required when household is specified.";
-        }
-
-        if (!empty($validation_errors)) {
-            $add_error = implode("<br>", $validation_errors);
-        } else {
-            // Use the saveResident function to add the resident
-            $result = saveResident($pdo, $data, $barangay_id);
-
-            if ($result['success']) {
-                $add_success = $result['message'];
-                // Clear form data on success
-                $form_data = [];
-
-                // Refresh the residents list
-                $stmt = $pdo->prepare("
-                    SELECT 
-                        p.*, 
-                        h.id AS household_id, 
-                        hm.relationship_type_id,
-                        rt.name as relationship_name,
-                        hm.is_household_head,
-                        CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
-                        TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
-                    FROM persons p
-                    JOIN household_members hm ON p.id = hm.person_id
-                    JOIN households h ON hm.household_id = h.id
-                    JOIN barangay b ON h.barangay_id = b.id
-                    LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
-                    LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
-                    WHERE h.barangay_id = ?
-                    ORDER BY p.last_name, p.first_name
-                ");
-                $stmt->execute([$barangay_id]);
-                $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            } else {
-                $add_error = $result['message'];
+            // Add family member data as arrays
+            if (isset($_POST['family_member_name']) && is_array($_POST['family_member_name'])) {
+                $data['family_member_name'] = $_POST['family_member_name'];
+                $data['family_member_relationship'] = $_POST['family_member_relationship'] ?? [];
+                $data['family_member_age'] = $_POST['family_member_age'] ?? [];
+                $data['family_member_civil_status'] = $_POST['family_member_civil_status'] ?? [];
+                $data['family_member_occupation'] = $_POST['family_member_occupation'] ?? [];
+                $data['family_member_income'] = $_POST['family_member_income'] ?? [];
             }
+
+            // Store form data for repopulation
+            $form_data = $data;
+
+            // Basic validation
+            $validation_errors = [];
+
+            if (empty($data['first_name'])) {
+                $validation_errors[] = "First name is required.";
+            }
+
+            if (empty($data['last_name'])) {
+                $validation_errors[] = "Last name is required.";
+            }
+
+            if (empty($data['birth_date'])) {
+                $validation_errors[] = "Birth date is required.";
+            } elseif (!strtotime($data['birth_date'])) {
+                $validation_errors[] = "Invalid birth date format.";
+            }
+
+            if (empty($data['birth_place'])) {
+                $validation_errors[] = "Birth place is required.";
+            }
+
+            if (empty($data['gender'])) {
+                $validation_errors[] = "Gender is required.";
+            }
+
+            if (empty($data['civil_status'])) {
+                $validation_errors[] = "Civil status is required.";
+            }
+
+            // Household ID is optional, but if specified, relationship must be provided
+            if (!empty($data['household_id']) && empty($data['relationship'])) {
+                $validation_errors[] = "Relationship to household head is required when household is specified.";
+            }
+
+            if (!empty($validation_errors)) {
+                $add_error = implode("<br>", $validation_errors);
+            } else {
+                // Use the saveResident function to add the resident
+                $result = saveResident($pdo, $data, $barangay_id);
+
+                if ($result['success']) {
+                    $add_success = $result['message'];
+                    // Clear form data on success
+                    $form_data = [];
+
+                    // Refresh the residents list
+                    $stmt = $pdo->prepare("
+                        SELECT 
+                            p.*, 
+                            h.id AS household_id, 
+                            hm.relationship_type_id,
+                            rt.name as relationship_name,
+                            hm.is_household_head,
+                            CONCAT(a.house_no, ' ', a.street, ', ', b.name) as address,
+                            TIMESTAMPDIFF(YEAR, p.birth_date, CURDATE()) as age
+                        FROM persons p
+                        JOIN household_members hm ON p.id = hm.person_id
+                        JOIN households h ON hm.household_id = h.id
+                        JOIN barangay b ON h.barangay_id = b.id
+                        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = 1
+                        LEFT JOIN relationship_types rt ON hm.relationship_type_id = rt.id
+                        WHERE h.barangay_id = ?
+                        ORDER BY p.last_name, p.first_name
+                    ");
+                    $stmt->execute([$barangay_id]);
+                    $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                } else {
+                    $add_error = $result['message'];
+                }
+            }
+        } catch (Exception $e) {
+            $add_error = "An error occurred while saving the resident data: " . $e->getMessage();
+            error_log("Error saving resident: " . $e->getMessage());
         }
-    } catch (Exception $e) {
-        $add_error = "An error occurred while saving the resident data: " . $e->getMessage();
-        error_log("Error saving resident: " . $e->getMessage());
     }
 }
 
@@ -590,6 +611,16 @@ function isCheckboxChecked($form_data, $key)
             const form = document.getElementById('residentForm');
             if (form) {
                 form.addEventListener('submit', function(e) {
+                    <?php if (!$can_manage_census): ?>
+                        e.preventDefault();
+                        Swal.fire({
+                            icon: 'error',
+                            title: 'Permission Denied',
+                            text: 'You do not have permission to save resident data.',
+                            confirmButtonColor: '#3085d6'
+                        });
+                        return false;
+                    <?php endif; ?>
                     if (!validateHouseholdFields()) {
                         e.preventDefault();
                     }
@@ -633,6 +664,7 @@ function isCheckboxChecked($form_data, $key)
 
             <!-- Navigation Buttons -->
             <div class="flex flex-wrap gap-4 mb-6">
+                <?php // Conditionally show "Add Resident" if this page is also for listing, or based on $can_manage_census ?>
                 <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                     Add Resident
                 </a>
@@ -655,16 +687,31 @@ function isCheckboxChecked($form_data, $key)
 
         <!-- Regular Resident Form -->
         <div id="add-resident" class="tab-content active bg-white rounded-lg shadow-sm p-6 mb-8">
-            <h2 class="text-3xl font-bold text-blue-800">Add New Resident</h2>
+            <h2 class="text-3xl font-bold text-blue-800"><?= isset($_GET['edit']) ? 'Edit Resident' : 'Add New Resident' ?></h2>
+            <?php if (!$can_manage_census && isset($_GET['edit'])): ?>
+                <div class="error-message">You have view-only access. Changes cannot be saved.</div>
+            <?php elseif (!$can_manage_census && !isset($_GET['edit'])): ?>
+                 <div class="error-message">You do not have permission to add new residents.</div>
+                 <?php 
+                 // Hide the form or parts of it if user cannot manage and is not editing (i.e., cannot add)
+                 // For simplicity, the form below will be shown, but the submit button will be disabled/hidden.
+                 ?>
+            <?php endif; ?>
+
             <div class="mb-6">
                 <label class="block text-sm font-medium mb-2">Resident Type</label>
-                <select id="residentTypeSelect" name="resident_type" class="border rounded p-2 w-full md:w-1/3 uppercase" form="residentForm">
+                <select id="residentTypeSelect" name="resident_type" class="border rounded p-2 w-full md:w-1/3 uppercase" form="residentForm" <?= !$can_manage_census ? 'disabled' : '' ?>>
                     <option value="REGULAR" <?= isSelected('REGULAR', $form_data, 'resident_type') ?: 'selected' ?>>REGULAR</option>
                     <option value="SENIOR" <?= isSelected('SENIOR', $form_data, 'resident_type') ?>>SENIOR CITIZEN</option>
                     <option value="PWD" <?= isSelected('PWD', $form_data, 'resident_type') ?>>PERSON WITH DISABILITY (PWD)</option>
                 </select>
             </div>
             <form method="POST" class="grid grid-cols-1 md:grid-cols-3 gap-4" id="residentForm" autocomplete="off">
+                <!-- Add a hidden field for edit ID if applicable -->
+                <?php if (isset($_GET['edit']) && is_numeric($_GET['edit'])): ?>
+                    <input type="hidden" name="edit_id" value="<?= htmlspecialchars($_GET['edit']) ?>">
+                <?php endif; ?>
+
                 <!-- Column 1: Basic Personal Information -->
                 <div class="space-y-4">
                     <h3 class="font-semibold text-lg">Basic Information</h3>
@@ -673,25 +720,25 @@ function isCheckboxChecked($form_data, $key)
                     <div>
                         <label class="block text-sm font-medium">First Name *</label>
                         <input type="text" name="first_name" required value="<?= getFormValue('first_name', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium">Middle Name</label>
                         <input type="text" name="middle_name" value="<?= getFormValue('middle_name', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium">Last Name *</label>
                         <input type="text" name="last_name" required value="<?= getFormValue('last_name', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium">Suffix</label>
                         <input type="text" name="suffix" placeholder="Jr, Sr, III, etc." value="<?= getFormValue('suffix', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" maxlength="5">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" maxlength="5" <?= !$can_manage_census ? 'readonly' : '' ?>>
                     </div>
 
                     <!-- Citizenship -->
@@ -709,7 +756,7 @@ function isCheckboxChecked($form_data, $key)
                             class="mt-1 block w-full border rounded p-2"
                             pattern="[0-9]{11}"
                             title="Please enter a valid 11-digit phone number"
-                            oninput="this.value = this.value.replace(/[^0-9]/g, '')">
+                            oninput="this.value = this.value.replace(/[^0-9]/g, '')" <?= !$can_manage_census ? 'readonly' : '' ?>>
                         <p class="text-xs text-gray-500 mt-1">Format: 11-digit number (e.g. 09123456789)</p>
                     </div>
                 </div>
@@ -722,7 +769,7 @@ function isCheckboxChecked($form_data, $key)
                     <div>
                         <label class="block text-sm font-medium">Date of Birth *</label>
                         <input type="date" name="birth_date" id="birth_date" required value="<?= getFormValue('birth_date', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2" onchange="calculateAge()">
+                            class="mt-1 block w-full border rounded p-2" onchange="calculateAge()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                     </div>
 
                     <div>
@@ -735,7 +782,7 @@ function isCheckboxChecked($form_data, $key)
                     <div>
                         <label class="block text-sm font-medium">Place of Birth *</label>
                         <input type="text" name="birth_place" required value="<?= getFormValue('birth_place', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                     </div>
 
                     <!-- Gender -->
@@ -744,12 +791,12 @@ function isCheckboxChecked($form_data, $key)
                         <div class="flex gap-4">
                             <label class="inline-flex items-center">
                                 <input type="radio" name="gender" value="MALE" required <?= isChecked('MALE', $form_data, 'gender') ?>
-                                    class="form-radio">
+                                    class="form-radio" <?= !$can_manage_census ? 'disabled' : '' ?>>
                                 <span class="ml-2">MALE</span>
                             </label>
                             <label class="inline-flex items-center">
                                 <input type="radio" name="gender" value="FEMALE" <?= isChecked('FEMALE', $form_data, 'gender') ?>
-                                    class="form-radio">
+                                    class="form-radio" <?= !$can_manage_census ? 'disabled' : '' ?>>
                                 <span class="ml-2">FEMALE</span>
                             </label>
                         </div>
@@ -758,7 +805,7 @@ function isCheckboxChecked($form_data, $key)
                     <!-- Civil Status -->
                     <div>
                         <label class="block text-sm font-medium">Civil Status *</label>
-                        <select name="civil_status" required class="mt-1 block w-full border rounded p-2">
+                        <select name="civil_status" required class="mt-1 block w-full border rounded p-2" <?= !$can_manage_census ? 'disabled' : '' ?>>
                             <option value="">-- SELECT CIVIL STATUS --</option>
                             <option value="SINGLE" <?= isSelected('SINGLE', $form_data, 'civil_status') ?>>SINGLE</option>
                             <option value="MARRIED" <?= isSelected('MARRIED', $form_data, 'civil_status') ?>>MARRIED</option>
@@ -770,7 +817,7 @@ function isCheckboxChecked($form_data, $key)
                     <!-- Religion -->
                     <div>
                         <label class="block text-sm font-medium">Religion</label>
-                        <select name="religion" class="mt-1 block w-full border rounded p-2">
+                        <select name="religion" class="mt-1 block w-full border rounded p-2" <?= !$can_manage_census ? 'disabled' : '' ?>>
                             <option value="">-- SELECT RELIGION --</option>
                             <option value="ROMAN CATHOLIC" <?= isSelected('ROMAN CATHOLIC', $form_data, 'religion') ?>>ROMAN CATHOLIC</option>
                             <option value="PROTESTANT" <?= isSelected('PROTESTANT', $form_data, 'religion') ?>>PROTESTANT</option>
@@ -788,12 +835,12 @@ function isCheckboxChecked($form_data, $key)
 
                 <!-- Column 3: Socio-Economic Information -->
                 <div class="space-y-4">
-                    <h3 class="font-semibold text-lg">Socio-Economic Profile</h3>
+                     <h3 class="font-semibold text-lg">Socio-Economic Profile</h3>
 
                     <!-- Educational Attainment -->
                     <div>
                         <label class="block text-sm font-medium">Educational Attainment</label>
-                        <select name="education_level" class="mt-1 block w-full border rounded p-2">
+                        <select name="education_level" class="mt-1 block w-full border rounded p-2" <?= !$can_manage_census ? 'disabled' : '' ?>>
                             <option value="">-- SELECT EDUCATION LEVEL --</option>
                             <option value="NOT ATTENDED ANY SCHOOL" <?= isSelected('NOT ATTENDED ANY SCHOOL', $form_data, 'education_level') ?>>NOT ATTENDED ANY SCHOOL</option>
                             <option value="ELEMENTARY LEVEL" <?= isSelected('ELEMENTARY LEVEL', $form_data, 'education_level') ?>>ELEMENTARY LEVEL</option>
@@ -811,12 +858,12 @@ function isCheckboxChecked($form_data, $key)
                     <div>
                         <label class="block text-sm font-medium">Occupation</label>
                         <input type="text" name="occupation" value="<?= getFormValue('occupation', $form_data) ?>"
-                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                            class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                     </div>
 
                     <div>
                         <label class="block text-sm font-medium">Monthly Income</label>
-                        <select name="monthly_income" class="mt-1 block w-full border rounded p-2">
+                        <select name="monthly_income" class="mt-1 block w-full border rounded p-2" <?= !$can_manage_census ? 'disabled' : '' ?>>
                             <option value="">-- SELECT INCOME RANGE --</option>
                             <option value="0" <?= isSelected('0', $form_data, 'monthly_income') ?>>NO INCOME</option>
                             <option value="999" <?= isSelected('999', $form_data, 'monthly_income') ?>>₱999 & BELOW</option>
@@ -858,13 +905,13 @@ function isCheckboxChecked($form_data, $key)
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
                                 <input type="text" name="present_house_no" required value="<?= getFormValue('present_house_no', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
                                 <input type="text" name="present_street" required value="<?= getFormValue('present_street', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
 
@@ -912,13 +959,13 @@ function isCheckboxChecked($form_data, $key)
                             <div>
                                 <label class="block text-sm font-medium">House No.</label>
                                 <input type="text" name="permanent_house_no" required value="<?= getFormValue('permanent_house_no', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Street</label>
                                 <input type="text" name="permanent_street" required value="<?= getFormValue('permanent_street', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
 
@@ -927,25 +974,25 @@ function isCheckboxChecked($form_data, $key)
                                 <label class="block text-sm font-medium">Barangay</label>
                                 <input type="text" name="permanent_barangay" required
                                     value="<?= getFormValue('permanent_barangay', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">City/Municipality</label>
                                 <input type="text" name="permanent_municipality" required value="<?= getFormValue('permanent_municipality', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Province</label>
                                 <input type="text" name="permanent_province" required value="<?= getFormValue('permanent_province', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div>
                                 <label class="block text-sm font-medium">Region</label>
                                 <input type="text" name="permanent_region" required value="<?= getFormValue('permanent_region', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                         </div>
                     </div>
@@ -957,7 +1004,7 @@ function isCheckboxChecked($form_data, $key)
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                         <div>
                             <label class="block text-sm font-medium">Purok</label>
-                            <select name="purok_id" required class="mt-1 block w-full border rounded p-2">
+                            <select name="purok_id" required class="mt-1 block w-full border rounded p-2" <?= !$can_manage_census ? 'disabled' : '' ?>>
                                 <option value="">-- SELECT PUROK --</option>
                                 <?php foreach ($puroks as $purok): ?>
                                     <option value="<?= htmlspecialchars($purok['id']) ?>"
@@ -970,7 +1017,7 @@ function isCheckboxChecked($form_data, $key)
 
                         <div>
                             <label class="block text-sm font-medium">Household Number (Optional)</label>
-                            <select name="household_id" id="household_id_select" required class="mt-1 block w-full border rounded p-2">
+                            <select name="household_id" id="household_id_select" required class="mt-1 block w-full border rounded p-2" <?= !$can_manage_census ? 'disabled' : '' ?>>
                                 <option value="">-- SELECT HOUSEHOLD --</option>
                                 <?php foreach ($households as $household): ?>
                                     <option value="<?= htmlspecialchars($household['household_id']) ?>"
@@ -985,7 +1032,7 @@ function isCheckboxChecked($form_data, $key)
 
                         <div>
                             <label class="block text-sm font-medium">Relationship to Head</label>
-                            <select name="relationship" required class="mt-1 block w-full border rounded p-2">
+                            <select name="relationship" required class="mt-1 block w-full border rounded p-2" <?= !$can_manage_census ? 'disabled' : '' ?>>
                                 <option value="">-- SELECT RELATIONSHIP --</option>
                                 <option value="HEAD" <?= isSelected('HEAD', $form_data, 'relationship') ?>>HEAD</option>
                                 <option value="SPOUSE" <?= isSelected('SPOUSE', $form_data, 'relationship') ?>>SPOUSE</option>
@@ -1001,7 +1048,7 @@ function isCheckboxChecked($form_data, $key)
                         <div class="flex items-center">
                             <label class="inline-flex items-center">
                                 <input type="checkbox" name="is_household_head" value="1"
-                                    <?= isCheckboxChecked($form_data, 'is_household_head') ?> class="form-checkbox">
+                                    <?= isCheckboxChecked($form_data, 'is_household_head') ?> class="form-checkbox" <?= !$can_manage_census ? 'disabled' : '' ?>>
                                 <span class="ml-2 text-sm font-medium">Is Household Head</span>
                             </label>
                         </div>
@@ -1039,38 +1086,38 @@ function isCheckboxChecked($form_data, $key)
                             <div>
                                 <label class="block text-sm font-medium">OSCA ID Number</label>
                                 <input type="text" name="osca_id" value="<?= getFormValue('osca_id', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">GSIS ID Number</label>
                                 <input type="text" name="gsis_id" value="<?= getFormValue('gsis_id', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">SSS ID Number</label>
                                 <input type="text" name="sss_id" value="<?= getFormValue('sss_id', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">TIN ID Number</label>
                                 <input type="text" name="tin_id" value="<?= getFormValue('tin_id', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                             <div>
                                 <label class="block text-sm font-medium">PhilHealth ID Number</label>
                                 <input type="text" name="philhealth_id" value="<?= getFormValue('philhealth_id', $form_data) ?>"
-                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                             <div class="grid grid-cols-2 gap-2">
                                 <div>
                                     <label class="block text-sm font-medium">Other ID Type</label>
                                     <input type="text" name="other_id_type" value="<?= getFormValue('other_id_type', $form_data) ?>"
-                                        class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                                 <div>
                                     <label class="block text-sm font-medium">Other ID Number</label>
                                     <input type="text" name="other_id_number" value="<?= getFormValue('other_id_number', $form_data) ?>"
-                                        class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="mt-1 block w-full border rounded p-2 uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                             </div>
                         </div>
@@ -1094,7 +1141,7 @@ function isCheckboxChecked($form_data, $key)
                                 </label>
                                 <input type="text" name="income_own_pension_amount" placeholder="Amount"
                                     value="<?= getFormValue('income_own_pension_amount', $form_data) ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div>
@@ -1132,7 +1179,7 @@ function isCheckboxChecked($form_data, $key)
                                 </label>
                                 <input type="text" name="income_spouse_pension_amount" placeholder="Amount"
                                     value="<?= getFormValue('income_spouse_pension_amount', $form_data) ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div class="flex items-center gap-2">
@@ -1142,7 +1189,7 @@ function isCheckboxChecked($form_data, $key)
                                 </label>
                                 <input type="text" name="income_others_specify" placeholder="Specify"
                                     value="<?= getFormValue('income_others_specify', $form_data) ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
 
                             <div>
@@ -1224,9 +1271,11 @@ function isCheckboxChecked($form_data, $key)
                             </table>
                         </div>
 
+                        <?php if ($can_manage_census): ?>
                         <button type="button" id="addFamilyMember" class="mt-2 px-3 py-1 bg-blue-500 text-white rounded-md text-sm">
                             Add Family Member
                         </button>
+                        <?php endif; ?>
                     </div>
 
                     <!-- Assets & Properties -->
@@ -1276,7 +1325,7 @@ function isCheckboxChecked($form_data, $key)
                                 </label>
                                 <input type="text" name="asset_others_specify" placeholder="Specify"
                                     value="<?= getFormValue('asset_others_specify', $form_data) ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                         </div>
                     </div>
@@ -1346,7 +1395,7 @@ function isCheckboxChecked($form_data, $key)
                                 </label>
                                 <input type="text" name="living_others_specify" placeholder="Specify"
                                     value="<?= getFormValue('living_others_specify', $form_data) ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                         </div>
                     </div>
@@ -1434,7 +1483,7 @@ function isCheckboxChecked($form_data, $key)
                                 </label>
                                 <input type="text" name="skill_others_specify" placeholder="Specify"
                                     value="<?= getFormValue('skill_others_specify', $form_data) ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                         </div>
                     </div>
@@ -1516,7 +1565,7 @@ function isCheckboxChecked($form_data, $key)
                                 </label>
                                 <input type="text" name="involvement_others_specify" placeholder="Specify"
                                     value="<?= getFormValue('involvement_others_specify', $form_data) ?>"
-                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                    class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                             </div>
                         </div>
                     </div>
@@ -1548,7 +1597,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_skills_training_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_skills_training_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <label class="inline-flex items-center whitespace-nowrap">
@@ -1557,7 +1606,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_livelihood_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_livelihood_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                                 <div class="flex items-center gap-2">
                                     <label class="inline-flex items-center whitespace-nowrap">
@@ -1566,7 +1615,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_economic_others_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_economic_others_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                             </div>
                         </div>
@@ -1612,7 +1661,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_social_others_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_social_others_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                             </div>
                         </div>
@@ -1628,7 +1677,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_condition_illness_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_condition_illness_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
 
                                 <div class="flex items-center gap-2">
@@ -1641,7 +1690,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_with_maintenance_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_with_maintenance_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                     <label class="inline-flex items-center ml-2">
                                         <input type="radio" name="problem_with_maintenance" value="NO" <?= isChecked('NO', $form_data, 'problem_with_maintenance') ?> class="form-radio">
                                         <span class="ml-1 text-sm">NO</span>
@@ -1694,7 +1743,7 @@ function isCheckboxChecked($form_data, $key)
                                             </label>
                                             <input type="text" name="problem_health_others_specify" placeholder="Specify"
                                                 value="<?= getFormValue('problem_health_others_specify', $form_data) ?>"
-                                                class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                                class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                         </div>
                                     </div>
                                 </div>
@@ -1748,7 +1797,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_housing_others_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_housing_others_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                             </div>
                         </div>
@@ -1776,7 +1825,7 @@ function isCheckboxChecked($form_data, $key)
                                     </label>
                                     <input type="text" name="problem_community_others_specify" placeholder="Specify"
                                         value="<?= getFormValue('problem_community_others_specify', $form_data) ?>"
-                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()">
+                                        class="flex-1 border rounded p-1 text-sm uppercase" oninput="this.value = this.value.toUpperCase()" <?= !$can_manage_census ? 'readonly' : '' ?>>
                                 </div>
                             </div>
                         </div>
@@ -1793,10 +1842,16 @@ function isCheckboxChecked($form_data, $key)
                         <!-- Health Concerns and Service Needs sections removed -->
 
                         <!-- Submit Button -->
-                        <div class="mt-8 flex justify-center">
+                        <div class="mt-8 flex justify-center md:col-span-3">
+                            <?php if ($can_manage_census): ?>
                             <button type="submit" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg shadow-lg transition-colors">
                                 Save Resident
                             </button>
+                            <?php else: ?>
+                            <button type="button" class="px-8 py-3 bg-gray-400 text-white font-bold rounded-lg shadow-lg cursor-not-allowed" disabled>
+                                Save Resident (Permission Denied)
+                            </button>
+                            <?php endif; ?>
                         </div>
                     </div>
             </form>
@@ -2120,6 +2175,9 @@ function isCheckboxChecked($form_data, $key)
             // Same as Present Address checkbox functionality
             const sameAsPresentCheckbox = document.getElementById('sameAsPresent');
             if (sameAsPresentCheckbox) {
+                <?php if (!$can_manage_census): ?>
+                    sameAsPresentCheckbox.disabled = true;
+                <?php endif; ?>
                 sameAsPresentCheckbox.addEventListener('change', function() {
                     if (this.checked) {
                         // Copy present address fields to permanent address fields
@@ -2156,7 +2214,27 @@ function isCheckboxChecked($form_data, $key)
 
                 const purokSelect = document.querySelector('select[name="purok_id"]');
                 const householdSelect = document.getElementById('household_id_select');
-                const originalOption = householdSelect.querySelector('option[value=""]');
+                
+                <?php if (!$can_manage_census): ?>
+                    if(purokSelect) purokSelect.disabled = true;
+                    if(householdSelect) householdSelect.disabled = true;
+                    // Disable all relevant form inputs if not $can_manage_census
+                    document.querySelectorAll('#residentForm input, #residentForm select, #residentForm textarea').forEach(el => {
+                        if (el.type !== 'hidden' && el.name !== 'resident_type' /* already handled */) { // resident_type select is handled above
+                           // el.readOnly = true; // For text inputs
+                           // el.disabled = true; // For selects, radios, checkboxes
+                           // A more robust way is to add readonly for inputs and disabled for selects/checkboxes/radios
+                           if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'date' || el.type === 'number' || el.type === 'email' || el.type === 'tel')) {
+                               el.readOnly = true;
+                           } else if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'))) {
+                               el.disabled = true;
+                           }
+                        }
+                    });
+                <?php endif; ?>
+
+
+                const originalOption = householdSelect ? householdSelect.querySelector('option[value=""]') : null;
 
                 function updateHouseholdOptions() {
                     const purokId = purokSelect.value;
@@ -2181,5 +2259,4 @@ function isCheckboxChecked($form_data, $key)
         });
     </script>
 </body>
-
 </html>

@@ -3,6 +3,25 @@ require "../config/dbconn.php";
 require "../functions/manage_census.php";
 require_once "../components/header.php";
 
+// --- ROLE RESTRICTION LOGIC (copy from manage_census.php) ---
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$current_admin_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+$current_role_id = isset($_SESSION['role_id']) ? (int)$_SESSION['role_id'] : null;
+$barangay_id = isset($_SESSION['barangay_id']) ? (int)$_SESSION['barangay_id'] : null;
+
+$census_full_access_roles = [1, 2, 3, 9]; // Programmer, Super Admin, Captain, Health Worker
+$census_view_only_roles = [4, 5, 6, 7];   // Secretary, Treasurer, Councilor, Chairperson
+
+$can_manage_census = in_array($current_role_id, $census_full_access_roles);
+$can_view_census = $can_manage_census || in_array($current_role_id, $census_view_only_roles);
+
+if ($current_admin_id === null || !$can_view_census) {
+    header("Location: ../pages/login.php");
+    exit;
+}
+
 // Use the real household ID from the household_members table (not just the household's auto-increment id)
 $stmt = $pdo->prepare("
     SELECT 

@@ -2,6 +2,27 @@
 require "../config/dbconn.php";
 require_once "../components/header.php";
 
+// --- ROLE RESTRICTION LOGIC (copy from manage_census.php) ---
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$current_admin_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+$current_role_id = isset($_SESSION['role_id']) ? (int)$_SESSION['role_id'] : null;
+$barangay_id = isset($_SESSION['barangay_id']) ? (int)$_SESSION['barangay_id'] : null;
+
+$census_full_access_roles = [1, 2, 3, 9]; // Programmer, Super Admin, Captain, Health Worker
+$census_view_only_roles = [4, 5, 6, 7];   // Secretary, Treasurer, Councilor, Chairperson
+
+$can_manage_census = in_array($current_role_id, $census_full_access_roles);
+$can_view_census = $can_manage_census || in_array($current_role_id, $census_view_only_roles);
+
+if ($current_admin_id === null || !$can_view_census) {
+    header("Location: ../pages/login.php");
+    exit;
+}
+
+$household_id = $_GET['id'] ?? '';
+
 // Fetch households for selection
 $stmt = $pdo->prepare("
     SELECT h.id AS household_id, h.purok_id, p.name as purok_name, h.household_number
@@ -21,246 +42,250 @@ $puroks = $stmt->fetchAll(PDO::FETCH_ASSOC);
 $add_error = '';
 $add_success = '';
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $first_name   = trim($_POST['first_name'] ?? '');
-    $middle_name  = trim($_POST['middle_name'] ?? '');
-    $last_name    = trim($_POST['last_name'] ?? '');
-    $suffix       = trim($_POST['suffix'] ?? '');
-    $birth_date   = $_POST['birth_date'] ?? '';
-    $gender       = $_POST['gender'] ?? '';
-    $civil_status = $_POST['civil_status'] ?? 'Single';
-    $citizenship  = trim($_POST['citizenship'] ?? 'Filipino');
-    $household_id = $_POST['household_id'] ?? '';
-    $relationship = $_POST['relationship'] ?? '';
-    $is_household_head = isset($_POST['is_household_head']) ? 1 : 0;
+    if (!$can_manage_census) {
+        $add_error = "You do not have permission to add child data.";
+    } else {
+        $first_name   = trim($_POST['first_name'] ?? '');
+        $middle_name  = trim($_POST['middle_name'] ?? '');
+        $last_name    = trim($_POST['last_name'] ?? '');
+        $suffix       = trim($_POST['suffix'] ?? '');
+        $birth_date   = $_POST['birth_date'] ?? '';
+        $gender       = $_POST['gender'] ?? '';
+        $civil_status = $_POST['civil_status'] ?? 'Single';
+        $citizenship  = trim($_POST['citizenship'] ?? 'Filipino');
+        $household_id = $_POST['household_id'] ?? '';
+        $relationship = $_POST['relationship'] ?? '';
+        $is_household_head = isset($_POST['is_household_head']) ? 1 : 0;
 
-    // ID Information
-    $id_type = trim($_POST['id_type'] ?? '');
-    $id_number = trim($_POST['id_number'] ?? '');
+        // ID Information
+        $id_type = trim($_POST['id_type'] ?? '');
+        $id_number = trim($_POST['id_number'] ?? '');
 
-    // Household Information
-    $region = trim($_POST['region'] ?? '');
-    $barangay = trim($_POST['barangay'] ?? '');
+        // Household Information
+        $region = trim($_POST['region'] ?? '');
+        $barangay = trim($_POST['barangay'] ?? '');
 
-    // Personal Information
-    $place_of_birth = trim($_POST['place_of_birth'] ?? '');
-    $address_number = trim($_POST['address_number'] ?? '');
-    $address_street = trim($_POST['address_street'] ?? '');
-    $address_sitio = trim($_POST['address_sitio'] ?? '');
-    $address_city = trim($_POST['address_city'] ?? '');
-    $address_province = trim($_POST['address_province'] ?? '');
+        // Personal Information
+        $place_of_birth = trim($_POST['place_of_birth'] ?? '');
+        $address_number = trim($_POST['address_number'] ?? '');
+        $address_street = trim($_POST['address_street'] ?? '');
+        $address_sitio = trim($_POST['address_sitio'] ?? '');
+        $address_city = trim($_POST['address_city'] ?? '');
+        $address_province = trim($_POST['address_province'] ?? '');
 
-    // Educational Information
-    $attending_school = $_POST['attending_school'] ?? '0';
-    $school_type = $_POST['school_type'] ?? 'Not Attending';
-    $school_name = trim($_POST['school_name'] ?? '');
-    $grade_level = trim($_POST['grade_level'] ?? '');
-    $occupation = trim($_POST['occupation'] ?? '');
+        // Educational Information
+        $attending_school = $_POST['attending_school'] ?? '0';
+        $school_type = $_POST['school_type'] ?? 'Not Attending';
+        $school_name = trim($_POST['school_name'] ?? '');
+        $grade_level = trim($_POST['grade_level'] ?? '');
+        $occupation = trim($_POST['occupation'] ?? '');
 
-    // Health Information
-    $is_malnourished = isset($_POST['is_malnourished']) ? ($_POST['is_malnourished'] === '1') : false;
-    $is_immunized = isset($_POST['is_immunized']) ? ($_POST['is_immunized'] === '1') : false;
-    $garantisadong_pambata = isset($_POST['garantisadong_pambata']) ? ($_POST['garantisadong_pambata'] === '1') : false;
-    $operation_timbang = isset($_POST['operation_timbang']) ? ($_POST['operation_timbang'] === '1') : false;
-    $supplementary_feeding = isset($_POST['supplementary_feeding']) ? ($_POST['supplementary_feeding'] === '1') : false;
-    $under_six_years = isset($_POST['under_six_years']) ? ($_POST['under_six_years'] === '1') : false;
-    $grade_school = isset($_POST['grade_school']) ? ($_POST['grade_school'] === '1') : false;
+        // Health Information
+        $is_malnourished = isset($_POST['is_malnourished']) ? ($_POST['is_malnourished'] === '1') : false;
+        $is_immunized = isset($_POST['is_immunized']) ? ($_POST['is_immunized'] === '1') : false;
+        $garantisadong_pambata = isset($_POST['garantisadong_pambata']) ? ($_POST['garantisadong_pambata'] === '1') : false;
+        $operation_timbang = isset($_POST['operation_timbang']) ? ($_POST['operation_timbang'] === '1') : false;
+        $supplementary_feeding = isset($_POST['supplementary_feeding']) ? ($_POST['supplementary_feeding'] === '1') : false;
+        $under_six_years = isset($_POST['under_six_years']) ? ($_POST['under_six_years'] === '1') : false;
+        $grade_school = isset($_POST['grade_school']) ? ($_POST['grade_school'] === '1') : false;
 
-    // Diseases
-    $has_malaria = isset($_POST['has_malaria']) ? ($_POST['has_malaria'] === '1') : false;
-    $has_dengue = isset($_POST['has_dengue']) ? ($_POST['has_dengue'] === '1') : false;
-    $has_pneumonia = isset($_POST['has_pneumonia']) ? ($_POST['has_pneumonia'] === '1') : false;
-    $has_tuberculosis = isset($_POST['has_tuberculosis']) ? ($_POST['has_tuberculosis'] === '1') : false;
-    $has_diarrhea = isset($_POST['has_diarrhea']) ? ($_POST['has_diarrhea'] === '1') : false;
+        // Diseases
+        $has_malaria = isset($_POST['has_malaria']) ? ($_POST['has_malaria'] === '1') : false;
+        $has_dengue = isset($_POST['has_dengue']) ? ($_POST['has_dengue'] === '1') : false;
+        $has_pneumonia = isset($_POST['has_pneumonia']) ? ($_POST['has_pneumonia'] === '1') : false;
+        $has_tuberculosis = isset($_POST['has_tuberculosis']) ? ($_POST['has_tuberculosis'] === '1') : false;
+        $has_diarrhea = isset($_POST['has_diarrhea']) ? ($_POST['has_diarrhea'] === '1') : false;
 
-    // Child Welfare Status
-    $caring_institution = isset($_POST['caring_institution']) ? ($_POST['caring_institution'] === '1') : false;
-    $foster_care = isset($_POST['foster_care']) ? ($_POST['foster_care'] === '1') : false;
-    $directly_entrusted = isset($_POST['directly_entrusted']) ? ($_POST['directly_entrusted'] === '1') : false;
-    $legally_adopted = isset($_POST['legally_adopted']) ? ($_POST['legally_adopted'] === '1') : false;
-    // Disability
-    $visually_impaired = isset($_POST['visually_impaired']) ? ($_POST['visually_impaired'] === '1') : false;
-    $hearing_impaired = isset($_POST['hearing_impaired']) ? ($_POST['hearing_impaired'] === '1') : false;
-    $speech_impaired = isset($_POST['speech_impaired']) ? ($_POST['speech_impaired'] === '1') : false;
-    $orthopedic_disability = isset($_POST['orthopedic_disability']) ? ($_POST['orthopedic_disability'] === '1') : false;
-    $intellectual_disability = isset($_POST['intellectual_disability']) ? ($_POST['intellectual_disability'] === '1') : false;
-    $psychosocial_disability = isset($_POST['psychosocial_disability']) ? ($_POST['psychosocial_disability'] === '1') : false;
+        // Child Welfare Status
+        $caring_institution = isset($_POST['caring_institution']) ? ($_POST['caring_institution'] === '1') : false;
+        $foster_care = isset($_POST['foster_care']) ? ($_POST['foster_care'] === '1') : false;
+        $directly_entrusted = isset($_POST['directly_entrusted']) ? ($_POST['directly_entrusted'] === '1') : false;
+        $legally_adopted = isset($_POST['legally_adopted']) ? ($_POST['legally_adopted'] === '1') : false;
+        // Disability
+        $visually_impaired = isset($_POST['visually_impaired']) ? ($_POST['visually_impaired'] === '1') : false;
+        $hearing_impaired = isset($_POST['hearing_impaired']) ? ($_POST['hearing_impaired'] === '1') : false;
+        $speech_impaired = isset($_POST['speech_impaired']) ? ($_POST['speech_impaired'] === '1') : false;
+        $orthopedic_disability = isset($_POST['orthopedic_disability']) ? ($_POST['orthopedic_disability'] === '1') : false;
+        $intellectual_disability = isset($_POST['intellectual_disability']) ? ($_POST['intellectual_disability'] === '1') : false;
+        $psychosocial_disability = isset($_POST['psychosocial_disability']) ? ($_POST['psychosocial_disability'] === '1') : false;
 
-    // Certification Fields
-    $form_accomplisher = trim($_POST['form_accomplisher'] ?? '');
-    $date_accomplished = $_POST['date_accomplished'] ?? date('Y-m-d');
-    $attested_by = trim($_POST['attested_by'] ?? '');
+        // Certification Fields
+        $form_accomplisher = trim($_POST['form_accomplisher'] ?? '');
+        $date_accomplished = $_POST['date_accomplished'] ?? date('Y-m-d');
+        $attested_by = trim($_POST['attested_by'] ?? '');
 
-    // Validate required fields
-    $required = [
-        'First Name' => $first_name,
-        'Last Name' => $last_name,
-        'Birth Date' => $birth_date,
-        'Gender' => $gender,
-        'Purok' => $_POST['purok_id'] ?? '',
-        'Household Number' => $_POST['household_id'] ?? ''
-    ];
-    foreach ($required as $label => $val) {
-        if (!$val) $add_error .= "$label is required.<br>";
-    }
-
-    // Validate age (0-17 years)
-    if ($birth_date) {
-        $birth_date_obj = new DateTime($birth_date);
-        $today = new DateTime();
-        $age = $today->diff($birth_date_obj)->y;
-
-        if ($age < 0 || $age > 17) {
-            $add_error .= "Only children aged 0-17 years old are allowed.<br>";
+        // Validate required fields
+        $required = [
+            'First Name' => $first_name,
+            'Last Name' => $last_name,
+            'Birth Date' => $birth_date,
+            'Gender' => $gender,
+            'Purok' => $_POST['purok_id'] ?? '',
+            'Household Number' => $_POST['household_id'] ?? ''
+        ];
+        foreach ($required as $label => $val) {
+            if (!$val) $add_error .= "$label is required.<br>";
         }
-    }
 
-    // Check if household exists only if a household ID was provided
-    if (!empty($household_id)) {
-        $household_exists = false;
-        foreach ($households as $h) {
-            if ($h['household_id'] == $household_id) $household_exists = true;
-        }
-        if (!$household_exists) $add_error .= "Selected household does not exist.<br>";
-    }
+        // Validate age (0-17 years)
+        if ($birth_date) {
+            $birth_date_obj = new DateTime($birth_date);
+            $today = new DateTime();
+            $age = $today->diff($birth_date_obj)->y;
 
-    if (!$add_error) {
-        try {
-            $pdo->beginTransaction();
-
-            // Insert into persons
-            $stmt = $pdo->prepare("INSERT INTO persons 
-                (first_name, middle_name, last_name, suffix, birth_date, birth_place, gender, civil_status, citizenship)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([
-                $first_name,
-                $middle_name,
-                $last_name,
-                $suffix,
-                $birth_date,
-                $place_of_birth,
-                $gender,
-                $civil_status,
-                $citizenship
-            ]);
-            $person_id = $pdo->lastInsertId();
-
-            // Insert ID information if provided
-            if (!empty($id_type) || !empty($id_number)) {
-                $stmt = $pdo->prepare("INSERT INTO person_identification 
-                    (person_id, other_id_type, other_id_number)
-                    VALUES (?, ?, ?)");
-                $stmt->execute([
-                    $person_id,
-                    $id_type,
-                    $id_number
-                ]);
+            if ($age < 0 || $age > 17) {
+                $add_error .= "Only children aged 0-17 years old are allowed.<br>";
             }
+        }
 
-            // Insert address information
-            $stmt = $pdo->prepare("INSERT INTO addresses 
-                (person_id, barangay_id, house_no, street, phase, municipality, province, region, is_primary)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([
-                $person_id,
-                $_SESSION['barangay_id'],
-                $address_number,
-                $address_street,
-                $address_sitio,
-                'SAN RAFAEL',
-                'BULACAN',
-                'III',
-                true
-            ]);
+        // Check if household exists only if a household ID was provided
+        if (!empty($household_id)) {
+            $household_exists = false;
+            foreach ($households as $h) {
+                if ($h['household_id'] == $household_id) $household_exists = true;
+            }
+            if (!$household_exists) $add_error .= "Selected household does not exist.<br>";
+        }
 
-            // Insert into household_members (if household_id is provided)
-            if (!empty($household_id)) {
-                // First, get the relationship_type_id based on the relationship name
-                $stmt = $pdo->prepare("SELECT id FROM relationship_types WHERE name = ?");
-                $stmt->execute([$relationship]);
-                $relationship_type = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$add_error) {
+            try {
+                $pdo->beginTransaction();
 
-                if ($relationship_type) {
-                    $stmt = $pdo->prepare("INSERT INTO household_members 
-                        (household_id, person_id, relationship_type_id, is_household_head)
-                        VALUES (?, ?, ?, ?)");
+                // Insert into persons
+                $stmt = $pdo->prepare("INSERT INTO persons 
+                    (first_name, middle_name, last_name, suffix, birth_date, birth_place, gender, civil_status, citizenship)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([
+                    $first_name,
+                    $middle_name,
+                    $last_name,
+                    $suffix,
+                    $birth_date,
+                    $place_of_birth,
+                    $gender,
+                    $civil_status,
+                    $citizenship
+                ]);
+                $person_id = $pdo->lastInsertId();
+
+                // Insert ID information if provided
+                if (!empty($id_type) || !empty($id_number)) {
+                    $stmt = $pdo->prepare("INSERT INTO person_identification 
+                        (person_id, other_id_type, other_id_number)
+                        VALUES (?, ?, ?)");
                     $stmt->execute([
-                        $household_id,
                         $person_id,
-                        $relationship_type['id'],
-                        $is_household_head
+                        $id_type,
+                        $id_number
                     ]);
                 }
-            }
 
-            // Insert into child_information
-            $stmt = $pdo->prepare("INSERT INTO child_information 
-                (person_id, attending_school, is_malnourished, school_name, grade_level, school_type, 
-                immunization_complete, is_pantawid_beneficiary, has_timbang_operation, has_feeding_program,
-                has_supplementary_feeding, in_caring_institution, is_under_foster_care, is_directly_entrusted,
-                is_legally_adopted, occupation, garantisadong_pambata, under_six_years, grade_school)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
-            $stmt->execute([
-                $person_id,
-                $attending_school,
-                $is_malnourished ? 1 : 0,
-                $school_name,
-                $grade_level,
-                $school_type,
-                $is_immunized ? 1 : 0,
-                0, // is_pantawid_beneficiary - not in form
-                $operation_timbang ? 1 : 0,
-                0, // has_feeding_program - not in form
-                $supplementary_feeding ? 1 : 0,
-                $caring_institution ? 1 : 0,
-                $foster_care ? 1 : 0,
-                $directly_entrusted ? 1 : 0,
-                $legally_adopted ? 1 : 0,
-                $occupation,
-                $garantisadong_pambata ? 1 : 0,
-                $under_six_years ? 1 : 0,
-                $grade_school ? 1 : 0
-            ]);
+                // Insert address information
+                $stmt = $pdo->prepare("INSERT INTO addresses 
+                    (person_id, barangay_id, house_no, street, phase, municipality, province, region, is_primary)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([
+                    $person_id,
+                    $_SESSION['barangay_id'],
+                    $address_number,
+                    $address_street,
+                    $address_sitio,
+                    'SAN RAFAEL',
+                    'BULACAN',
+                    'III',
+                    true
+                ]);
 
-            // Insert health conditions
-            $health_conditions = [
-                'Malaria' => $has_malaria,
-                'Dengue' => $has_dengue,
-                'Pneumonia' => $has_pneumonia,
-                'Tuberculosis' => $has_tuberculosis,
-                'Diarrhea' => $has_diarrhea
-            ];
+                // Insert into household_members (if household_id is provided)
+                if (!empty($household_id)) {
+                    // First, get the relationship_type_id based on the relationship name
+                    $stmt = $pdo->prepare("SELECT id FROM relationship_types WHERE name = ?");
+                    $stmt->execute([$relationship]);
+                    $relationship_type = $stmt->fetch(PDO::FETCH_ASSOC);
 
-            $stmt = $pdo->prepare("INSERT INTO child_health_conditions (person_id, condition_type) VALUES (?, ?)");
-            foreach ($health_conditions as $condition => $has_condition) {
-                if ($has_condition && $has_condition !== '0' && $has_condition !== 0) {
-                    $stmt->execute([$person_id, $condition]);
+                    if ($relationship_type) {
+                        $stmt = $pdo->prepare("INSERT INTO household_members 
+                            (household_id, person_id, relationship_type_id, is_household_head)
+                            VALUES (?, ?, ?, ?)");
+                        $stmt->execute([
+                            $household_id,
+                            $person_id,
+                            $relationship_type['id'],
+                            $is_household_head
+                        ]);
+                    }
                 }
-            }
 
-            // Insert disabilities
-            $disabilities = [
-                'Blind/Visually Impaired' => $visually_impaired,
-                'Hearing Impairment' => $hearing_impaired,
-                'Speech/Communication' => $speech_impaired,
-                'Orthopedic/Physical' => $orthopedic_disability,
-                'Intellectual/Learning' => $intellectual_disability,
-                'Psychosocial' => $psychosocial_disability
-            ];
+                // Insert into child_information
+                $stmt = $pdo->prepare("INSERT INTO child_information 
+                    (person_id, attending_school, is_malnourished, school_name, grade_level, school_type, 
+                    immunization_complete, is_pantawid_beneficiary, has_timbang_operation, has_feeding_program,
+                    has_supplementary_feeding, in_caring_institution, is_under_foster_care, is_directly_entrusted,
+                    is_legally_adopted, occupation, garantisadong_pambata, under_six_years, grade_school)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+                $stmt->execute([
+                    $person_id,
+                    $attending_school,
+                    $is_malnourished ? 1 : 0,
+                    $school_name,
+                    $grade_level,
+                    $school_type,
+                    $is_immunized ? 1 : 0,
+                    0, // is_pantawid_beneficiary - not in form
+                    $operation_timbang ? 1 : 0,
+                    0, // has_feeding_program - not in form
+                    $supplementary_feeding ? 1 : 0,
+                    $caring_institution ? 1 : 0,
+                    $foster_care ? 1 : 0,
+                    $directly_entrusted ? 1 : 0,
+                    $legally_adopted ? 1 : 0,
+                    $occupation,
+                    $garantisadong_pambata ? 1 : 0,
+                    $under_six_years ? 1 : 0,
+                    $grade_school ? 1 : 0
+                ]);
 
-            $stmt = $pdo->prepare("INSERT INTO child_disabilities (person_id, disability_type) VALUES (?, ?)");
-            foreach ($disabilities as $disability => $has_disability) {
-                if ($has_disability && $has_disability !== '0' && $has_disability !== 0) {
-                    $stmt->execute([$person_id, $disability]);
+                // Insert health conditions
+                $health_conditions = [
+                    'Malaria' => $has_malaria,
+                    'Dengue' => $has_dengue,
+                    'Pneumonia' => $has_pneumonia,
+                    'Tuberculosis' => $has_tuberculosis,
+                    'Diarrhea' => $has_diarrhea
+                ];
+
+                $stmt = $pdo->prepare("INSERT INTO child_health_conditions (person_id, condition_type) VALUES (?, ?)");
+                foreach ($health_conditions as $condition => $has_condition) {
+                    if ($has_condition && $has_condition !== '0' && $has_condition !== 0) {
+                        $stmt->execute([$person_id, $condition]);
+                    }
                 }
-            }
 
-            $pdo->commit();
-            $add_success = "Child added successfully!";
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            $add_error = "Error adding child: " . htmlspecialchars($e->getMessage());
-            // Log the error for debugging
-            error_log("Error in add_child.php: " . $e->getMessage());
+                // Insert disabilities
+                $disabilities = [
+                    'Blind/Visually Impaired' => $visually_impaired,
+                    'Hearing Impairment' => $hearing_impaired,
+                    'Speech/Communication' => $speech_impaired,
+                    'Orthopedic/Physical' => $orthopedic_disability,
+                    'Intellectual/Learning' => $intellectual_disability,
+                    'Psychosocial' => $psychosocial_disability
+                ];
+
+                $stmt = $pdo->prepare("INSERT INTO child_disabilities (person_id, disability_type) VALUES (?, ?)");
+                foreach ($disabilities as $disability => $has_disability) {
+                    if ($has_disability && $has_disability !== '0' && $has_disability !== 0) {
+                        $stmt->execute([$person_id, $disability]);
+                    }
+                }
+
+                $pdo->commit();
+                $add_success = "Child added successfully!";
+            } catch (Exception $e) {
+                $pdo->rollBack();
+                $add_error = "Error adding child: " . htmlspecialchars($e->getMessage());
+                // Log the error for debugging
+                error_log("Error in add_child.php: " . $e->getMessage());
+            }
         }
     }
 }
@@ -340,7 +365,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
         <section id="add-child" class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800">CHILDREN 0-17 YEARS OLD</h2>
-            <form method="POST" class="space-y-8" autocomplete="off">
+            <?php if (!$can_manage_census): ?>
+                <div class="error-message bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    You do not have permission to add new children.
+                </div>
+            <?php endif; ?>
+            <form method="POST" class="space-y-8" autocomplete="off" id="addChildForm">
                 <!-- Household Information Section -->
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8 p-4 border border-gray-300 rounded-lg">
                     <div class="md:col-span-1">
@@ -881,10 +911,16 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         </div>
     </div>
     <div class="flex justify-center mt-6">
+        <?php if ($can_manage_census): ?>
         <button type="submit" class="w-full sm:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 
                font-medium rounded-lg text-lg px-8 py-3 transition duration-200">
             Save Child Data
         </button>
+        <?php else: ?>
+        <button type="button" class="w-full sm:w-auto text-white bg-gray-400 cursor-not-allowed rounded-lg text-lg px-8 py-3" disabled>
+            Save Child Data (Permission Denied)
+        </button>
+        <?php endif; ?>
     </div>
     </form>
     </section>
@@ -1130,6 +1166,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 });
             <?php endif; ?>
 
+            // Disable all form fields for view-only users
+            <?php if (!$can_manage_census): ?>
+            document.querySelectorAll('#addChildForm input, #addChildForm select, #addChildForm textarea, #addChildForm button[type="submit"]').forEach(el => {
+                if (el.type !== 'hidden') {
+                    if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'date' || el.type === 'number' || el.type === 'email' || el.type === 'tel')) {
+                        el.readOnly = true;
+                    } else if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'))) {
+                        el.disabled = true;
+                    }
+                }
+            });
+            <?php endif; ?>
+
             // Make all text inputs uppercase while typing
             const textInputs = document.querySelectorAll('input[type="text"]:not([readonly]), textarea');
             textInputs.forEach(input => {
@@ -1158,7 +1207,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                         // If it's a free-text select with an input field
                         const inputField = select.querySelector('input');
                         if (inputField) {
-                            inputField.value = inputField.value.toUpperCase();
+                          inputField.addEventListener('input', function() {
+                            this.value = this.value.toUpperCase();
+                          });
                         }
                     });
                 }
@@ -1166,5 +1217,4 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         });
     </script>
 </body>
-
 </html>
