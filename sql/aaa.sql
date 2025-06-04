@@ -856,6 +856,7 @@ CREATE TABLE temporary_records (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+ALTER TABLE temporary_records ADD COLUMN is_archived VARCHAR(50) DEFAULT FALSE AFTER days_residency;
 /*-------------------------------------------------------------
   SECTION 3: BARANGAY OPERATIONS & DOCUMENT REQUEST SYSTEM
   -------------------------------------------------------------*/
@@ -1207,6 +1208,14 @@ CREATE TABLE events (
     barangay_id INT NOT NULL,
     created_by_user_id INT NOT NULL,
     status ENUM('scheduled', 'ongoing', 'completed', 'postponed', 'cancelled') DEFAULT 'scheduled',
+    max_participants INT DEFAULT NULL,
+    registration_required BOOLEAN DEFAULT FALSE,
+    registration_deadline DATETIME DEFAULT NULL,
+    event_type ENUM('meeting', 'seminar', 'activity', 'celebration', 'emergency', 'other') DEFAULT 'other',
+    contact_person VARCHAR(100),
+    contact_number VARCHAR(20),
+    requirements TEXT,
+    notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE,
@@ -1278,8 +1287,8 @@ CREATE TABLE password_history (
 
 CREATE TABLE schedule_proposals (
     id INT PRIMARY KEY AUTO_INCREMENT,
-    blotter_case_id INT NOT NULL,
-    proposed_by_user_id INT NOT NULL,
+    blotter_case_id INT,
+    proposed_by_user_id INT,
     proposed_date DATE NOT NULL,
     proposed_time TIME NOT NULL,
     hearing_location VARCHAR(255) NOT NULL,
@@ -1440,7 +1449,7 @@ INSERT INTO users (email, password, role_id, barangay_id, first_name, last_name,
     ('neilardrey14@gmail.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 8, 32, 'Neil', 'Ardrey', 'Male', NOW(), TRUE),
     ('captain.pantubig@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 3, 18, 'Maria', 'Santos', 'Female', NOW(), TRUE),
     ('captain.caingin@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 3, 3, 'Roberto', 'Reyes', 'Male', NOW(), TRUE),
-    ('chiefOfficer.tambubong@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 3, 1, 'Ricardo', 'Morales', 'Male', NOW(), TRUE);
+    ('chiefOfficer.tambubong@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 7, 32, 'Ricardo', 'Morales', 'Male', NOW(), TRUE);
 
 -- Insert sample persons
 INSERT INTO persons (user_id, first_name, last_name, birth_date, birth_place, gender, civil_status) VALUES
@@ -1538,6 +1547,7 @@ INSERT INTO document_requests (person_id, user_id, document_type_id, barangay_id
     (13, NULL, 1, 32, 3, 'pending'),    -- Carlos Dela Cruz (no user account)
     (14, NULL, 3, 32, 3, 'pending'),    -- Elena Santos (no user account)
     (5, 5, 5, 32, 3, 'pending');        -- Test Resident (user_id=5)
+
 
 
 -- Insert Events
@@ -1727,6 +1737,30 @@ ALTER TABLE schedule_proposals
 ADD COLUMN chief_confirmed BOOLEAN DEFAULT FALSE AFTER captain_confirmed,
 ADD COLUMN chief_confirmed_at DATETIME NULL AFTER chief_confirmed,
 ADD COLUMN status_updated_at DATETIME NULL AFTER updated_at;
-
 ALTER TABLE schedule_proposals 
-MODIFY COLUMN status ENUM('proposed', 'user_confirmed', 'captain_confirmed', 'both_confirmed', 'conflict', 'pending_user_confirmation', 'pending_officer_confirmation', 'pending_captain_confirmation', 'cancelled', 'officer_conflict') NOT NULL DEFAULT 'proposed';
+ADD COLUMN chief_remarks TEXT NULL AFTER captain_remarks;
+ALTER TABLE schedule_proposals 
+MODIFY COLUMN status ENUM(
+    'proposed', 
+    'user_confirmed',
+    'captain_confirmed',
+    'both_confirmed',
+    'conflict',
+    'pending_user_confirmation',
+    'pending_captain_approval',  
+    'pending_chief_approval',    
+    'all_confirmed',                
+    'cancelled', 
+    'officer_conflict'
+) NOT NULL DEFAULT 'proposed';
+
+
+ALTER TABLE document_requests
+ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER business_type;
+
+ALTER TABLE document_requests
+MODIFY COLUMN status ENUM('pending','completed','rejected', 'processing', 'for_payment', 'archived') DEFAULT 'pending';
+
+ALTER TABLE custom_services
+ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER additional_notes,
+ADD COLUMN archived_at TIMESTAMP NULL DEFAULT NULL AFTER is_archived;

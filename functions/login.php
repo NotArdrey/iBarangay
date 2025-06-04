@@ -4,7 +4,10 @@
 // 1) Allow pop-ups under the same origin
 header("Cross-Origin-Opener-Policy: same-origin-allow-popups");
 
-session_start();
+// Only start session if one hasn't been started
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
 session_regenerate_id(true); // Regenerate session ID at the start
 require __DIR__ . "/../config/dbconn.php";
 
@@ -63,12 +66,124 @@ function isValidRole(PDO $pdo, int $role_id): bool
 }
 
 /**
+ * Get all accessible barangays for a user
+ */
+function getUserBarangays(PDO $pdo, int $user_id): array
+{
+    // First get the user's email
+    $emailStmt = $pdo->prepare("SELECT email FROM users WHERE id = ?");
+    $emailStmt->execute([$user_id]);
+    $userEmail = $emailStmt->fetchColumn();
+
+    if (!$userEmail) {
+        error_log("No email found for user ID: " . $user_id);
+        return [];
+    }
+
+    // Get all barangays where the user has person records
+    $stmt = $pdo->prepare("
+        SELECT DISTINCT 
+            b.id,
+            b.name,
+            CASE WHEN p.is_archived = TRUE THEN 'archived' ELSE 'active' END as status
+        FROM persons p
+        JOIN household_members hm ON p.id = hm.person_id
+        JOIN households h ON hm.household_id = h.id
+        JOIN barangay b ON h.barangay_id = b.id
+        WHERE p.user_id = ? 
+        OR EXISTS (
+            SELECT 1 
+            FROM users u 
+            WHERE u.email = ? 
+            AND (
+                u.id = p.user_id 
+                OR p.id IN (
+                    SELECT person_id 
+                    FROM persons 
+                    WHERE user_id = u.id
+                )
+            )
+        )
+        ORDER BY b.name
+    ");
+    
+    $stmt->execute([$user_id, $userEmail]);
+    $barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Debug log
+    error_log("User ID: " . $user_id . ", Email: " . $userEmail . " - Found barangays: " . print_r($barangays, true));
+    
+    return $barangays;
+}
+
+/**
+ * Update user's barangay_id when selecting a barangay
+ */
+function updateUserBarangay(PDO $pdo, int $user_id, int $barangay_id): bool
+{
+    try {
+        // First check if the barangay is archived
+        $checkStmt = $pdo->prepare("
+            SELECT p.is_archived 
+            FROM persons p
+            JOIN household_members hm ON p.id = hm.person_id
+            JOIN households h ON hm.household_id = h.id
+            WHERE h.barangay_id = ? 
+            AND p.user_id = ?
+            LIMIT 1
+        ");
+        $checkStmt->execute([$barangay_id, $user_id]);
+        $isArchived = $checkStmt->fetchColumn();
+
+        if ($isArchived) {
+            error_log("Cannot update to archived barangay: " . $barangay_id);
+            return false;
+        }
+
+        // Update the user's barangay_id
+        $updateStmt = $pdo->prepare("UPDATE users SET barangay_id = ? WHERE id = ?");
+        $updateStmt->execute([$barangay_id, $user_id]);
+
+        // Log the change
+        logAuditTrail(
+            $pdo,
+            $user_id,
+            "UPDATE",
+            "users",
+            $user_id,
+            "Updated barangay_id to " . $barangay_id
+        );
+
+        return true;
+    } catch (Exception $e) {
+        error_log("Error updating user barangay: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Check if user has any active records
+ */
+function hasActiveRecords(PDO $pdo, int $user_id): bool
+{
+    $stmt = $pdo->prepare("
+        SELECT COUNT(*) 
+        FROM persons p
+        JOIN household_members hm ON p.id = hm.person_id
+        JOIN households h ON hm.household_id = h.id
+        WHERE p.user_id = ? AND p.is_archived = FALSE
+    ");
+    $stmt->execute([$user_id]);
+    return (int)$stmt->fetchColumn() > 0;
+}
+
+/**
  * Get user's role and barangay information
  */
 function getUserRoleInfo(PDO $pdo, int $user_id): ?array
 {
     // First, check the direct role_id in the users table
-    $userRoleStmt = $pdo->prepare("SELECT role_id, barangay_id FROM users WHERE id = ? AND is_active = TRUE");
+    $userRoleStmt = $pdo->prepare("SELECT role_id FROM users WHERE id = ? AND is_active = TRUE");
     $userRoleStmt->execute([$user_id]);
     $userRole = $userRoleStmt->fetch(PDO::FETCH_ASSOC);
     
@@ -78,35 +193,33 @@ function getUserRoleInfo(PDO $pdo, int $user_id): ?array
         $roleNameStmt->execute([$userRole['role_id']]);
         $roleName = $roleNameStmt->fetch(PDO::FETCH_ASSOC);
         
-        // Get barangay name
-        $barangayName = null;
-        if ($userRole['barangay_id']) {
-            $barangayStmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
-            $barangayStmt->execute([$userRole['barangay_id']]);
-            $barangay = $barangayStmt->fetch(PDO::FETCH_ASSOC);
-            $barangayName = $barangay ? $barangay['name'] : null;
-        }
+        // Get all accessible barangays
+        $barangays = getUserBarangays($pdo, $user_id);
         
         return [
             'role_id' => $userRole['role_id'],
-            'barangay_id' => $userRole['barangay_id'],
-            'barangay_name' => $barangayName,
-            'role_name' => $roleName ? $roleName['name'] : 'unknown'
+            'role_name' => $roleName ? $roleName['name'] : 'unknown',
+            'accessible_barangays' => $barangays
         ];
     }
     
     // As fallback, check the user_roles table (previous method)
     $stmt = $pdo->prepare("
-        SELECT ur.role_id, ur.barangay_id, b.name as barangay_name, r.name as role_name
+        SELECT ur.role_id, r.name as role_name
         FROM user_roles ur
         JOIN roles r ON ur.role_id = r.id
-        LEFT JOIN barangay b ON ur.barangay_id = b.id
         WHERE ur.user_id = ? AND ur.is_active = TRUE
         ORDER BY ur.role_id
         LIMIT 1
     ");
     $stmt->execute([$user_id]);
     $result = $stmt->fetch(PDO::FETCH_ASSOC);
+    
+    if ($result) {
+        // Get all accessible barangays
+        $barangays = getUserBarangays($pdo, $user_id);
+        $result['accessible_barangays'] = $barangays;
+    }
     
     // Convert false to null to match the function's return type declaration
     return $result === false ? null : $result;
@@ -172,29 +285,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         $_SESSION['middle_name'] = $user['middle_name'] ?? '';
         $_SESSION['last_name'] = $user['last_name'] ?? '';
 
-        // Set barangay info if applicable
-        if ($roleInfo['barangay_id']) {
-            $_SESSION['barangay_id']   = $roleInfo['barangay_id'];
-            $_SESSION['barangay_name'] = $roleInfo['barangay_name'];
-        }
+        // Get and store accessible barangays
+        $barangays = getUserBarangays($pdo, $user['id']);
+        $_SESSION['accessible_barangays'] = $barangays;
+        
+        // Debug log
+        error_log("Setting accessible barangays in session: " . print_r($barangays, true));
 
-        // Update last login
-        $updateStmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
-        $updateStmt->execute([$user['id']]);
-
-        logAuditTrail(
-            $pdo,
-            $user['id'],
-            "LOGIN",
-            "users",
-            $user['id'],
-            "Email login"
-        );
-
-        header("Location: " . postLoginRedirect(
-            $roleInfo['role_id'],
-            $user['first_name'] ?? ''
-        ));
+        // Always redirect to barangay selection
+        header("Location: ../pages/select_barangay.php");
         exit;
     } catch (Exception $e) {
         $_SESSION['login_error'] = $e->getMessage();
@@ -328,6 +427,17 @@ if (stripos($contentType, "application/json") !== false) {
                 $_SESSION['barangay_name'] = $barangay['name'];
             }
 
+            // Store accessible barangays in session
+            if (!empty($roleInfo['accessible_barangays'])) {
+                $_SESSION['accessible_barangays'] = $roleInfo['accessible_barangays'];
+                
+                // If user has multiple barangay access, redirect to barangay selection page
+                if (count($roleInfo['accessible_barangays']) > 1) {
+                    header("Location: ../pages/select_barangay.php");
+                    exit;
+                }
+            }
+
             // Update last login
             $updateStmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
             $updateStmt->execute([$user['id']]);
@@ -362,7 +472,5 @@ if (stripos($contentType, "application/json") !== false) {
     }
 }
 
-// Fallback for any other request
-http_response_code(400);
-echo json_encode(['error' => 'Invalid request']);
-exit;
+// Remove the default error response
+// The file will now return normally for GET requests

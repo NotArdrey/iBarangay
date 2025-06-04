@@ -32,6 +32,16 @@ if ($user_id) {
 // NOW INCLUDE NAVBAR AFTER VARIABLES ARE SET
 require "../components/navbar.php";
 
+// Show archive notice if set
+if (isset($_SESSION['archive_notice'])) {
+    echo '<div class="alert alert-warning alert-dismissible fade show" role="alert">
+        <i class="fas fa-exclamation-triangle me-2"></i>
+        ' . htmlspecialchars($_SESSION['archive_notice']) . '
+        <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
+    </div>';
+    unset($_SESSION['archive_notice']);
+}
+
 $emergency_contacts = [
     'local_barangay_contact' => null,
     'pnp_contact' => null,
