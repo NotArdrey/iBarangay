@@ -40,8 +40,10 @@ INSERT INTO roles (name, description) VALUES
     ('barangay_secretary', 'Administrative official for barangay operations'),
     ('barangay_treasurer', 'Financial official for barangay funds'),
     ('barangay_councilor', 'Elected barangay council member'),
-    ('chief_officer', 'Leads specific barangay services'),
+    ('barangay_chairperson', 'Leads blottercases'),
+    ('health_worker''for census'),
     ('resident', 'Regular barangay resident');
+    
 
 -- Document types
 CREATE TABLE document_types (
@@ -856,7 +858,6 @@ CREATE TABLE temporary_records (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
-ALTER TABLE temporary_records ADD COLUMN is_archived VARCHAR(50) DEFAULT FALSE AFTER days_residency;
 /*-------------------------------------------------------------
   SECTION 3: BARANGAY OPERATIONS & DOCUMENT REQUEST SYSTEM
   -------------------------------------------------------------*/
@@ -1758,9 +1759,13 @@ MODIFY COLUMN status ENUM(
 ALTER TABLE document_requests
 ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER business_type;
 
+ALTER TABLE roles
 ALTER TABLE document_requests
 MODIFY COLUMN status ENUM('pending','completed','rejected', 'processing', 'for_payment', 'archived') DEFAULT 'pending';
 
 ALTER TABLE custom_services
 ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER additional_notes,
 ADD COLUMN archived_at TIMESTAMP NULL DEFAULT NULL AFTER is_archived;
+
+
+ALTER TABLE temporary_records ADD COLUMN is_archived VARCHAR(50) DEFAULT FALSE AFTER days_residency;
