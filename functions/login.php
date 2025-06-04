@@ -294,8 +294,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         error_log("Setting accessible barangays in session: " . print_r($barangays, true));
 
         // Always redirect to barangay selection
-        header("Location: ../pages/select_barangay.php");
-        exit;
+        if ($roleInfo['role_id'] === 9) {
+            header("Location: ../pages/select_barangay.php");
+            exit;
+        } else {
+            header("Location: " . getDashboardUrl($roleInfo['role_id']));
+            exit;
+        }
     } catch (Exception $e) {
         $_SESSION['login_error'] = $e->getMessage();
         header("Location: ../pages/login.php");
@@ -431,9 +436,8 @@ if (stripos($contentType, "application/json") !== false) {
             // Store accessible barangays in session
             if (!empty($roleInfo['accessible_barangays'])) {
                 $_SESSION['accessible_barangays'] = $roleInfo['accessible_barangays'];
-                
                 // If user has multiple barangay access, redirect to barangay selection page
-                if (count($roleInfo['accessible_barangays']) > 1) {
+                if ($roleInfo['role_id'] === 9 && count($roleInfo['accessible_barangays']) > 1) {
                     header("Location: ../pages/select_barangay.php");
                     exit;
                 }
@@ -462,6 +466,7 @@ if (stripos($contentType, "application/json") !== false) {
             )
         ]);
         exit;
+        
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();

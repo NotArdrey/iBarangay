@@ -1,4 +1,10 @@
 <?php
+// Error reporting configuration
+error_reporting(E_ALL);
+ini_set('display_errors', 0); // Don't display errors to browser
+ini_set('log_errors', 1);
+ini_set('error_log', __DIR__ . '/../logs/php_errors.log');
+
 ob_start(); // start output buffering to prevent header issues
 require_once "../config/dbconn.php";
 require_once "../components/header.php";
@@ -616,8 +622,17 @@ if (isset($_SESSION['success'])) {
 </div>
 </main>
 
+<!-- Move Chart.js here -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Check if Chart.js is loaded
+    if (typeof Chart === 'undefined') {
+        console.error('Chart.js not loaded');
+        return;
+    }
+
     // Chart.js default configuration
     Chart.defaults.font.family = 'system-ui, -apple-system, sans-serif';
     Chart.defaults.plugins.legend.position = 'bottom';
