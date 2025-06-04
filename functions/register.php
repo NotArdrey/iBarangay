@@ -54,12 +54,12 @@ if (isset($_GET['token'])) {
                 $mail->isSMTP();
                 $mail->Host       = 'smtp.gmail.com';
                 $mail->SMTPAuth   = true;
-                $mail->Username   = 'barangayhub2@gmail.com';
-                $mail->Password   = 'eisy hpjz rdnt bwrp';
+                $mail->Username   = 'ibarangay.system@gmail.com';
+                $mail->Password   = 'nxxn vxyb kxum cuvd';
                 $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                 $mail->Port       = 587;
 
-                $mail->setFrom('noreply@iBarangay.com', 'iBarangay System');
+                $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
                 $mail->addAddress($userEmail);
 
                 $mail->isHTML(true);
@@ -790,8 +790,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $mail->isSMTP();
                     $mail->Host       = 'smtp.gmail.com';
                     $mail->SMTPAuth   = true;
-                    $mail->Username   = 'barangayhub2@gmail.com';
-                    $mail->Password   = 'eisy hpjz rdnt bwrp';
+                    $mail->Username   = 'ibarangay.system@gmail.com';
+                    $mail->Password   = 'nxxn vxyb kxum cuvd';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;
 

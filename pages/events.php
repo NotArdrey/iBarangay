@@ -43,27 +43,6 @@ function logAuditTrail(
     ]);
 }
 
-
-function getEventNotificationTemplate(string $title, string $message, bool $isPostponed = false): string
-{
-    $status = $isPostponed ? 'POSTPONED' : 'NEW';
-    $color = $isPostponed ? '#dc2626' : '#059669';
-
-    return "
-    <div style='font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;'>
-        <div style='background-color: {$color}; color: white; padding: 15px; text-align: center; border-radius: 5px 5px 0 0;'>
-            <h2 style='margin: 0;'>{$status} EVENT</h2>
-        </div>
-        <div style='background-color: #f9fafb; padding: 20px; border: 1px solid #e5e7eb; border-radius: 0 0 5px 5px;'>
-            <h3 style='color: #1f2937; margin-top: 0;'>{$title}</h3>
-            <div style='color: #4b5563; white-space: pre-line;'>{$message}</div>
-            <div style='margin-top: 20px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 0.875rem;'>
-                This is an automated message from the iBarangay System. Please do not reply to this email.
-            </div>
-        </div>
-    </div>";
-}
-
 function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type): void
 {
     // Get all users in the barangay
@@ -90,8 +69,8 @@ function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type):
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
-        $mail->Username   = 'barangayhub2@gmail.com';
-        $mail->Password   = 'eisy hpjz rdnt bwrp';
+        $mail->Username   = 'ibarangay.system@gmail.com';
+        $mail->Password   = 'nxxn vxyb kxum cuvd';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
         $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
@@ -254,11 +233,8 @@ $stmt = $pdo->prepare("
         e.*, 
         p.first_name AS creator_first_name, 
         p.last_name AS creator_last_name
-        p.first_name AS creator_first_name, 
-        p.last_name AS creator_last_name
     FROM events e
     LEFT JOIN users u ON e.created_by_user_id = u.id
-    LEFT JOIN persons p ON u.id = p.user_id
     LEFT JOIN persons p ON u.id = p.user_id
     WHERE e.barangay_id = :bid 
     ORDER BY e.start_datetime DESC

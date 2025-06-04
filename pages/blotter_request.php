@@ -12,11 +12,11 @@ function configureMailer() {
     $mail->isSMTP();
     $mail->Host = 'smtp.gmail.com';
     $mail->SMTPAuth = true;
-    $mail->Username = 'barangayhub2@gmail.com';
-    $mail->Password = 'eisy hpjz rdnt bwrp';
+    $mail->Username = 'ibarangay.system@gmail.com';
+    $mail->Password = 'nxxn vxyb kxum cuvd';
     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
     $mail->Port = 587;
-    $mail->setFrom('noreply@ibarangay.com', 'iBarangay System');
+    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
     return $mail;
 }
 
@@ -171,20 +171,17 @@ function sendCaseFiledNotification($userEmail, $userName, $caseNumber, $caseDeta
         $mail->isSMTP();
         $mail->Host = 'smtp.gmail.com';
         $mail->SMTPAuth = true;
-        $mail->Username = 'barangayhub2@gmail.com';
-        $mail->Password = 'eisy hpjz rdnt bwrp';
+        $mail->Username = 'ibarangay.system@gmail.com';
+        $mail->Password = 'nxxn vxyb kxum cuvd';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = 587;
-        
-        $mail->setFrom('noreply@ibarangay.com', 'iBarangay System');
-        $mail->addAddress($userEmail, $userName);
-        $mail->isHTML(true);
-        
-        $mail->Subject = "Blotter Case Filed Successfully - Case #$caseNumber";
-        
-        $mail->Body = generateEmailTemplate($userName, $caseNumber, $caseDetails) .
-                      "<br><br><strong>Note:</strong> A schedule proposal will be sent soon. Please check your blotter status for confirmation.";
-        $mail->AltBody = generatePlainTextEmail($userName, $caseNumber, $caseDetails);
+        $mail->Port = 587; // Added port
+        $mail->setFrom('iBarangay@gmail.com', 'iBarangay System'); // Added setFrom
+        $mail->addAddress($userEmail); // Added addAddress
+
+        // Email content (assuming it's set before send)
+        $mail->isHTML(true); // Assuming HTML email
+        $mail->Subject = "Blotter Case Filed: " . $caseNumber; // Example subject
+        $mail->Body    = generateEmailTemplate($userName, $caseNumber, $caseDetails); // Example body
         
         return $mail->send();
     } catch (Exception $e) {
