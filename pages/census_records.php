@@ -3,6 +3,42 @@ require "../config/dbconn.php";
 require "../functions/manage_census.php";
 require_once "../components/header.php";
 
+// Start session if not already started
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Define User Roles (should ideally be in a central config file)
+if (!defined('ROLE_CAPTAIN')) define('ROLE_CAPTAIN', 3);
+if (!defined('ROLE_SECRETARY')) define('ROLE_SECRETARY', 4);
+if (!defined('ROLE_TREASURER')) define('ROLE_TREASURER', 5);
+if (!defined('ROLE_COUNCILOR')) define('ROLE_COUNCILOR', 6);
+if (!defined('ROLE_CHIEF')) define('ROLE_CHIEF', 7);
+if (!defined('ROLE_HEALTH_WORKER')) define('ROLE_HEALTH_WORKER', 9);
+
+// Check if user is logged in
+if (!isset($_SESSION['user_id'])) {
+    header('Location: login.php'); // Redirect to login if not logged in
+    exit;
+}
+
+$current_role_id = $_SESSION['role_id'] ?? 0;
+
+// Roles with full management access
+$canManageRoles = [ROLE_CAPTAIN, ROLE_CHAIRPERSON, ROLE_HEALTH_WORKER]; // Changed from ROLE_CHIEF
+// Roles with view access (includes management roles)
+$canViewRoles = [ROLE_CAPTAIN, ROLE_CHAIRPERSON, ROLE_HEALTH_WORKER, ROLE_SECRETARY, ROLE_TREASURER, ROLE_COUNCILOR]; // Changed from ROLE_CHIEF
+
+$hasFullAccess = in_array($current_role_id, $canManageRoles);
+$canViewPage = in_array($current_role_id, $canViewRoles);
+
+if (!$canViewPage) {
+    // Optionally, redirect to a dashboard or show an access denied message
+    echo "Access Denied. You do not have permission to view this page.";
+    // You might want to include a more user-friendly error page or redirect
+    exit;
+}
+
 // Use the real household ID from the household_members table (not just the household's auto-increment id)
 $stmt = $pdo->prepare("
     SELECT 
@@ -58,26 +94,24 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
 
     <!-- Navigation Buttons -->
     <div class="flex flex-wrap gap-4 mb-6">
+      <?php if ($hasFullAccess): ?>
       <a href="manage_census.php" class="inline-flex items-center px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
         Add Resident
       </a>
       <a href="add_child.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
         Add Child
       </a>
+      <?php endif; ?>
       <a href="census_records.php" class="inline-flex items-center px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
         Census Records
       </a>
+      <?php if ($hasFullAccess): ?>
       <a href="manage_households.php" class="inline-flex items-center px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
         Manage Households
       </a>
       <a href="manage_puroks.php" class="w-full sm:w-auto text-white bg-indigo-600 hover:bg-indigo-700 focus:ring-4 focus:ring-indigo-300 
                font-medium rounded-lg text-sm px-5 py-2.5">Manage Puroks</a>
-      <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
-        Temporary Records
-      </a>
-      <a href="archived_records.php" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
-        Archived Records
-      </a>
+      <?php endif; ?>
     </div>
 
     <section id="censusRecords" class="bg-white rounded-lg shadow-sm p-6">

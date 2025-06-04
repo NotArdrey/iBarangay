@@ -1,12 +1,11 @@
 <?php
 // ../config/dbconn.php
 
-// Check if session is already started before starting a new one
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
 
-// Database connection parameters
+
 $host = 'localhost';
 $dbname = 'barangay';
 $username = 'root';

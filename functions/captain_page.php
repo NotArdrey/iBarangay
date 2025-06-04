@@ -15,7 +15,7 @@ function captain_checkAccess(PDO $pdo) {
     $stmt = $pdo->prepare('SELECT role_id, barangay_id FROM users WHERE id=?');
     $stmt->execute([$user_id]);
     $u = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$u || !in_array((int)$u['role_id'], [ROLE_CAPTAIN, ROLE_CHIEF])) {
+    if (!$u || !in_array((int)$u['role_id'], [ROLE_CAPTAIN, ROLE_CHAIRPERSON])) { // Changed from ROLE_CHIEF
         if ((isset($_SERVER['HTTP_X_REQUESTED_WITH']) &&
              strtolower($_SERVER['HTTP_X_REQUESTED_WITH'])==='xmlhttprequest')) {
             http_response_code(403);
@@ -83,8 +83,8 @@ function captain_handleActions(PDO $pdo, $bid) {
             echo json_encode(['success'=>false,'message'=>'Access denied - User not in your barangay']);
             exit;
         }
-        if (in_array((int)$row['role_id'], [ROLE_CAPTAIN, ROLE_CHIEF])) {
-            echo json_encode(['success'=>false,'message'=>'Cannot delete Captain or Kagawad Chief']);
+        if (in_array((int)$row['role_id'], [ROLE_CAPTAIN, ROLE_CHAIRPERSON])) { // Changed from ROLE_CHIEF
+            echo json_encode(['success'=>false,'message'=>'Cannot delete Captain or Barangay Chairperson']); // Updated message
             exit;
         }
         
@@ -224,7 +224,7 @@ function captain_handleActions(PDO $pdo, $bid) {
         }
         // promote existing user
         if ($person['user_id']) {
-            $limits = [ROLE_SECRETARY=>1,ROLE_TREASURER=>1,ROLE_CHIEF=>1,ROLE_COUNCILOR=>7];
+            $limits = [ROLE_SECRETARY=>1,ROLE_TREASURER=>1,ROLE_CHAIRPERSON=>1,ROLE_COUNCILOR=>7]; // Changed from ROLE_CHIEF
             if (isset($limits[$role])) {
                 $cnt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role_id=? AND barangay_id=?");
                 $cnt->execute([$role,$bid]);
@@ -251,7 +251,7 @@ function captain_handleActions(PDO $pdo, $bid) {
             echo json_encode(['success'=>false,'message'=>'Invalid phone']);
             exit;
         }
-        $limits = [ROLE_SECRETARY=>1,ROLE_TREASURER=>1,ROLE_CHIEF=>1,ROLE_COUNCILOR=>7];
+        $limits = [ROLE_SECRETARY=>1,ROLE_TREASURER=>1,ROLE_CHAIRPERSON=>1,ROLE_COUNCILOR=>7]; // Changed from ROLE_CHIEF
         if (isset($limits[$role])) {
             $cnt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role_id=? AND barangay_id=?");
             $cnt->execute([$role,$bid]);
@@ -334,14 +334,15 @@ function captain_loadData(PDO $pdo, $bid) {
     $barangayName = $bn->fetchColumn();
 
     // roles dropdown
-    $allowed = [ROLE_SECRETARY,ROLE_TREASURER,ROLE_COUNCILOR,ROLE_CHIEF];
+    // Add ROLE_HEALTH_WORKER to allowed roles for assignment
+    $allowed = [ROLE_SECRETARY,ROLE_TREASURER,ROLE_COUNCILOR,ROLE_CHAIRPERSON, ROLE_HEALTH_WORKER]; // Changed from ROLE_CHIEF
     $ph = str_repeat('?,',count($allowed)-1).'?';
-    $rs = $pdo->prepare("SELECT id role_id,name role_name FROM roles WHERE id IN($ph)");
+    $rs = $pdo->prepare("SELECT id role_id,name role_name FROM roles WHERE id IN($ph) ORDER BY name"); // Added ORDER BY for consistency
     $rs->execute($allowed);
     $roles = $rs->fetchAll(PDO::FETCH_ASSOC);
 
     // users table
-    $off = $allowed;
+    $off = $allowed; // Users to be managed now include Health Workers
     $ph = str_repeat('?,',count($off)-1).'?';
     $stm = $pdo->prepare("
       SELECT u.*, r.name role_name,

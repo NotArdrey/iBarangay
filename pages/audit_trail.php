@@ -29,15 +29,18 @@ $stmt = $pdo->prepare("
 ");
 $stmt->execute([':bid' => $bid]);
 $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
+ 
+
 
 /* ── build filter lists ─────────────────────────────────────────── */
 $tables=$users=$roles=[];
 $allowedRoles=[
-    'Barangay Captain',
-    'Barangay Secretary',
-    'Barangay Treasurer',
-    'Barangay Councilors',
-    'Chief Officer'
+    'barangay_captain',    // Changed case and format
+    'barangay_secretary',  // Changed case and format
+    'barangay_treasurer',  // Changed case and format
+    'barangay_councilor',  // Changed case and format - Note: DB has 'barangay_councilor' (singular)
+    'barangay_chairperson',// Changed from chief_officer
+    'health_worker'        // Added new role
 ];
 foreach($records as $r){
     $tables[$r['table_name']] = true;
