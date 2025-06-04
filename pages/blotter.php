@@ -14,9 +14,8 @@ const ROLE_CAPTAIN      = 3;
 const ROLE_SECRETARY    = 4;
 const ROLE_TREASURER    = 5;
 const ROLE_COUNCILOR    = 6;
-const ROLE_CHAIRPERSON  = 7; // Changed from ROLE_CHIEF
+const ROLE_CHIEF        = 7;
 const ROLE_RESIDENT     = 8;
-const ROLE_HEALTH_WORKER = 9;
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
     header("Location: ../pages/login.php");
@@ -28,10 +27,10 @@ $current_admin_id = $_SESSION['user_id'];
 $bid = $_SESSION['barangay_id'];
 $role = $_SESSION['role_id'];
 
-$canManageBlotter = in_array($role, [ROLE_CAPTAIN, ROLE_SECRETARY, ROLE_CHAIRPERSON]); // Changed from ROLE_CHIEF
-$canScheduleHearings = in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON]); // Changed from ROLE_CHIEF
-$canIssueCFA = in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON]); // Changed from ROLE_CHIEF
-$canGenerateReports = in_array($role, [ROLE_CAPTAIN, ROLE_SECRETARY, ROLE_CHAIRPERSON]); // Changed from ROLE_CHIEF
+$canManageBlotter = in_array($role, [ROLE_CAPTAIN, ROLE_SECRETARY, ROLE_CHIEF]);
+$canScheduleHearings = in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF]);
+$canIssueCFA = in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF]);
+$canGenerateReports = in_array($role, [ROLE_CAPTAIN, ROLE_SECRETARY, ROLE_CHIEF]);
 
 
 if (!$canManageBlotter && !isset($_GET['action'])) {
@@ -1216,7 +1215,7 @@ if (!empty($_GET['action'])) {
                                WHERE ch_count.blotter_case_id = bc.id 
                                AND ch_count.hearing_outcome IS NOT NULL 
                                AND ch_count.hearing_outcome != 'scheduled'
-                           ) AS hearing_count, /* Count of actual past hearings */
+                           ) AS hearing_count_completed, /* Count of actual past hearings */
                            EXISTS(
                                SELECT 1 FROM case_hearings ch_pending
                                WHERE ch_pending.blotter_case_id = bc.id AND ch_pending.hearing_outcome = 'scheduled'
@@ -1550,12 +1549,10 @@ if (!empty($_GET['action'])) {
         exit;
     }
     
-
-    
     $data = json_decode(file_get_contents('php://input'), true);
     $reason = trim($data['reason'] ?? 'Not available for this schedule');
     if (empty($reason)) {
-            $reason = 'Not available for this schedule';
+        $reason = 'Not available for this schedule';
     }
     
     try {
