@@ -41,7 +41,7 @@ INSERT INTO roles (name, description) VALUES
     ('barangay_treasurer', 'Financial official for barangay funds'),
     ('barangay_councilor', 'Elected barangay council member'),
     ('barangay_chairperson', 'Leads blottercases'),
-    ('health_worker''for census'),
+    ('health_worker','for census'),
     ('resident', 'Regular barangay resident');
     
 
@@ -1759,7 +1759,6 @@ MODIFY COLUMN status ENUM(
 ALTER TABLE document_requests
 ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER business_type;
 
-ALTER TABLE roles
 ALTER TABLE document_requests
 MODIFY COLUMN status ENUM('pending','completed','rejected', 'processing', 'for_payment', 'archived') DEFAULT 'pending';
 
