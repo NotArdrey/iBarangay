@@ -1,5 +1,7 @@
-
+# Environment files
 .env
+.env.local
+.env.production
 
 # Sensitive credentials - never commit these
 /config/google_credentials.json
@@ -9,20 +11,35 @@
 /vendor/
 
 
+# Database backups
+*.sql
+*.dump
+
+# Log files
 *.log
+logs/
 
+# Cache files
+cache/
+temp/
 
+# Uploaded files (optional - you might want to keep some)
+uploads/indigency_photos/*
+!uploads/indigency_photos/.gitkeep
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
 .DS_Store
 Thumbs.db
 
 
-.vscode/
-.idea/
-
-
 *.bak
 *.tmp
-*.swp
 
 
 node_modules/

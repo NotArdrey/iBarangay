@@ -14,7 +14,7 @@ ini_set('display_errors', 1);
 $user_id = isset($_SESSION['user_id']) ? $_SESSION['user_id'] : 4;
 $user_info = null;
 $barangay_name = "Barangay";
-$barangay_id = 32;
+$barangay_id = isset($_SESSION['barangay_id']) ? $_SESSION['barangay_id'] : null;
 
 if ($user_id) {
     $sql = "SELECT p.first_name, p.last_name, u.barangay_id, b.name as barangay_name 
@@ -29,7 +29,7 @@ if ($user_id) {
     if ($row) {
         $user_info = $row;
         $barangay_name = $row['barangay_name'];
-        $barangay_id = $row['barangay_id'];
+        $barangay_id = $row['barangay_id']; // Get barangay_id from the database
     }
     $stmt = null;
 }

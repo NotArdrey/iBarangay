@@ -15,7 +15,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role_id'] < 2) {
 
 // Safe to read these now
 $current_admin_id = $_SESSION['user_id'];
-$bid              = $_SESSION['barangay_id'] ?? 1; // Use admin's actual barangay
+$bid              = $_SESSION['barangay_id'] ?? 1;
 $role             = $_SESSION['role_id'];
 
 /**
@@ -155,6 +155,7 @@ if (isset($_GET['action'])) {
                     dr.proof_image_path,
                     dr.purpose,
                     dr.business_name,
+                    dr.delivery_method,
                     dt.name AS document_name,
                     dt.code AS document_code,
                     CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
@@ -183,6 +184,7 @@ if (isset($_GET['action'])) {
                     dr.request_date,
                     dr.status,
                     dr.completed_at,
+                    dr.delivery_method,
                     dt.name AS document_name,
                     CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name
                 FROM document_requests dr
@@ -214,33 +216,40 @@ if (isset($_GET['action'])) {
                 $getUserStmt->execute([':id'=>$reqId]);
                 $userInfo = $getUserStmt->fetch();
                 
-
-                if ($userInfo && $stmtBan->execute([':id'=>$userInfo['id']])) {
-                    // Send notification email
-                    if (!empty($userInfo['email'])) {
-                        try {
-                            $mail = new PHPMailer(true);
-                            $mail->isSMTP();
-                            $mail->Host       = 'smtp.gmail.com';
-                            $mail->SMTPAuth   = true;
-                            $mail->Username   = 'ibarangay.system@gmail.com';  
-                            $mail->Password   = 'nxxn vxyb kxum cuvd';   
-                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                            $mail->Port       = 587;
-                            $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
-                            $mail->addAddress($userInfo['email']); // Changed to use single argument
-                            $mail->Subject = 'Your account has been suspended';
-                            $mail->Body = getAccountSuspendedTemplate($userInfo['name'], $remarks);
-                            $mail->send();
-                        } catch (Exception $e) {
-                            error_log('Mailer Error: ' . $mail->ErrorInfo);
-
+                if ($userInfo) {
+                    // Ban the user
+                    $stmtBan = $pdo->prepare("UPDATE users SET is_active = FALSE WHERE id = :id");
+                    
+                    if ($stmtBan->execute([':id'=>$userInfo['id']])) {
+                        // Send notification email
+                        if (!empty($userInfo['email'])) {
+                            try {
+                                $mail = new PHPMailer(true);
+                                $mail->isSMTP();
+                                $mail->Host = 'smtp.gmail.com';
+                                $mail->SMTPAuth = true;
+                                $mail->Username = 'ibarangay.system@gmail.com';
+                                $mail->Password = 'nxxn vxyb kxum cuvd';
+                                $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                                $mail->Port = 587;
+                                $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
+                                $mail->addAddress($userInfo['email'], $userInfo['name']);
+                                $mail->isHTML(true);
+                                $mail->Subject = 'Account Suspended';
+                                $mail->Body = "Dear {$userInfo['name']},<br><br>Your account has been suspended. Reason: {$remarks}<br><br>Please contact the barangay office for more information.";
+                                $mail->send();
+                            } catch (Exception $e) {
+                                error_log('Email send failed: ' . $e->getMessage());
+                            }
                         }
-             
+                        
                         logAuditTrail(
-                          $pdo, $current_admin_id,
-                          'UPDATE','users',$userInfo['id'],
-                          'Banned user: '.$remarks
+                            $pdo, 
+                            $current_admin_id, 
+                            'SUSPEND', 
+                            'users', 
+                            $userInfo['id'], 
+                            'Banned user with remarks: ' . $remarks
                         );
                         $response['success'] = true;
                         $response['message'] = 'User banned and notified.';
@@ -367,10 +376,13 @@ if (isset($_GET['action'])) {
             $stmt = $pdo->prepare("
                 SELECT 
                     dr.id AS document_request_id,
+                    COALESCE(dr.delivery_method, 'hardcopy') as delivery_method,
                     dt.name AS document_name,
                     dt.code AS document_code,
                     CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
-                    u.email
+                    u.email,
+                    u.id as user_id,
+                    p.contact_number
                 FROM document_requests dr
                 JOIN document_types dt ON dr.document_type_id = dt.id
                 JOIN persons p ON dr.person_id = p.id
@@ -381,49 +393,17 @@ if (isset($_GET['action'])) {
             $stmt->execute([':id'=>$reqId, ':bid'=>$bid]);
             $info = $stmt->fetch();
             
-            if ($info && !empty($info['email'])) {
-                $mail = new PHPMailer(true);
-                try {
-                    $mail->isSMTP();
-                    $mail->Host       = 'smtp.gmail.com';
-                    $mail->SMTPAuth   = true;
-                    $mail->Username   = 'ibarangay.system@gmail.com';  
-                    $mail->Password   = 'nxxn vxyb kxum cuvd';   
-                    $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                    $mail->Port       = 587;
-                    $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
-                    $mail->addAddress($info['email'], $info['requester_name']);
-                    $mail->isHTML(true);
-
-                    // Check if document is a cedula
-                    if (in_array($info['document_code'], ['cedula', 'community_tax_certificate'])) {
-                        $mail->Subject = 'Community Tax Certificate (Cedula) Ready for Pickup';
-                        $mail->Body    = "Hello {$info['requester_name']},\n\n"
-                                     . "Your Community Tax Certificate (Cedula) request has been processed and is ready for pickup at the Barangay Hall.\n\n"
-                                     . "Please note that Cedula must be obtained in person. Bring a valid ID when claiming your document.\n\n"
-                                     . "Office Hours: Monday to Friday, 8:00 AM to 5:00 PM\n\n"
-                                     . "Thank you for your understanding.";
-                    } else {
-                        // Generate PDF for non-cedula documents
-                        ob_start();
-                        $docRequestId = $reqId;
-                        require __DIR__ . '/../functions/document_template.php';
-                        $html = ob_get_clean();
-                        $dompdf = new Dompdf();
-                        $dompdf->loadHtml($html);
-                        $dompdf->setPaper('A4','portrait');
-                        $dompdf->render();
-                        $pdfOutput = $dompdf->output();
-                        $pdfName   = "document_request_{$reqId}.pdf";
-                        
-                        $mail->Subject = 'Your Document Request: ' . $info['document_name'];
-                        $mail->Body    = "Hello {$info['requester_name']},\n\nPlease find attached your requested document.";
-                        $mail->addStringAttachment($pdfOutput, $pdfName, 'base64', 'application/pdf');
-                    }
+            if (!$info) {
+                $response['message'] = 'Document request not found.';
+            } else {
+                // Check if document requires pickup notification (only business permit clearance)
+                $requiresPickupNotification = in_array($info['document_code'], ['business_permit_clearance']);
+                
+                // Check if document is cedula (requires in-person pickup)
+                $isCedula = in_array($info['document_code'], ['cedula', 'community_tax_certificate']);
+                
+                if ($isCedula) {
                     
-                    $mail->send();
-                    
-                    // Update status
                     $upd = $pdo->prepare("
                         UPDATE document_requests
                         SET status = 'completed', completed_at = NOW()
@@ -432,20 +412,167 @@ if (isset($_GET['action'])) {
                     $upd->execute([':id'=>$reqId,':bid'=>$bid]);
                     
                     logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
-                        in_array($info['document_code'], ['cedula', 'community_tax_certificate']) 
-                            ? 'Sent pickup notification email for cedula.'
-                            : 'Sent PDF and marked complete.'
+                        'Marked cedula/community tax certificate as complete - requires in-person pickup.'
                     );
                     
                     $response['success'] = true;
-                    $response['message'] = in_array($info['document_code'], ['cedula', 'community_tax_certificate'])
-                        ? 'Pickup notification email sent & marked complete.'
-                        : 'Email sent & marked complete.';
-                } catch (Exception $e) {
-                    $response['message'] = 'Mailer error: '.$mail->ErrorInfo;
+                    $response['message'] = 'Cedula/Community Tax Certificate marked as complete. User must visit barangay office for in-person issuance.';
+                    
+                } elseif ($requiresPickupNotification && !empty($info['email'])) {
+                    // Business permit - send pickup notification email
+                    $mail = new PHPMailer(true);
+                    try {
+                        $mail->isSMTP();
+                        $mail->Host       = 'smtp.gmail.com';
+                        $mail->SMTPAuth   = true;
+                        $mail->Username   = 'ibarangay.system@gmail.com';  
+                        $mail->Password   = 'nxxn vxyb kxum cuvd';   
+                        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                        $mail->Port       = 587;
+                        $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
+                        $mail->addAddress($info['email'], $info['requester_name']);
+                        $mail->isHTML(true);
+                        
+                        $mail->Subject = 'Business Permit Clearance Ready for Pickup';
+                        $mail->Body = "Hello {$info['requester_name']},<br><br>"
+                            . "Your Business Permit Clearance is now ready for pickup at the barangay office.<br><br>"
+                            . "Please bring a valid ID when picking up your document.<br><br>"
+                            . "Office Hours: Monday to Friday, 8:00 AM - 5:00 PM<br><br>"
+                            . "Thank you.";
+                        
+                        $mail->send();
+                        
+                        // Update status
+                        $upd = $pdo->prepare("
+                            UPDATE document_requests
+                            SET status = 'completed', completed_at = NOW()
+                            WHERE id = :id AND barangay_id = :bid
+                        ");
+                        $upd->execute([':id'=>$reqId,':bid'=>$bid]);
+                        
+                        logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
+                            'Business permit marked complete and pickup notification sent via email.'
+                        );
+                        
+                        $response['success'] = true;
+                        $response['message'] = 'Pickup notification sent via email & marked complete.';
+                        
+                    } catch (Exception $e) {
+                        // Email failed - still mark as complete but note the issue
+                        $upd = $pdo->prepare("
+                            UPDATE document_requests
+                            SET status = 'completed', completed_at = NOW()
+                            WHERE id = :id AND barangay_id = :bid
+                        ");
+                        $upd->execute([':id'=>$reqId,':bid'=>$bid]);
+                        
+                        logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
+                            'Business permit marked complete but email notification failed: ' . $e->getMessage()
+                        );
+                        
+                        $response['success'] = true;
+                        $response['message'] = 'Business permit marked complete but email notification failed.';
+                    }
+                    
+                } elseif ($requiresPickupNotification && empty($info['email'])) {
+                    // Business permit but no email - still mark as complete
+                    $upd = $pdo->prepare("
+                        UPDATE document_requests
+                        SET status = 'completed', completed_at = NOW()
+                        WHERE id = :id AND barangay_id = :bid
+                    ");
+                    $upd->execute([':id'=>$reqId,':bid'=>$bid]);
+                    
+                    logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
+                        'Business permit marked complete - no email available for notification.'
+                    );
+                    
+                    $response['success'] = true;
+                    $response['message'] = 'Business permit marked complete. No email sent - user has no email address on file.';
+                    
+                    if (!empty($info['contact_number'])) {
+                        $response['message'] .= ' Contact number: ' . $info['contact_number'];
+                    }
+                    
+                } else {
+                    // For softcopy delivery, actually generate and email the document
+                    if (!empty($info['email'])) {
+                        try {
+                            // Generate PDF document
+                            $docRequestId = $reqId;
+                            ob_start();
+                            require __DIR__ . '/../functions/document_template.php';
+                            $html = ob_get_clean();
+                            $dompdf = new Dompdf();
+                            $dompdf->loadHtml($html);
+                            $dompdf->setPaper('A4','portrait');
+                            $dompdf->render();
+                            $pdfContent = $dompdf->output();
+                            
+                            // Create temp file for attachment
+                            $tempFile = tempnam(sys_get_temp_dir(), 'doc_');
+                            file_put_contents($tempFile, $pdfContent);
+                            
+                            // Send email with attachment
+                            $mail = new PHPMailer(true);
+                            $mail->isSMTP();
+                            $mail->Host       = 'smtp.gmail.com';
+                            $mail->SMTPAuth   = true;
+                            $mail->Username   = 'ibarangay.system@gmail.com';  
+                            $mail->Password   = 'nxxn vxyb kxum cuvd';   
+                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+                            $mail->Port       = 587;
+                            $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
+                            $mail->addAddress($info['email'], $info['requester_name']);
+                            $mail->isHTML(true);
+                            
+                            $mail->Subject = 'Your Requested Document: ' . $info['document_name'];
+                            $mail->Body = "Hello {$info['requester_name']},<br><br>"
+                                . "Your requested document ({$info['document_name']}) is attached to this email.<br><br>"
+                                . "This is an electronically generated document. If you need a physical copy with an official seal, "
+                                . "please visit the barangay office.<br><br>"
+                                . "Thank you for using iBarangay!<br><br>"
+                                . "Best regards,<br>"
+                                . "The iBarangay Team";
+                            
+                            // Add PDF attachment
+                            $mail->addAttachment($tempFile, 'Document_' . $info['document_code'] . '.pdf');
+                            
+                            $mail->send();
+                            
+                            // Delete temp file
+                            @unlink($tempFile);
+                            
+                            // Update status
+                            $upd = $pdo->prepare("
+                                UPDATE document_requests
+                                SET status = 'completed', completed_at = NOW()
+                                WHERE id = :id AND barangay_id = :bid
+                            ");
+                            $upd->execute([':id'=>$reqId,':bid'=>$bid]);
+                            
+                            logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
+                                'Document sent via email and marked complete.'
+                            );
+                            
+                            $response['success'] = true;
+                            $response['message'] = 'Document successfully sent to ' . $info['email'] . ' and marked complete.';
+                            
+                        } catch (Exception $e) {
+                            // Email failed
+                            logAuditTrail($pdo, $current_admin_id, 'ERROR','document_requests',$reqId,
+                                'Failed to send document via email: ' . $e->getMessage()
+                            );
+                            
+                            $response['success'] = false;
+                            $response['message'] = 'Failed to send email: ' . $e->getMessage();
+                        }
+                    } else {
+                        // No email available
+                        $response['success'] = false;
+                        $response['message'] = 'Cannot send email. User has no email address on file.';
+                    }
                 }
-            } else {
-                $response['message'] = 'Request/email info not found.';
             }
         }
         
@@ -470,6 +597,9 @@ $stmt = $pdo->prepare("
         dr.price,
         dr.purpose,
         dr.business_name,
+        dr.delivery_method,
+        dr.payment_method,
+        dr.payment_status,
         dt.name AS document_name,
         dt.code AS document_code,
         CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
@@ -486,7 +616,7 @@ $stmt = $pdo->prepare("
     LEFT JOIN users u ON dr.user_id = u.id
     JOIN barangay b ON dr.barangay_id = b.id
     WHERE dr.barangay_id = :bid
-      AND LOWER(dr.status) = 'pending'
+      AND LOWER(dr.status) IN ('pending', 'for_payment')
       AND (u.is_active IS NULL OR u.is_active = TRUE)
     ORDER BY dr.request_date ASC
 ");
@@ -637,10 +767,16 @@ $completedRequests = $stmtHist->fetchAll();
         <h1 class="text-3xl font-bold text-blue-800">Document Request Management</h1>
         <p class="text-gray-600 mt-2">Manage document requests and pricing</p>
       </div>
-      <button id="managePricesBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center">
-        <i class="fas fa-dollar-sign mr-2"></i>
-        Manage Document Prices
-      </button>
+      <div class="flex gap-4">
+        <button id="managePricesBtn" class="bg-green-600 text-white px-6 py-2 rounded-lg hover:bg-green-700 transition-colors flex items-center">
+          <i class="fas fa-dollar-sign mr-2"></i>
+          Manage Document Prices
+        </button>
+        <a href="paymongo_settings.php" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center">
+          <i class="fas fa-credit-card mr-2"></i>
+          PayMongo Settings
+        </a>
+      </div>
     </div>
 
     <!-- Tabs Navigation -->
@@ -665,97 +801,55 @@ $completedRequests = $stmtHist->fetchAll();
           <table class="min-w-full divide-y divide-gray-200" id="docRequestsTable">
             <thead class="bg-gray-50">
               <tr>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Requester Name
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Document Type
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Contact Number
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Request Date
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Price
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Status
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Actions
-                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Date</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Document</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Requester</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Status</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <?php if (!empty($docRequests)): ?>
-                <?php foreach ($docRequests as $req): ?>
-                <tr class="hover:bg-gray-50 transition-colors">
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= htmlspecialchars($req['requester_name']) ?>
-                    <?php if ($req['document_code'] === 'first_time_job_seeker'): ?>
-                      <div class="restriction-warning">
-                        <i class="fas fa-info-circle"></i> First Time Job Seeker - One time only
-                      </div>
+              <?php foreach ($docRequests as $req): ?>
+              <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <?= date('M d, Y', strtotime($req['request_date'])) ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <div class="text-sm font-medium text-gray-900"><?= htmlspecialchars($req['document_name']) ?></div>
+                  <?php if ($req['price'] > 0): ?>
+                    <div class="text-sm text-gray-500">Fee: ₱<?= number_format($req['price'], 2) ?></div>
+                  <?php endif; ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <?= htmlspecialchars($req['requester_name']) ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                    <?= ucfirst($req['status']) ?>
+                  </span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                  <div class="flex space-x-2">
+                    <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="<?= $req['document_request_id'] ?>">
+                      View
+                    </button>
+                    <?php if (strtolower($req['delivery_method']) === 'hardcopy'): ?>
+                    <button class="printDocRequestBtn text-green-600 hover:text-green-900" data-id="<?= $req['document_request_id'] ?>">
+                      Print
+                    </button>
                     <?php endif; ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= htmlspecialchars($req['document_name']) ?>
-                    <?php if (!empty($req['purpose'])): ?>
-                      <br><small class="text-gray-600">Purpose: <?= htmlspecialchars($req['purpose']) ?></small>
+                    <?php if (strtolower($req['delivery_method']) === 'softcopy'): ?>
+                    <button class="sendDocEmailBtn text-purple-600 hover:text-purple-900" data-id="<?= $req['document_request_id'] ?>">
+                      Send Email
+                    </button>
                     <?php endif; ?>
-                    <?php if (!empty($req['business_name'])): ?>
-                      <br><small class="text-blue-600">Business: <?= htmlspecialchars($req['business_name']) ?></small>
-                    <?php endif; ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= htmlspecialchars($req['contact_number'] ?? 'N/A') ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= date('M d, Y h:i A', strtotime($req['request_date'])) ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    ₱<?= number_format($req['price'] ?? 0, 2) ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm border-b">
-                    <span class="px-3 py-1 bg-yellow-100 text-yellow-800 rounded">
-                      <?= ucfirst(htmlspecialchars($req['status'])) ?>
-                    </span>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <div class="flex items-center space-x-2">
-                      <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="<?= $req['document_request_id'] ?>">
-                        <i class="fas fa-eye"></i> View
-                      </button>
-                      <?php if ($req['document_code'] === 'barangay_indigency' && $req['proof_image_path']): ?>
-                      <a href="../<?= $req['proof_image_path'] ?>" download class="downloadPhotoBtn text-green-600 hover:text-green-900">
-                        <i class="fas fa-download"></i> Photo
-                      </a>
-                      <?php endif; ?>
-                      <?php if (!in_array($req['document_code'], ['cedula', 'community_tax_certificate'])): ?>
-                      <button class="printDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
-                        <i class="fas fa-print"></i> Print
-                      </button>
-                      <?php endif; ?>
-                      <button class="sendDocEmailBtn p-2 text-green-600 hover:text-green-900 rounded-lg hover:bg-green-50" data-id="<?= $req['document_request_id'] ?>">
-                        <i class="fas fa-envelope"></i> Email
-                      </button>
-                      <button class="completeDocRequestBtn p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50" data-id="<?= $req['document_request_id'] ?>">
-                        <i class="fas fa-check"></i> Complete
-                      </button>
-                      <button class="deleteDocRequestBtn p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50" data-id="<?= $req['document_request_id'] ?>">
-                        <i class="fas fa-trash"></i> Delete
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              <?php else: ?>
-                <tr>
-                  <td colspan="7" class="px-4 py-4 text-center text-gray-500">No pending document requests found.</td>
-                </tr>
-              <?php endif; ?>
+                    <button class="deleteDocRequestBtn text-red-600 hover:text-red-900" data-id="<?= $req['document_request_id'] ?>">
+                      Delete
+                    </button>
+                  </div>
+                </td>
+              </tr>
+              <?php endforeach; ?>
             </tbody>
           </table>
         </div>
@@ -778,51 +872,31 @@ $completedRequests = $stmtHist->fetchAll();
           <table class="min-w-full divide-y divide-gray-200" id="docRequestsHistoryTable">
             <thead class="bg-gray-50">
               <tr>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Requested By
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Document Type
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Request Date
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Completed Date
-                </th>
-                <th scope="col" class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">
-                  Status
-                </th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Date</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Document</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Requester</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider sortable">Status</th>
               </tr>
             </thead>
             <tbody class="bg-white divide-y divide-gray-200">
-              <?php if (!empty($completedRequests)): ?>
-                <?php foreach ($completedRequests as $req): ?>
-                <tr class="hover:bg-gray-50 transition-colors">
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= htmlspecialchars($req['requester_name']) ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= htmlspecialchars($req['document_name']) ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= date('M d, Y h:i A', strtotime($req['request_date'])) ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm text-gray-900 border-b">
-                    <?= $req['completed_at'] ? date('M d, Y h:i A', strtotime($req['completed_at'])) : 'N/A' ?>
-                  </td>
-                  <td class="px-4 py-3 text-sm border-b">
-                    <span class="px-3 py-1 bg-green-100 text-green-800 rounded">
-                      <?= ucfirst(htmlspecialchars($req['status'])) ?>
-                    </span>
-                  </td>
-                </tr>
-                <?php endforeach; ?>
-              <?php else: ?>
-                <tr>
-                  <td colspan="5" class="px-4 py-4 text-center text-gray-500">No completed document requests found.</td>
-                </tr>
-              <?php endif; ?>
+              <?php foreach ($completedRequests as $req): ?>
+              <tr class="hover:bg-gray-50">
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <?= date('M d, Y', strtotime($req['request_date'])) ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+                  <?= htmlspecialchars($req['document_name']) ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                  <?= htmlspecialchars($req['requester_name']) ?>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap">
+                  <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                    Completed
+                  </span>
+                </td>
+              </tr>
+              <?php endforeach; ?>
             </tbody>
           </table>
         </div>
@@ -836,33 +910,42 @@ $completedRequests = $stmtHist->fetchAll();
       <div class="relative w-full max-w-4xl bg-white rounded-lg shadow-xl">
         <div class="p-6">
           <div class="flex justify-between items-center mb-4">
-            <h3 class="text-lg font-bold text-gray-900">Manage Document Prices</h3>
-            <button id="closePricesModal" class="text-gray-400 hover:text-gray-600">
+            <h3 class="text-lg font-medium text-gray-900">
+              <i class="fas fa-dollar-sign mr-2"></i>
+              Manage Document Prices
+            </h3>
+            <button type="button" id="closePricesModal" class="text-gray-400 hover:text-gray-600">
               <i class="fas fa-times text-xl"></i>
             </button>
           </div>
           
           <form id="pricesForm">
-            <div class="max-h-96 overflow-y-auto">
+            <div class="overflow-x-auto">
               <table class="min-w-full divide-y divide-gray-200">
-                <thead class="bg-gray-50 sticky top-0">
+                <thead class="bg-gray-50">
                   <tr>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Document Type</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Default Price</th>
-                    <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Custom Price</th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Document Type
+                    </th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Default Fee
+                    </th>
+                    <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Your Price
+                    </th>
                   </tr>
                 </thead>
                 <tbody id="pricesTableBody" class="bg-white divide-y divide-gray-200">
-                  <!-- Table content will be populated by JavaScript -->
+                  <!-- Populated by JavaScript -->
                 </tbody>
               </table>
             </div>
             
-            <div class="flex justify-end mt-6 space-x-3">
-              <button type="button" id="cancelPricesBtn" class="bg-gray-300 text-gray-700 px-4 py-2 rounded hover:bg-gray-400 transition-colors">
+            <div class="flex justify-end gap-4 mt-6">
+              <button type="button" id="cancelPricesBtn" class="px-4 py-2 text-gray-700 bg-gray-200 rounded-lg hover:bg-gray-300">
                 Cancel
               </button>
-              <button type="submit" class="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700 transition-colors flex items-center">
+              <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700">
                 <i class="fas fa-save mr-2"></i>
                 Save Changes
               </button>
@@ -884,6 +967,7 @@ $completedRequests = $stmtHist->fetchAll();
           button.classList.toggle('active', button.dataset.tab === tabId);
         });
 
+        // Show/hide tab content
         tabContents.forEach(content => {
           if (content.id === tabId) {
             content.classList.add('active');
@@ -1004,24 +1088,16 @@ $completedRequests = $stmtHist->fetchAll();
           const row = document.createElement('tr');
           row.className = 'table-row';
           row.innerHTML = `
-            <td class="px-6 py-4 text-sm text-gray-900">${doc.name}</td>
-            <td class="px-6 py-4 text-sm text-gray-600">
-              <span class="bg-gray-100 px-3 py-1 rounded-full">
-                ₱${parseFloat(doc.default_fee).toFixed(2)}
-              </span>
-            </td>
-            <td class="px-6 py-4 text-sm text-gray-900">
-              <div class="flex items-center space-x-2">
-                <span class="text-gray-500">₱</span>
-                <input 
-                  type="number" 
-                  step="0.01" 
-                  min="0" 
-                  name="prices[${doc.id}]" 
-                  value="${currentPrice}" 
-                  class="price-input border border-gray-300 rounded px-3 py-2 w-32 focus:border-blue-500 focus:outline-none"
-                >
-              </div>
+            <td class="p-4 font-medium text-gray-900">${doc.name}</td>
+            <td class="p-4 text-gray-600">₱${parseFloat(doc.default_fee).toFixed(2)}</td>
+            <td class="p-4">
+              <input type="number" 
+                     name="prices[${doc.id}]" 
+                     value="${currentPrice}" 
+                     min="0" 
+                     step="0.01" 
+                     class="price-input w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                     required>
             </td>
           `;
           pricesTableBody.appendChild(row);
@@ -1051,26 +1127,30 @@ $completedRequests = $stmtHist->fetchAll();
           cancelButtonText: 'Cancel'
         }).then((result) => {
           if (result.isConfirmed) {
+            showLoading();
+            
             const formData = new FormData(pricesForm);
             formData.append('update_prices', '1');
-
+            
             fetch('', {
               method: 'POST',
               body: formData
             })
             .then(response => response.json())
             .then(data => {
+              hideLoading();
               if (data.success) {
-                Swal.fire('Success', data.message, 'success').then(() => {
+                Swal.fire('Success!', data.message, 'success').then(() => {
                   closePricesModalFunc();
-                  location.reload(); // Refresh to show updated prices
+                  location.reload();
                 });
               } else {
-                Swal.fire('Error', data.message, 'error');
+                Swal.fire('Error!', data.message, 'error');
               }
             })
             .catch(error => {
-              Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
+              hideLoading();
+              Swal.fire('Error!', 'An error occurred: ' + error.message, 'error');
             });
           }
         });
@@ -1097,8 +1177,7 @@ $completedRequests = $stmtHist->fetchAll();
         return fetch(url)
           .then(resp => {
             if (!resp.ok) {
-              hideLoading();
-              throw new Error('Network response was not OK');
+              throw new Error('Network response was not ok');
             }
             return resp.json();
           })
@@ -1109,49 +1188,78 @@ $completedRequests = $stmtHist->fetchAll();
       document.querySelectorAll('.printDocRequestBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           const requestId = this.getAttribute('data-id');
-          fetch(`doc_request.php?action=print&id=${requestId}`)
-            .then(response => response.json())
-            .then(data => {
-              if (!data.success) {
-                Swal.fire('Not Available', data.message, 'warning');
-              } else {
-                window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
+          
+          // Open print in new tab/window
+          window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
+          
+          // After printing, ask if they want to mark as complete
+          setTimeout(() => {
+            Swal.fire({
+              title: 'Mark as Complete?',
+              text: 'Did you successfully print the document? This will mark it as complete.',
+              icon: 'question',
+              showCancelButton: true,
+              confirmButtonColor: '#10B981',
+              cancelButtonColor: '#6B7280',
+              confirmButtonText: 'Yes, mark complete',
+              cancelButtonText: 'Not yet'
+            }).then((result) => {
+              if (result.isConfirmed) {
+                fetch(`?action=complete&id=${requestId}`)
+                .then(response => response.json())
+                .then(data => {
+                  if (data.success) {
+                    Swal.fire('Completed!', data.message, 'success').then(() => {
+                      location.reload();
+                    });
+                  } else {
+                    Swal.fire('Error!', data.message, 'error');
+                  }
+                });
               }
-            })
-            .catch(() => {
-              // If response is not JSON, it means it's the PDF
-              window.open(`doc_request.php?action=print&id=${requestId}`, '_blank');
             });
+          }, 1000);
         });
       });
 
       document.querySelectorAll('.sendDocEmailBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           let requestId = this.getAttribute('data-id');
+          
           Swal.fire({
-            title: 'Send Email?',
-            text: 'Are you sure you want to send the requested document via email? This will automatically mark it as Complete.',
+            title: 'Send Document via Email?',
+            text: 'This will generate the document as a PDF and send it to the requester via email.',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonText: 'Yes, send it',
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
+            confirmButtonColor: '#10B981',
+            cancelButtonColor: '#6B7280',
+            confirmButtonText: 'Yes, send email',
             cancelButtonText: 'Cancel'
           }).then((result) => {
             if (result.isConfirmed) {
-              fetchJSON(`doc_request.php?action=send_email&id=${requestId}`)
-                .then(data => {
-                  if (data.success) {
-                    Swal.fire('Success', data.message, 'success').then(() => {
-                      location.reload();
-                    });
-                  } else {
-                    Swal.fire('Error', data.message, 'error');
-                  }
-                })
-                .catch(error => {
-                  Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
-                });
+              Swal.fire({
+                title: 'Sending Email...',
+                text: 'Please wait while we generate and send the document.',
+                allowOutsideClick: false,
+                didOpen: () => {
+                  Swal.showLoading();
+                }
+              });
+              
+              fetch(`?action=send_email&id=${requestId}`)
+              .then(response => response.json())
+              .then(data => {
+                if (data.success) {
+                  Swal.fire('Email Sent!', data.message, 'success').then(() => {
+                    location.reload();
+                  });
+                } else {
+                  Swal.fire('Error!', data.message, 'error');
+                }
+              })
+              .catch(error => {
+                Swal.fire('Error!', 'An error occurred while sending the email.', 'error');
+              });
             }
           });
         });
@@ -1162,27 +1270,26 @@ $completedRequests = $stmtHist->fetchAll();
           let requestId = this.getAttribute('data-id');
           Swal.fire({
             title: 'Mark as Complete?',
-            text: 'This will mark the request as ready for pickup.',
+            text: 'Are you sure you want to mark this document as complete?',
             icon: 'question',
             showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Yes, complete it',
+            confirmButtonColor: '#10B981',
+            cancelButtonColor: '#6B7280',
+            confirmButtonText: 'Yes, mark complete',
             cancelButtonText: 'Cancel'
           }).then((result) => {
             if (result.isConfirmed) {
-              fetchJSON(`doc_request.php?action=complete&id=${requestId}`)
-                .then(data => {
-                  if (data.success) {
-                    Swal.fire('Completed', data.message, 'success')
-                      .then(() => location.reload());
-                  } else {
-                    Swal.fire('Error', data.message, 'error');
-                  }
-                })
-                .catch(error => {
-                  Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
-                });
+              fetch(`?action=complete&id=${requestId}`)
+              .then(response => response.json())
+              .then(data => {
+                if (data.success) {
+                  Swal.fire('Completed!', data.message, 'success').then(() => {
+                    location.reload();
+                  });
+                } else {
+                  Swal.fire('Error!', data.message, 'error');
+                }
+              });
             }
           });
         });
@@ -1192,52 +1299,36 @@ $completedRequests = $stmtHist->fetchAll();
         btn.addEventListener('click', function() {
           let requestId = this.getAttribute('data-id');
           Swal.fire({
-            title: 'Delete Document Request?',
-            text: 'Please provide remarks/reason for not processing this request. It will be emailed to the user.',
-            icon: 'warning',
+            title: 'Delete Request',
             input: 'textarea',
-            inputPlaceholder: 'Enter your remarks here...',
+            inputLabel: 'Reason for deletion (optional)',
+            inputPlaceholder: 'Enter reason for deleting this request...',
             showCancelButton: true,
-            confirmButtonColor: '#d33',
-            cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Delete',
+            confirmButtonColor: '#DC2626',
+            cancelButtonColor: '#6B7280',
+            confirmButtonText: 'Yes, delete',
             cancelButtonText: 'Cancel',
-            preConfirm: (remarks) => {
-              if (!remarks) {
-                Swal.showValidationMessage('Remarks are required to proceed.');
-              }
-              return remarks;
+            inputValidator: (value) => {
+              // Optional validation - you can make this required if needed
             }
           }).then((result) => {
-            if (result.isConfirmed && result.value) {
-              const userRemarks = result.value;
-              showLoading();
+            if (result.isConfirmed) {
               const formData = new FormData();
-              formData.append('remarks', userRemarks);
-
-              fetch(`doc_request.php?action=delete&id=${requestId}`, {
+              formData.append('remarks', result.value || '');
+              
+              fetch(`?action=delete&id=${requestId}`, {
                 method: 'POST',
                 body: formData
               })
-              .then(resp => {
-                if (!resp.ok) {
-                  hideLoading();
-                  throw new Error('Network response was not OK');
-                }
-                return resp.json();
-              })
+              .then(response => response.json())
               .then(data => {
-                hideLoading();
                 if (data.success) {
-                  Swal.fire('Deleted', data.message, 'success')
-                    .then(() => location.reload());
+                  Swal.fire('Deleted!', data.message, 'success').then(() => {
+                    location.reload();
+                  });
                 } else {
-                  Swal.fire('Error', data.message, 'error');
+                  Swal.fire('Error!', data.message, 'error');
                 }
-              })
-              .catch(error => {
-                hideLoading();
-                Swal.fire('Error', 'An error occurred: ' + error.message, 'error');
               });
             }
           });
@@ -1251,47 +1342,182 @@ $completedRequests = $stmtHist->fetchAll();
             .then(response => response.json())
             .then(data => {
               if (data.success) {
-                const r = data.request;
-                let additionalInfo = '';
-                
-                // Add business information if available
-                if (r.business_name) {
-                  additionalInfo += `<p><strong>Business:</strong> ${r.business_name}</p>`;
-                  additionalInfo += `<p><strong>Business Location:</strong> ${r.business_location || 'N/A'}</p>`;
-                  additionalInfo += `<p><strong>Business Type:</strong> ${r.business_type || 'N/A'}</p>`;
-                  additionalInfo += `<p><strong>Business Nature:</strong> ${r.business_nature || 'N/A'}</p>`;
-                }
-                
-                // Add purpose if available
-                if (r.purpose) {
-                  additionalInfo += `<p><strong>Purpose:</strong> ${r.purpose}</p>`;
-                }
-
-                // Show modal with request details
+                const req = data.request;
                 Swal.fire({
                   title: 'Document Request Details',
                   html: `
-                    <div class="text-left">
-                      <p><strong>Name:</strong> ${r.full_name}</p>
-                      <p><strong>Document:</strong> ${r.document_name}</p>
-                      <p><strong>Contact:</strong> ${r.contact_number || 'N/A'}</p>
-                      <p><strong>Email:</strong> ${r.email || 'N/A'}</p>
-                      <p><strong>Request Date:</strong> ${r.request_date}</p>
-                      <p><strong>Status:</strong> ${r.status}</p>
-                      <p><strong>Price:</strong> ₱${parseFloat(r.price || 0).toFixed(2)}</p>
-                      ${additionalInfo}
+                    <div style="text-align: left;">
+                      <p><strong>Document:</strong> ${req.document_name}</p>
+                      <p><strong>Requester:</strong> ${req.full_name}</p>
+                      <p><strong>Contact:</strong> ${req.contact_number || 'N/A'}</p>
+                      <p><strong>Request Date:</strong> ${new Date(req.request_date).toLocaleDateString()}</p>
+                      <p><strong>Purpose:</strong> ${req.purpose || 'N/A'}</p>
+                      ${req.price > 0 ? `<p><strong>Fee:</strong> ₱${parseFloat(req.price).toFixed(2)}</p>` : ''}
                     </div>
                   `,
-                  showCloseButton: true,
-                  showConfirmButton: false,
-                  width: '600px'
+                  width: '500px',
+                  confirmButtonText: 'Close'
                 });
               } else {
-                Swal.fire('Error', data.message || 'Unable to load details.', 'error');
+                Swal.fire('Error!', data.message, 'error');
               }
             });
         });
       });
+
+      // Modified function to handle document requests display with delivery method
+      function updateDocRequests(data) {
+        const pendingTable = document.getElementById('docRequestsTable').querySelector('tbody');
+        const completedTable = document.getElementById('docRequestsHistoryTable').querySelector('tbody');
+        
+        // Clear existing rows
+        pendingTable.innerHTML = '';
+        completedTable.innerHTML = '';
+        
+        // Add pending requests
+        data.pending.forEach(req => {
+          const row = document.createElement('tr');
+          row.className = 'hover:bg-gray-50';
+          
+          const dateCell = document.createElement('td');
+          dateCell.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-900';
+          dateCell.textContent = new Date(req.request_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+          
+          const documentCell = document.createElement('td');
+          documentCell.className = 'px-6 py-4 whitespace-nowrap';
+          documentCell.innerHTML = `
+            <div class="text-sm font-medium text-gray-900">${req.document_name}</div>
+            ${req.price > 0 ? `<div class="text-sm text-gray-500">Fee: ₱${parseFloat(req.price).toFixed(2)}</div>` : ''}
+          `;
+          
+          const requesterCell = document.createElement('td');
+          requesterCell.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-900';
+          requesterCell.textContent = req.requester_name;
+          
+          const statusCell = document.createElement('td');
+          statusCell.className = 'px-6 py-4 whitespace-nowrap';
+          statusCell.innerHTML = `
+            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+              ${req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+            </span>
+          `;
+          
+          const actionsCell = document.createElement('td');
+          actionsCell.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium';
+          
+          // Use delivery_method to determine which buttons to display
+          const deliveryMethod = (req.delivery_method || '').toLowerCase();
+          
+          actionsCell.innerHTML = `
+            <div class="flex space-x-2">
+              <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="${req.document_request_id}">
+                View
+              </button>
+              ${deliveryMethod === 'hardcopy' ? `
+              <button class="printDocRequestBtn text-green-600 hover:text-green-900" data-id="${req.document_request_id}">
+                Print
+              </button>
+              ` : ''}
+              ${deliveryMethod === 'softcopy' ? `
+              <button class="sendDocEmailBtn text-purple-600 hover:text-purple-900" data-id="${req.document_request_id}">
+                Send Email
+              </button>
+              ` : ''}
+              <button class="deleteDocRequestBtn text-red-600 hover:text-red-900" data-id="${req.document_request_id}">
+                Delete
+              </button>
+            </div>
+          `;
+          
+          row.appendChild(dateCell);
+          row.appendChild(documentCell);
+          row.appendChild(requesterCell);
+          row.appendChild(statusCell);
+          row.appendChild(actionsCell);
+          
+          pendingTable.appendChild(row);
+        });
+        
+        // Add completed requests
+        data.completed.forEach(req => {
+          const row = document.createElement('tr');
+          row.className = 'hover:bg-gray-50';
+          
+          row.innerHTML = `
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+              ${new Date(req.request_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">
+              ${req.document_name}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+              ${req.requester_name}
+            </td>
+            <td class="px-6 py-4 whitespace-nowrap">
+              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-green-100 text-green-800">
+                Completed
+              </span>
+            </td>
+          `;
+          
+          completedTable.appendChild(row);
+        });
+        
+        // Re-attach event listeners for action buttons
+        attachActionButtonListeners();
+      }
+      
+      // Function to attach event listeners to action buttons
+      function attachActionButtonListeners() {
+        document.querySelectorAll('.viewDocRequestBtn').forEach(btn => {
+          btn.addEventListener('click', viewDocRequest);
+        });
+        
+        document.querySelectorAll('.printDocRequestBtn').forEach(btn => {
+          btn.addEventListener('click', printDocRequest);
+        });
+        
+        document.querySelectorAll('.sendDocEmailBtn').forEach(btn => {
+          btn.addEventListener('click', sendDocEmail);
+        });
+        
+        document.querySelectorAll('.deleteDocRequestBtn').forEach(btn => {
+          btn.addEventListener('click', deleteDocRequest);
+        });
+      }
+      
+      // Define button click handlers
+      function viewDocRequest() {
+        const requestId = this.getAttribute('data-id');
+        // ... existing view request code ...
+      }
+      
+      function printDocRequest() {
+        const requestId = this.getAttribute('data-id');
+        // ... existing print request code ...
+      }
+      
+      function sendDocEmail() {
+        const requestId = this.getAttribute('data-id');
+        // ... existing email request code ...
+      }
+      
+      function deleteDocRequest() {
+        const requestId = this.getAttribute('data-id');
+        // ... existing delete request code ...
+      }
+
+      // Function to load requests via AJAX
+      function loadRequests() {
+        fetch('?action=get_requests')
+          .then(response => response.json())
+          .then(data => {
+            updateDocRequests(data);
+          })
+          .catch(error => {
+            console.error('Error loading requests:', error);
+          });
+      }
     });
   </script>
 </body>
