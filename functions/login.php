@@ -466,6 +466,7 @@ if (stripos($contentType, "application/json") !== false) {
             )
         ]);
         exit;
+        
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
