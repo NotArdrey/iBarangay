@@ -836,7 +836,7 @@ if (!empty($_GET['action'])) {
                 header('Content-Type: text/html'); // Change content type for redirect
                 
                 // Validate that user has appropriate role
-                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON])) {
                     $_SESSION['error_message'] = "You don't have permission to upload signatures";
                     header("Location: dashboard.php");
                     exit;
@@ -950,7 +950,7 @@ if (!empty($_GET['action'])) {
 
 
                 case 'sign_case':
-                  if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                  if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON])) {
                       echo json_encode(['success'=>false,'message'=>'Permission denied']);
                       exit;
                   }
@@ -1329,7 +1329,7 @@ if (!empty($_GET['action'])) {
 
                 case 'schedule_hearing':
                   // Check if user can schedule (Captain or Chief Officer)
-                  if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                  if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON])) {
                       echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can schedule hearings']);
                       exit;
                   }
@@ -1432,7 +1432,7 @@ if (!empty($_GET['action'])) {
                   if ($role === ROLE_CAPTAIN) {
                       $proposalStatus = 'pending_chief_approval'; // Waiting for Chief Officer
                       $otherRoleFriendlyName = 'Chief Officer';
-                  } else { // ROLE_CHIEF is proposing
+                  } else { // ROLE_CHAIRPERSON is proposing
                       $proposalStatus = 'pending_captain_approval'; // Waiting for Barangay Captain
                       $otherRoleFriendlyName = 'Barangay Captain';
                   }
@@ -1476,7 +1476,7 @@ if (!empty($_GET['action'])) {
                   ]);
                   break;
   case 'approve_schedule':
-    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON])) {
         echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can approve schedules']);
         exit;
     }
@@ -1491,7 +1491,7 @@ if (!empty($_GET['action'])) {
             WHERE sp.blotter_case_id = ? 
               AND bc.barangay_id = ?
               AND ( (sp.status = 'pending_captain_approval' AND ? = ".ROLE_CAPTAIN.") OR 
-                    (sp.status = 'pending_chief_approval' AND ? = ".ROLE_CHIEF.") )
+                    (sp.status = 'pending_chief_approval' AND ? = ".ROLE_CHAIRPERSON.") )
             ORDER BY sp.id DESC LIMIT 1
         ");
         $stmt->execute([$id, $bid, $role, $role]);
@@ -1516,7 +1516,7 @@ if (!empty($_GET['action'])) {
             ")->execute([$proposal['id']]);
             $successMessage = 'Captain availability confirmed. Now waiting for participant confirmations.';
             
-        } elseif ($role === ROLE_CHIEF && $proposal['status'] === 'pending_chief_approval') {
+        } elseif ($role === ROLE_CHAIRPERSON && $proposal['status'] === 'pending_chief_approval') {
             // Chief confirming availability for a schedule (e.g., proposed by Captain)
             $pdo->prepare("
                 UPDATE schedule_proposals
@@ -1545,12 +1545,10 @@ if (!empty($_GET['action'])) {
     break;
 
     case 'reject_schedule': // This is for an officer marking their unavailability
-    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+    if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON])) {
         echo json_encode(['success'=>false,'message'=>'Only Captain or Chief Officer can mark unavailability.']);
         exit;
     }
-    
-
     
     $data = json_decode(file_get_contents('php://input'), true);
     $reason = trim($data['reason'] ?? 'Not available for this schedule');
@@ -1569,7 +1567,7 @@ if (!empty($_GET['action'])) {
             WHERE sp.blotter_case_id = ? 
               AND bc.barangay_id = ?
               AND ( (sp.status = 'pending_captain_approval' AND ? = ".ROLE_CAPTAIN.") OR 
-                    (sp.status = 'pending_chief_approval' AND ? = ".ROLE_CHIEF.") )
+                    (sp.status = 'pending_chief_approval' AND ? = ".ROLE_CHAIRPERSON.") )
             ORDER BY sp.id DESC LIMIT 1
         ");
         $stmt->execute([$id, $bid, $role, $role]);
@@ -1593,7 +1591,7 @@ if (!empty($_GET['action'])) {
                 WHERE id = ?
             ")->execute([$reason, $proposal['id']]);
             $logMessage = 'Captain marked as unavailable for hearing: ' . $reason;
-        } elseif ($role === ROLE_CHIEF && $proposal['status'] === 'pending_chief_approval') {
+        } elseif ($role === ROLE_CHAIRPERSON && $proposal['status'] === 'pending_chief_approval') {
             $pdo->prepare("
                 UPDATE schedule_proposals
                 SET chief_confirmed = 0, -- Mark as not confirmed/unavailable
@@ -1727,7 +1725,7 @@ if (!empty($_GET['action'])) {
 $pendingStatusForBanner = null;
 if ($role === ROLE_CAPTAIN) {
     $pendingStatusForBanner = 'pending_captain_approval'; // Captain needs to act on these
-} elseif ($role === ROLE_CHIEF) {
+} elseif ($role === ROLE_CHAIRPERSON) {
     $pendingStatusForBanner = 'pending_chief_approval'; // Chief needs to act on these
 }
 
@@ -1816,7 +1814,7 @@ $stmt = $pdo->prepare("
           SELECT 1 FROM schedule_proposals sp
           WHERE sp.blotter_case_id = bc.id
             AND ( (sp.status = 'pending_captain_approval' AND ? = ".ROLE_CAPTAIN.") OR
-                  (sp.status = 'pending_chief_approval' AND ? = ".ROLE_CHIEF.") )
+                  (sp.status = 'pending_chief_approval' AND ? = ".ROLE_CHAIRPERSON.") )
       ) AS can_approve_schedule,
       -- Get the proposer info for pending schedules
       (
@@ -2264,7 +2262,7 @@ require_once "../components/header.php";
       </button>
       <?php endif; ?>
       
-      <?php if (in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])): ?>
+      <?php if (in_array($role, [ROLE_CAPTAIN, ROLE_CHAIRPERSON])): ?>
       <button 
         onclick="toggleSignatureModal()"
         class="w-full sm:w-auto text-white bg-purple-600 hover:bg-purple-700 focus:ring-4 focus:ring-purple-300 
@@ -2927,8 +2925,8 @@ async function handleAddIntervention(caseId) {
 async function handleRecordHearingOutcome(caseId, caseNumber, hearingId) {
     // Fetch current user details or default presiding officer
     // This is a placeholder; you might want to fetch this from session or a dedicated endpoint
-    const defaultPresidingOfficer = "<?= ($_SESSION['role_id'] == ROLE_CAPTAIN || $_SESSION['role_id'] == ROLE_CHIEF) ? htmlspecialchars($_SESSION['first_name'] . ' ' . $_SESSION['last_name']) : '' ?>";
-    const defaultPosition = "<?= ($_SESSION['role_id'] == ROLE_CAPTAIN) ? 'barangay_captain' : (($_SESSION['role_id'] == ROLE_CHIEF) ? 'chief_officer' : 'lupon_member') ?>";
+    const defaultPresidingOfficer = "<?= ($_SESSION['role_id'] == ROLE_CAPTAIN || $_SESSION['role_id'] == ROLE_CHAIRPERSON) ? htmlspecialchars($_SESSION['first_name'] . ' ' . $_SESSION['last_name']) : '' ?>";
+    const defaultPosition = "<?= ($_SESSION['role_id'] == ROLE_CAPTAIN) ? 'barangay_captain' : (($_SESSION['role_id'] == ROLE_CHAIRPERSON) ? 'chief_officer' : 'lupon_member') ?>";
 
     const { value: formValues, isConfirmed } = await Swal.fire({
         title: `Record Outcome for Hearing`,
