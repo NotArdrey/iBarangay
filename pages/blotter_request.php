@@ -588,9 +588,6 @@ require "../components/navbar.php";
             color: var(--primary-color);
             font-size: 1.75rem;
             font-weight: 600;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid var(--border-light);
             display: flex;
             align-items: center;
             gap: 0.5rem;
@@ -1088,15 +1085,6 @@ require "../components/navbar.php";
     .notif-item { padding: 10px 14px; border-bottom: 1px solid #eee; }
     .notif-item:last-child { border-bottom: none; }
     </style>
-    <!-- Add to navbar (inside header.php or here if needed) -->
-    <div style="position:relative;display:inline-block;">
-      <span id="notifBell" style="font-size:22px;vertical-align:middle;">
-        <i class="fas fa-bell"></i>
-        <span id="notifCount"></span>
-      </span>
-      <div id="notifDropdown"></div>
-    </div>
-
     <!-- Show proposed schedules and allow user to confirm/reject -->
     <?php
     // Fetch latest schedule proposal for this user

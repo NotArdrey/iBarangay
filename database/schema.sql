@@ -40,8 +40,10 @@ INSERT INTO roles (name, description) VALUES
     ('barangay_secretary', 'Administrative official for barangay operations'),
     ('barangay_treasurer', 'Financial official for barangay funds'),
     ('barangay_councilor', 'Elected barangay council member'),
-    ('chief_officer', 'Leads specific barangay services'),
-    ('resident', 'Regular barangay resident');
+    ('barangay_chairperson', 'Leads blottercases'), 
+    ('resident', 'Regular barangay resident'),
+	('health_worker', 'Health worker for census');
+    
 
 -- Document types
 CREATE TABLE document_types (
@@ -1448,7 +1450,8 @@ INSERT INTO users (email, password, role_id, barangay_id, first_name, last_name,
     ('neilardrey14@gmail.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 8, 32, 'Neil', 'Ardrey', 'Male', NOW(), TRUE),
     ('captain.pantubig@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 3, 18, 'Maria', 'Santos', 'Female', NOW(), TRUE),
     ('captain.caingin@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 3, 3, 'Roberto', 'Reyes', 'Male', NOW(), TRUE),
-    ('chiefOfficer.tambubong@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 7, 32, 'Ricardo', 'Morales', 'Male', NOW(), TRUE);
+    ('chiefOfficer.tambubong@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 7, 32, 'Ricardo', 'Morales', 'Male', NOW(), TRUE),
+    ('healthworker.tambubong@barangay.com', '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', 8, 32, 'Ricardo', 'Morales', 'Male', NOW(), TRUE);
 
 -- Insert sample persons
 INSERT INTO persons (user_id, first_name, last_name, birth_date, birth_place, gender, civil_status) VALUES
@@ -1460,7 +1463,8 @@ INSERT INTO persons (user_id, first_name, last_name, birth_date, birth_place, ge
     (6, 'Neil', 'Ardrey', '1992-05-15', 'San Rafael', 'MALE', 'SINGLE'),
     (7, 'Maria', 'Santos', '1975-03-15', 'Bulacan', 'FEMALE', 'MARRIED'),
     (8, 'Roberto', 'Reyes', '1970-08-22', 'Bulacan', 'MALE', 'MARRIED'),
-    (9, 'Ricardo', 'Morales', '1968-11-10', 'Bulacan', 'MALE', 'MARRIED');
+    (9, 'Ricardo', 'Morales', '1968-11-10', 'Bulacan', 'MALE', 'MARRIED'),
+    (10, 'tite', 'flores', '1968-11-10', 'Bulacan', 'MALE', 'MARRIED');
 
 -- Insert additional residents without user accounts
 INSERT INTO persons (first_name, middle_name, last_name, birth_date, birth_place, gender, civil_status, occupation, contact_number) VALUES
@@ -1470,9 +1474,10 @@ INSERT INTO persons (first_name, middle_name, last_name, birth_date, birth_place
     ('Carlos', 'Santos', 'Dela Cruz', '1980-05-15', 'San Rafael', 'MALE', 'MARRIED', 'Farmer', '09123456789'),
     ('Elena', 'Garcia', 'Santos', '1985-08-20', 'San Rafael', 'FEMALE', 'MARRIED', 'Teacher', '09987654321'),
     ('Pedro', 'Ramos', 'Gonzales', '1975-12-10', 'San Rafael', 'MALE', 'SINGLE', 'Driver', '09111222333'),
-    ('Ana', 'Flores', 'Reyes', '1990-03-25', 'San Rafael', 'FEMALE', 'SINGLE', 'Nurse', '09444555666');
+    ('Ana', 'Flores', 'Reyes', '1990-03-25', 'San Rafael', 'FEMALE', 'SINGLE', 'Nurse', '09444555666'),
+	('tite', 'Flores', 'Reyes', '1990-03-25', 'San Rafael', 'FEMALE', 'SINGLE', 'Nurse', '09344555666');
 
--- Insert User Roles
+
 INSERT INTO user_roles (user_id, role_id, barangay_id, is_active, start_term_date, end_term_date) VALUES
     (1, 1, 1, TRUE, NULL, NULL),
     (2, 2, 1, TRUE, NULL, NULL),
@@ -1698,7 +1703,21 @@ CREATE TABLE case_notifications (
 CREATE INDEX idx_schedule_proposals_status ON schedule_proposals(status);
 CREATE INDEX idx_schedule_notifications_user ON schedule_notifications(notified_user_id, is_read);
 CREATE INDEX idx_blotter_cases_dismissed ON blotter_cases(dismissed_by_user_id, dismissal_date);
+CREATE TABLE barangay_paymongo_settings (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    barangay_id INT NOT NULL,
+    is_enabled BOOLEAN DEFAULT FALSE,
+    public_key VARCHAR(255),
+    secret_key VARCHAR(255),
+    webhook_secret VARCHAR(255),
+    test_mode BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uk_barangay_id (barangay_id),
+    FOREIGN KEY (barangay_id) REFERENCES barangay(id) ON DELETE CASCADE
+);
 
+select * FROM barangay_paymongo_settings;
 
 ALTER TABLE blotter_cases 
 ADD COLUMN accepted_by_user_id INT NULL AFTER assigned_to_user_id,
@@ -1741,14 +1760,516 @@ ADD COLUMN chief_remarks TEXT NULL AFTER captain_remarks;
 ALTER TABLE schedule_proposals 
 MODIFY COLUMN status ENUM(
     'proposed', 
-    'user_confirmed', 
-    'captain_confirmed', 
-    'both_confirmed', 
-    'conflict', 
-    'pending_user_confirmation', 
-    'pending_captain_approval',     -- Was 'pending_captain_confirmation', aligned with PHP
-    'pending_chief_approval',       -- New, replaces 'pending_officer_confirmation' for clarity
-    'all_confirmed',                -- New status for when all participants confirm
+    'user_confirmed',
+    'captain_confirmed',
+    'both_confirmed',
+    'conflict',
+    'pending_user_confirmation',
+    'pending_captain_approval',  
+    'pending_chief_approval',    
+    'all_confirmed',                
     'cancelled', 
     'officer_conflict'
 ) NOT NULL DEFAULT 'proposed';
+
+
+ALTER TABLE document_requests
+ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER business_type;
+
+ALTER TABLE document_requests
+MODIFY COLUMN status ENUM('pending','completed','rejected', 'processing', 'for_payment', 'archived') DEFAULT 'pending';
+
+ALTER TABLE custom_services
+ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER additional_notes,
+ADD COLUMN archived_at TIMESTAMP NULL DEFAULT NULL AFTER is_archived;
+
+ALTER TABLE document_requests 
+ADD COLUMN delivery_method ENUM('hardcopy', 'softcopy') DEFAULT 'hardcopy' AFTER business_type,
+ADD COLUMN payment_method ENUM('cash', 'online') DEFAULT 'cash' AFTER delivery_method,
+ADD COLUMN payment_status ENUM('pending', 'paid', 'failed') DEFAULT 'pending' AFTER payment_method,
+ADD COLUMN payment_reference VARCHAR(100) NULL AFTER payment_status,
+ADD COLUMN paymongo_checkout_id VARCHAR(100) NULL AFTER payment_reference,
+ADD COLUMN payment_date DATETIME NULL AFTER paymongo_checkout_id;
+
+ALTER TABLE temporary_records ADD COLUMN is_archived VARCHAR(50) DEFAULT FALSE AFTER days_residency;
+-- Insert a complete resident who has been living in Barangay Tambubong for 7 years
+-- Starting with the core person record
+INSERT INTO users (
+    email, 
+    phone, 
+    role_id, 
+    barangay_id, 
+    id_expiration_date,
+    id_type,
+    id_number,
+    first_name, 
+    last_name, 
+    gender, 
+    password, 
+    email_verified_at, 
+    phone_verified_at,
+    verification_token,
+    verification_expiry,
+    is_active,
+    last_login,
+    start_term_date,
+    end_term_date,
+    id_image_path,
+    signature_image_path,
+    esignature_path,
+    govt_id_image
+) VALUES (
+    'maria.rodriguez@gmail.com',
+    '09173456789',
+    8, -- resident role
+    32, -- Tambubong barangay
+    '2029-03-15', -- ID expiration (5 years from birth month)
+    'Voters ID',
+    'TAMBUBONG-2024-001',
+    'Maria Teresa',
+    'Rodriguez',
+    'Female',
+    '$2y$10$YavXAnllLC3VCF8R0eVxXeWu/.mawVifHel6BYiU2H5oxCz8nfMIm', -- Same password as other users
+    NOW(), -- Email verified
+    NOW(), -- Phone verified  
+    NULL, -- No verification token needed since verified
+    NULL, -- No verification expiry needed
+    TRUE, -- Active account
+    NULL, -- No last login yet
+    NULL, -- No term dates for residents
+    NULL,
+    'default.png', -- Default profile image
+    NULL, -- No signature image yet
+    NULL, -- No e-signature yet
+    NULL  -- No government ID image yet
+);
+
+INSERT INTO persons (
+    first_name, 
+    middle_name, 
+    last_name, 
+    suffix,
+    birth_date, 
+    birth_place, 
+    gender, 
+    civil_status,
+    citizenship,
+    religion,
+    education_level,
+    occupation,
+    monthly_income,
+    years_of_residency,
+    nhts_pr_listahanan,
+    indigenous_people,
+    pantawid_beneficiary,
+    resident_type,
+    contact_number,
+    user_id,
+    is_archived
+) VALUES (
+    'Maria Teresa',
+    'Santos', 
+    'Rodriguez',
+    NULL,
+    '1985-03-15',
+    'San Rafael, Bulacan',
+    'FEMALE',
+    'MARRIED',
+    'Filipino',
+    'Roman Catholic',
+    'COLLEGE GRADUATE',
+    'Elementary School Teacher',
+    25000.00,
+    7,
+    FALSE,
+    FALSE,
+    FALSE,
+    'REGULAR',
+    '09173456789',
+    NULL,
+    FALSE
+);
+
+-- Get the person_id for subsequent inserts (assuming this is the next auto-increment ID)
+SET @person_id = LAST_INSERT_ID();
+
+-- Insert address information (7 years in Tambubong)
+INSERT INTO addresses (
+    person_id,
+    user_id,
+    barangay_id,
+    barangay_name,
+    house_no,
+    street,
+    phase,
+    municipality,
+    province,
+    region,
+    subdivision,
+    block_lot,
+    residency_type,
+    years_in_san_rafael,
+    is_primary,
+    is_permanent
+) VALUES (
+    @person_id,
+    NULL,
+    32, -- Tambubong barangay_id
+    'Tambubong',
+    '125',
+    'Maligaya Street',
+    'Phase 2',
+    'SAN RAFAEL',
+    'BULACAN',
+    'III',
+    'Villa Teresa Subdivision',
+    'Block 5 Lot 12',
+    'Home Owner',
+    7,
+    TRUE,
+    TRUE
+);
+
+-- Insert identification details
+INSERT INTO person_identification (
+    person_id,
+    osca_id,
+    gsis_id,
+    sss_id,
+    tin_id,
+    philhealth_id,
+    other_id_type,
+    other_id_number
+) VALUES (
+    @person_id,
+    NULL,
+    '1234567890',
+    '12-3456789-0',
+    '123-456-789-000',
+    '12-345678901-2',
+    'Voters ID',
+    'TAMBUBONG-2024-001'
+);
+
+-- Insert emergency contact
+INSERT INTO emergency_contacts (
+    person_id,
+    contact_name,
+    contact_number,
+    contact_address,
+    relationship
+) VALUES (
+    @person_id,
+    'Juan Carlos Rodriguez',
+    '09187654321',
+    '125 Maligaya Street, Villa Teresa Subdivision, Tambubong, San Rafael, Bulacan',
+    'Husband'
+);
+
+-- Insert government programs participation
+INSERT INTO government_programs (
+    person_id,
+    nhts_pr_listahanan,
+    indigenous_people,
+    pantawid_beneficiary
+) VALUES (
+    @person_id,
+    FALSE,
+    FALSE,
+    FALSE
+);
+
+-- Insert asset information (House & Lot owner)
+INSERT INTO person_assets (
+    person_id,
+    asset_type_id,
+    details
+) VALUES 
+(@person_id, 2, 'Two-story house with lot in Villa Teresa Subdivision'),
+(@person_id, 7, 'Small vegetable garden at the back of the house');
+
+-- Insert income sources
+INSERT INTO person_income_sources (
+    person_id,
+    source_type_id,
+    amount,
+    details
+) VALUES 
+(@person_id, 1, NULL, 'Monthly salary as Elementary School Teacher'),
+(@person_id, 10, NULL, 'Income from small vegetable garden and egg sales');
+
+-- Insert living arrangements
+INSERT INTO person_living_arrangements (
+    person_id,
+    arrangement_type_id,
+    details
+) VALUES 
+(@person_id, 2, 'Lives with husband'),
+(@person_id, 4, 'Two children living at home');
+
+-- Insert skills
+INSERT INTO person_skills (
+    person_id,
+    skill_type_id,
+    details
+) VALUES 
+(@person_id, 2, 'Elementary Education Teaching - 8 years experience'),
+(@person_id, 9, 'Excellent cooking skills, specializes in Filipino cuisine'),
+(@person_id, 7, 'Vegetable gardening and small-scale farming');
+
+-- Insert community involvement
+INSERT INTO person_involvements (
+    person_id,
+    involvement_type_id,
+    details
+) VALUES 
+(@person_id, 4, 'Member of Parent-Teacher Association and Barangay Education Committee'),
+(@person_id, 8, 'Active member of local church choir and religious activities'),
+(@person_id, 3, 'Volunteers for community beautification projects and tree planting');
+
+-- Insert health information
+INSERT INTO person_health_info (
+    person_id,
+    health_condition,
+    has_maintenance,
+    maintenance_details,
+    high_cost_medicines,
+    lack_medical_professionals,
+    lack_sanitation_access,
+    lack_health_insurance,
+    lack_medical_facilities,
+    other_health_concerns
+) VALUES (
+    @person_id,
+    'Generally healthy, mild hypertension',
+    TRUE,
+    'Takes maintenance medication for hypertension - Amlodipine 5mg daily',
+    FALSE,
+    FALSE,
+    FALSE,
+    FALSE,
+    FALSE,
+    'Occasional stress-related headaches due to work'
+);
+
+-- Insert economic problems (if any)
+INSERT INTO person_economic_problems (
+    person_id,
+    loss_income,
+    unemployment,
+    skills_training,
+    skills_training_details,
+    livelihood,
+    livelihood_details,
+    other_economic,
+    other_economic_details
+) VALUES (
+    @person_id,
+    FALSE,
+    FALSE,
+    TRUE,
+    'Interested in digital literacy training and online teaching methods',
+    TRUE,
+    'Wants to expand vegetable garden into small business',
+    FALSE,
+    NULL
+);
+
+-- Insert housing problems (minimal since she owns her home)
+INSERT INTO person_housing_problems (
+    person_id,
+    overcrowding,
+    no_permanent_housing,
+    independent_living,
+    lost_privacy,
+    squatters,
+    other_housing,
+    other_housing_details
+) VALUES (
+    @person_id,
+    FALSE,
+    FALSE,
+    FALSE,
+    FALSE,
+    FALSE,
+    TRUE,
+    'Minor roof repairs needed during rainy season'
+);
+
+-- Insert other needs
+INSERT INTO person_other_needs (
+    person_id,
+    need_type_id,
+    details
+) VALUES 
+(@person_id, 3, 'Interested in advanced teaching methodology workshops'),
+(@person_id, 6, 'Would like more recreational activities for families in the barangay'),
+(@person_id, 12, 'Wants access to cultural activities and arts programs for children');
+
+-- Create a household for this person
+INSERT INTO households (
+    household_number,
+    barangay_id,
+    purok_id,
+    household_head_person_id,
+    household_size
+) VALUES (
+    'TMB-2024-125',
+    32, -- Tambubong
+    NULL, -- Assuming no purok data yet
+    @person_id,
+    4 -- Including spouse and 2 children
+);
+
+SET @household_id = LAST_INSERT_ID();
+
+-- Add person as household head
+INSERT INTO household_members (
+    household_id,
+    person_id,
+    relationship_type_id,
+    is_household_head,
+    relationship_to_head
+) VALUES (
+    @household_id,
+    @person_id,
+    1, -- HEAD
+    TRUE,
+    'HEAD'
+);
+
+-- Add family composition entry
+INSERT INTO family_composition (
+    household_id,
+    person_id,
+    name,
+    relationship,
+    age,
+    civil_status,
+    occupation,
+    monthly_income
+) VALUES (
+    @household_id,
+    @person_id,
+    'Maria Teresa Santos Rodriguez',
+    'HEAD',
+    39,
+    'MARRIED',
+    'Elementary School Teacher',
+    25000.00
+);
+
+-- Insert legacy format data for backward compatibility
+INSERT INTO income_sources (
+    person_id,
+    own_earnings,
+    own_pension,
+    own_pension_amount,
+    stocks_dividends,
+    dependent_on_children,
+    spouse_salary,
+    insurances,
+    spouse_pension,
+    spouse_pension_amount,
+    rentals_sharecrops,
+    savings,
+    livestock_orchards,
+    others,
+    others_specify
+) VALUES (
+    @person_id,
+    TRUE,  -- own_earnings (teacher salary)
+    FALSE, -- own_pension
+    NULL,  -- own_pension_amount
+    FALSE, -- stocks_dividends
+    FALSE, -- dependent_on_children
+    TRUE,  -- spouse_salary (husband works)
+    TRUE,  -- insurances (GSIS, PhilHealth)
+    FALSE, -- spouse_pension
+    NULL,  -- spouse_pension_amount
+    FALSE, -- rentals_sharecrops
+    TRUE,  -- savings
+    TRUE,  -- livestock_orchards (vegetable garden, chickens)
+    FALSE, -- others
+    NULL   -- others_specify
+);
+
+INSERT INTO assets_properties (
+    person_id,
+    house,
+    house_lot,
+    farmland
+) VALUES (
+    @person_id,
+    FALSE, -- house (separate from lot)
+    TRUE,  -- house_lot (owns both)
+    FALSE  -- farmland (just small garden)
+);
+
+INSERT INTO living_arrangements (
+    person_id,
+    spouse,
+    care_institutions,
+    children,
+    grandchildren,
+    househelps,
+    relatives,
+    others,
+    others_specify
+) VALUES (
+    @person_id,
+    TRUE,  -- spouse
+    FALSE, -- care_institutions
+    TRUE,  -- children
+    FALSE, -- grandchildren
+    FALSE, -- househelps
+    FALSE, -- relatives
+    FALSE, -- others
+    NULL   -- others_specify
+);
+
+INSERT INTO skills (
+    person_id,
+    dental,
+    counseling,
+    evangelization,
+    farming
+) VALUES (
+    @person_id,
+    FALSE, -- dental
+    TRUE,  -- counseling (as a teacher)
+    TRUE,  -- evangelization (church member)
+    TRUE   -- farming (vegetable garden)
+);
+
+INSERT INTO problems_needs (
+    person_id,
+    lack_income,
+    unemployment,
+    economic_others,
+    economic_others_specify,
+    loneliness,
+    isolation,
+    neglect,
+    lack_health_insurance,
+    inadequate_health_services,
+    lack_medical_facilities,
+    overcrowding,
+    no_permanent_housing,
+    independent_living
+) VALUES (
+    @person_id,
+    FALSE, -- lack_income
+    FALSE, -- unemployment
+    FALSE, -- economic_others
+    NULL,  -- economic_others_specify
+    FALSE, -- loneliness
+    FALSE, -- isolation
+    FALSE, -- neglect
+    FALSE, -- lack_health_insurance (has GSIS/PhilHealth)
+    FALSE, -- inadequate_health_services
+    FALSE, -- lack_medical_facilities
+    FALSE, -- overcrowding
+    FALSE, -- no_permanent_housing (owns home)
+    FALSE  -- independent_living
+);
