@@ -9,6 +9,22 @@ if (session_status() === PHP_SESSION_NONE) {
 $current_admin_id = $_SESSION['user_id'];
 $barangay_id = $_SESSION['barangay_id'];
 
+// --- ROLE RESTRICTION LOGIC (copy from manage_census.php) ---
+$current_admin_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+$current_role_id = isset($_SESSION['role_id']) ? (int)$_SESSION['role_id'] : null;
+$barangay_id = isset($_SESSION['barangay_id']) ? (int)$_SESSION['barangay_id'] : null;
+
+$census_full_access_roles = [1, 2, 3, 9]; // Programmer, Super Admin, Captain, Health Worker
+$census_view_only_roles = [4, 5, 6, 7];   // Secretary, Treasurer, Councilor, Chairperson
+
+$can_manage_census = in_array($current_role_id, $census_full_access_roles);
+$can_view_census = $can_manage_census || in_array($current_role_id, $census_view_only_roles);
+
+if ($current_admin_id === null || !$can_view_census) {
+    header("Location: ../pages/login.php");
+    exit;
+}
+
 // Show add or edit success message if redirected after add/edit
 if (isset($_SESSION['add_success']) && $_SESSION['add_success']) {
     echo "<script>
@@ -46,6 +62,10 @@ if (
     $_SERVER['REQUEST_METHOD'] === 'POST' &&
     isset($_POST['action']) && $_POST['action'] === 'delete'
 ) {
+    if (!$can_manage_census) {
+        echo json_encode(['success' => false, 'message' => 'You do not have permission to delete records.']);
+        exit;
+    }
     header('Content-Type: application/json');
     try {
         if (!isset($_POST['record_id']) || empty($_POST['record_id'])) {
@@ -103,132 +123,143 @@ if (
 
 // Handle form submission
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && (!isset($_POST['action']) || $_POST['action'] !== 'delete')) {
-    try {
-        if (isset($_POST['record_id']) && !empty($_POST['record_id'])) {
-            // Get old record data for audit trail
-            $oldStmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
-            $oldStmt->execute([$_POST['record_id']]);
-            $oldRecord = $oldStmt->fetch(PDO::FETCH_ASSOC);
-
-            // Update existing record
-            $stmt = $pdo->prepare("
-                UPDATE temporary_records SET
-                    last_name = ?, suffix = ?, first_name = ?, middle_name = ?, 
-                    date_of_birth = ?, place_of_birth = ?, 
-                    months_residency = ?, days_residency = ?,
-                    house_number = ?, street = ?, barangay_id = ?, municipality = ?, province = ?, region = ?,
-                    id_type = ?, id_number = ?,
-                    updated_at = NOW()
-                WHERE id = ?
-            ");
-
-            $stmt->execute([
-                $_POST['last_name'],
-                $_POST['suffix'],
-                $_POST['first_name'],
-                $_POST['middle_name'],
-                $_POST['date_of_birth'],
-                $_POST['place_of_birth'],
-                $_POST['months_residency'],
-                $_POST['days_residency'],
-                $_POST['house_number'],
-                $_POST['street'],
-                $barangay_id,
-                $_POST['municipality'],
-                $_POST['province'],
-                $_POST['region'],
-                $_POST['id_type'],
-                $_POST['id_number'],
-                $_POST['record_id']
-            ]);
-
-            // Log the update in audit trail
-            $newRecord = [
-                'last_name' => $_POST['last_name'],
-                'suffix' => $_POST['suffix'],
-                'first_name' => $_POST['first_name'],
-                'middle_name' => $_POST['middle_name'],
-                'date_of_birth' => $_POST['date_of_birth'],
-                'place_of_birth' => $_POST['place_of_birth'],
-                'months_residency' => $_POST['months_residency'],
-                'days_residency' => $_POST['days_residency'],
-                'house_number' => $_POST['house_number'],
-                'street' => $_POST['street'],
-                'barangay_id' => $barangay_id,
-                'municipality' => $_POST['municipality'],
-                'province' => $_POST['province'],
-                'region' => $_POST['region'],
-                'id_type' => $_POST['id_type'],
-                'id_number' => $_POST['id_number']
-            ];
-
-            $auditStmt = $pdo->prepare("
-                INSERT INTO audit_trails (
-                    user_id, action, table_name, record_id, old_values, new_values, description
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ");
-            $auditStmt->execute([
-                $_SESSION['user_id'],
-                'UPDATE',
-                'temporary_records',
-                $_POST['record_id'],
-                json_encode($oldRecord),
-                json_encode($newRecord),
-                "Updated temporary record for {$_POST['last_name']}, {$_POST['first_name']}"
-            ]);
-
-            $_SESSION['edit_success'] = true;
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
-        } else {
-            // Insert new record
-            $stmt = $pdo->prepare("
-                INSERT INTO temporary_records (
-                    last_name, suffix, first_name, middle_name, 
-                    date_of_birth, place_of_birth, 
-                    months_residency, days_residency,
-                    house_number, street, barangay_id, municipality, province, region,
-                    id_type, id_number,
-                    created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            ");
-
-            $stmt->execute([
-                $_POST['last_name'],
-                $_POST['suffix'],
-                $_POST['first_name'],
-                $_POST['middle_name'],
-                $_POST['date_of_birth'],
-                $_POST['place_of_birth'],
-                $_POST['months_residency'],
-                $_POST['days_residency'],
-                $_POST['house_number'],
-                $_POST['street'],
-                $barangay_id,
-                $_POST['municipality'],
-                $_POST['province'],
-                $_POST['region'],
-                $_POST['id_type'],
-                $_POST['id_number']
-            ]);
-
-            $_SESSION['add_success'] = true;
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit;
-        }
-    } catch (PDOException $e) {
+    if (!$can_manage_census) {
         echo "<script>
             Swal.fire({
                 icon: 'error',
-                title: 'Error!',
-                text: 'Failed to process temporary record. " . addslashes($e->getMessage()) . "',
-                confirmButtonColor: '#3085d6',
-                confirmButtonText: 'OK',
-                customClass: {
-                    confirmButton: 'swal2-confirm-button'
-                }
+                title: 'Permission Denied',
+                text: 'You do not have permission to add or edit temporary records.',
+                confirmButtonColor: '#3085d6'
             });
         </script>";
+    } else {
+        try {
+            if (isset($_POST['record_id']) && !empty($_POST['record_id'])) {
+                // Get old record data for audit trail
+                $oldStmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
+                $oldStmt->execute([$_POST['record_id']]);
+                $oldRecord = $oldStmt->fetch(PDO::FETCH_ASSOC);
+
+                // Update existing record
+                $stmt = $pdo->prepare("
+                    UPDATE temporary_records SET
+                        last_name = ?, suffix = ?, first_name = ?, middle_name = ?, 
+                        date_of_birth = ?, place_of_birth = ?, 
+                        months_residency = ?, days_residency = ?,
+                        house_number = ?, street = ?, barangay_id = ?, municipality = ?, province = ?, region = ?,
+                        id_type = ?, id_number = ?,
+                        updated_at = NOW()
+                    WHERE id = ?
+                ");
+
+                $stmt->execute([
+                    $_POST['last_name'],
+                    $_POST['suffix'],
+                    $_POST['first_name'],
+                    $_POST['middle_name'],
+                    $_POST['date_of_birth'],
+                    $_POST['place_of_birth'],
+                    $_POST['months_residency'],
+                    $_POST['days_residency'],
+                    $_POST['house_number'],
+                    $_POST['street'],
+                    $barangay_id,
+                    $_POST['municipality'],
+                    $_POST['province'],
+                    $_POST['region'],
+                    $_POST['id_type'],
+                    $_POST['id_number'],
+                    $_POST['record_id']
+                ]);
+
+                // Log the update in audit trail
+                $newRecord = [
+                    'last_name' => $_POST['last_name'],
+                    'suffix' => $_POST['suffix'],
+                    'first_name' => $_POST['first_name'],
+                    'middle_name' => $_POST['middle_name'],
+                    'date_of_birth' => $_POST['date_of_birth'],
+                    'place_of_birth' => $_POST['place_of_birth'],
+                    'months_residency' => $_POST['months_residency'],
+                    'days_residency' => $_POST['days_residency'],
+                    'house_number' => $_POST['house_number'],
+                    'street' => $_POST['street'],
+                    'barangay_id' => $barangay_id,
+                    'municipality' => $_POST['municipality'],
+                    'province' => $_POST['province'],
+                    'region' => $_POST['region'],
+                    'id_type' => $_POST['id_type'],
+                    'id_number' => $_POST['id_number']
+                ];
+
+                $auditStmt = $pdo->prepare("
+                    INSERT INTO audit_trails (
+                        user_id, action, table_name, record_id, old_values, new_values, description
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ");
+                $auditStmt->execute([
+                    $_SESSION['user_id'],
+                    'UPDATE',
+                    'temporary_records',
+                    $_POST['record_id'],
+                    json_encode($oldRecord),
+                    json_encode($newRecord),
+                    "Updated temporary record for {$_POST['last_name']}, {$_POST['first_name']}"
+                ]);
+
+                $_SESSION['edit_success'] = true;
+                header('Location: ' . $_SERVER['PHP_SELF']);
+                exit;
+            } else {
+                // Insert new record
+                $stmt = $pdo->prepare("
+                    INSERT INTO temporary_records (
+                        last_name, suffix, first_name, middle_name, 
+                        date_of_birth, place_of_birth, 
+                        months_residency, days_residency,
+                        house_number, street, barangay_id, municipality, province, region,
+                        id_type, id_number,
+                        created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                ");
+
+                $stmt->execute([
+                    $_POST['last_name'],
+                    $_POST['suffix'],
+                    $_POST['first_name'],
+                    $_POST['middle_name'],
+                    $_POST['date_of_birth'],
+                    $_POST['place_of_birth'],
+                    $_POST['months_residency'],
+                    $_POST['days_residency'],
+                    $_POST['house_number'],
+                    $_POST['street'],
+                    $barangay_id,
+                    $_POST['municipality'],
+                    $_POST['province'],
+                    $_POST['region'],
+                    $_POST['id_type'],
+                    $_POST['id_number']
+                ]);
+
+                $_SESSION['add_success'] = true;
+                header('Location: ' . $_SERVER['PHP_SELF']);
+                exit;
+            }
+        } catch (PDOException $e) {
+            echo "<script>
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Error!',
+                    text: 'Failed to process temporary record. " . addslashes($e->getMessage()) . "',
+                    confirmButtonColor: '#3085d6',
+                    confirmButtonText: 'OK',
+                    customClass: {
+                        confirmButton: 'swal2-confirm-button'
+                    }
+                });
+            </script>";
+        }
     }
 }
 
@@ -274,7 +305,11 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
     <!-- Form Tab Content -->
     <div id="formTabContent">
         <div class="border border-gray-200 rounded-b-lg p-6 mb-6 bg-white">
-            <h2 class="text-3xl font-bold text-blue-800 mb-6">Temporary Record Form</h2>
+            <?php if (!$can_manage_census): ?>
+                <div class="error-message bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                    You do not have permission to add or edit temporary records.
+                </div>
+            <?php endif; ?>
             <form id="temporaryRecordForm" method="POST" class="space-y-4">
                 <input type="hidden" name="record_id" id="record_id">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1022,5 +1057,30 @@ $barangays = $barangayStmt->fetchAll(PDO::FETCH_ASSOC);
             formTabContent.classList.add('hidden');
             listTabContent.classList.remove('hidden');
         });
+
+        // Make form fields non-editable for users without $can_manage_census
+        <?php if (!$can_manage_census): ?>
+        document.querySelectorAll('#temporaryRecordForm input, #temporaryRecordForm select, #temporaryRecordForm textarea, #temporaryRecordForm button[type="submit"]').forEach(el => {
+            if (el.type !== 'hidden') {
+                if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'date' || el.type === 'number' || el.type === 'email' || el.type === 'tel')) {
+                    el.readOnly = true;
+                } else if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'))) {
+                    el.disabled = true;
+                }
+            }
+        });
+        // Prevent delete actions
+        document.querySelectorAll('.deleteBtn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                e.preventDefault();
+                Swal.fire({
+                    icon: 'error',
+                    title: 'Permission Denied',
+                    text: 'You do not have permission to delete.',
+                    confirmButtonColor: '#3085d6'
+                });
+            });
+        });
+        <?php endif; ?>
     });
 </script>

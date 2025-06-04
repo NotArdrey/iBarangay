@@ -2,6 +2,25 @@
 require "../config/dbconn.php";
 require_once "../components/header.php";
 
+// --- ROLE RESTRICTION LOGIC (copy from manage_census.php) ---
+if (session_status() === PHP_SESSION_NONE) {
+    session_start();
+}
+$current_admin_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
+$current_role_id = isset($_SESSION['role_id']) ? (int)$_SESSION['role_id'] : null;
+$barangay_id = isset($_SESSION['barangay_id']) ? (int)$_SESSION['barangay_id'] : null;
+
+$census_full_access_roles = [1, 2, 3, 9]; // Programmer, Super Admin, Captain, Health Worker
+$census_view_only_roles = [4, 5, 6, 7];   // Secretary, Treasurer, Councilor, Chairperson
+
+$can_manage_census = in_array($current_role_id, $census_full_access_roles);
+$can_view_census = $can_manage_census || in_array($current_role_id, $census_view_only_roles);
+
+if ($current_admin_id === null || !$can_view_census) {
+    header("Location: ../pages/login.php");
+    exit;
+}
+
 // Function to generate Philippine HSN (Household Serial Number) based on actual PSA system
 function generateHouseholdId($pdo, $barangay_id, $purok_id)
 {
@@ -104,73 +123,77 @@ if (isset($_SESSION['error'])) {
 }
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    $barangay_id = $_SESSION['barangay_id'];
-    $purok_id = $_POST['purok_id'] ?? null;
-    $household_head_person_id = $_POST['household_head_person_id'] ?? null;
-    $manual_number = trim($_POST['manual_household_id'] ?? '');
-    $use_manual_id = isset($_POST['use_manual_id']) && $_POST['use_manual_id'] === '1';
+    if (!$can_manage_census) {
+        $add_error = "You do not have permission to add or edit households.";
+    } else {
+        $barangay_id = $_SESSION['barangay_id'];
+        $purok_id = $_POST['purok_id'] ?? null;
+        $household_head_person_id = $_POST['household_head_person_id'] ?? null;
+        $manual_number = trim($_POST['manual_household_id'] ?? '');
+        $use_manual_id = isset($_POST['use_manual_id']) && $_POST['use_manual_id'] === '1';
 
-    try {
-        // Validate purok_id
-        if (!$purok_id) {
-            $add_error = "Please select a purok.";
-        } else {
-            // Generate or use manual household number
-            if ($use_manual_id && !empty($manual_number)) {
-                // Check if manual number already exists in the same purok
-                $stmt = $pdo->prepare("SELECT household_number FROM households WHERE household_number = ? AND purok_id = ?");
-                $stmt->execute([$manual_number, $purok_id]);
-                if ($stmt->fetch()) {
-                    $add_error = "Household number already exists in this purok.";
+        try {
+            // Validate purok_id
+            if (!$purok_id) {
+                $add_error = "Please select a purok.";
+            } else {
+                // Generate or use manual household number
+                if ($use_manual_id && !empty($manual_number)) {
+                    // Check if manual number already exists in the same purok
+                    $stmt = $pdo->prepare("SELECT household_number FROM households WHERE household_number = ? AND purok_id = ?");
+                    $stmt->execute([$manual_number, $purok_id]);
+                    if ($stmt->fetch()) {
+                        $add_error = "Household number already exists in this purok.";
+                    } else {
+                        $household_number = $manual_number;
+                    }
                 } else {
-                    $household_number = $manual_number;
+                    $household_number = generateHouseholdNumber($pdo, $barangay_id, $purok_id);
                 }
-            } else {
-                $household_number = generateHouseholdNumber($pdo, $barangay_id, $purok_id);
-            }
 
-            // --- Validate household_head_person_id ---
-            if ($household_head_person_id !== null && $household_head_person_id !== '') {
-                // Check if person exists
-                $stmt = $pdo->prepare("SELECT id FROM persons WHERE id = ?");
-                $stmt->execute([$household_head_person_id]);
-                if (!$stmt->fetch()) {
-                    $add_error = "Selected Household Head Person ID does not exist.";
+                // --- Validate household_head_person_id ---
+                if ($household_head_person_id !== null && $household_head_person_id !== '') {
+                    // Check if person exists
+                    $stmt = $pdo->prepare("SELECT id FROM persons WHERE id = ?");
+                    $stmt->execute([$household_head_person_id]);
+                    if (!$stmt->fetch()) {
+                        $add_error = "Selected Household Head Person ID does not exist.";
+                    }
+                } else {
+                    $household_head_person_id = null;
                 }
-            } else {
-                $household_head_person_id = null;
+
+                if (!$add_error) {
+                    // Insert new household
+                    $stmt = $pdo->prepare("INSERT INTO households (household_number, barangay_id, purok_id, household_head_person_id) VALUES (?, ?, ?, ?)");
+                    $stmt->execute([
+                        $household_number,
+                        $barangay_id,
+                        $purok_id,
+                        $household_head_person_id
+                    ]);
+                    $household_id = $pdo->lastInsertId();
+
+                    // Log to audit trail
+                    $stmt = $pdo->prepare("
+                        INSERT INTO audit_trails (
+                            user_id, action, table_name, record_id, description
+                        ) VALUES (?, ?, ?, ?, ?)
+                    ");
+                    $stmt->execute([
+                        $_SESSION['user_id'],
+                        'INSERT',
+                        'households',
+                        $household_id,
+                        "Added new household number: {$household_number} in Purok ID: {$purok_id}"
+                    ]);
+
+                    $add_success = "Household added successfully! Household Number: ";
+                }
             }
-
-            if (!$add_error) {
-                // Insert new household
-                $stmt = $pdo->prepare("INSERT INTO households (household_number, barangay_id, purok_id, household_head_person_id) VALUES (?, ?, ?, ?)");
-                $stmt->execute([
-                    $household_number,
-                    $barangay_id,
-                    $purok_id,
-                    $household_head_person_id
-                ]);
-                $household_id = $pdo->lastInsertId();
-
-                // Log to audit trail
-                $stmt = $pdo->prepare("
-                    INSERT INTO audit_trails (
-                        user_id, action, table_name, record_id, description
-                    ) VALUES (?, ?, ?, ?, ?)
-                ");
-                $stmt->execute([
-                    $_SESSION['user_id'],
-                    'INSERT',
-                    'households',
-                    $household_id,
-                    "Added new household number: {$household_number} in Purok ID: {$purok_id}"
-                ]);
-
-                $add_success = "Household added successfully! Household Number: ";
-            }
+        } catch (Exception $e) {
+            $add_error = "Error adding household: " . htmlspecialchars($e->getMessage());
         }
-    } catch (Exception $e) {
-        $add_error = "Error adding household: " . htmlspecialchars($e->getMessage());
     }
 }
 
@@ -278,11 +301,14 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
         <section id="manageHouseholds" class="bg-white rounded-lg shadow p-6 mb-8">
             <div class="flex flex-col lg:flex-row lg:items-start lg:justify-between mb-6 gap-6">
                 <h2 class="text-2xl font-bold text-blue-800">Manage Households</h2>
-
-                <!-- Add New Household Form -->
                 <div class="bg-gray-50 p-4 rounded-lg lg:w-96">
                     <h3 class="text-lg font-semibold text-gray-800 mb-4">Add New Household</h3>
-                    <form method="POST" class="space-y-4">
+                    <?php if (!$can_manage_census): ?>
+                        <div class="error-message bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+                            You do not have permission to add new households.
+                        </div>
+                    <?php endif; ?>
+                    <form method="POST" class="space-y-4" id="addHouseholdForm">
                         <!-- Purok Selection -->
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Purok (Required)</label>
@@ -332,7 +358,8 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                             </div>
                         </div>
 
-                        <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition">
+                        <button type="submit" class="w-full bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 transition"
+                            <?php if (!$can_manage_census): ?>disabled style="background-color: #ccc; cursor: not-allowed;"<?php endif; ?>>
                             Add Household
                         </button>
                     </form>
@@ -390,11 +417,13 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                                     <td class="px-4 py-3">
                                         <a href="view_household_members.php?id=<?= urlencode($household['id']) ?>"
                                             class="inline-block text-blue-600 hover:text-blue-800 font-medium mr-3">View Members</a>
+                                        <?php if ($can_manage_census): ?>
                                         <a href="edit_household.php?id=<?= urlencode($household['id']) ?>"
                                             class="inline-block text-blue-600 hover:text-blue-800 font-medium mr-3">Edit</a>
                                         <a href="delete_household.php?id=<?= urlencode($household['id']) ?>"
                                             class="inline-block bg-red-500 hover:bg-red-600 text-white px-3 py-1 rounded-md text-sm transition-colors duration-200"
                                             onclick="return confirmDelete(event, '<?= htmlspecialchars($household['id']) ?>');">Delete</a>
+                                        <?php endif; ?>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
@@ -508,6 +537,21 @@ $current_barangay = $stmt->fetch(PDO::FETCH_ASSOC);
                     confirmButton: 'swal2-confirm-button'
                 }
             });
+        <?php endif; ?>
+
+        <?php if (!$can_manage_census): ?>
+        // Disable all form fields for view-only users
+        document.addEventListener('DOMContentLoaded', function() {
+            document.querySelectorAll('#addHouseholdForm input, #addHouseholdForm select, #addHouseholdForm textarea, #addHouseholdForm button[type="submit"]').forEach(el => {
+                if (el.type !== 'hidden') {
+                    if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'date' || el.type === 'number' || el.type === 'email' || el.type === 'tel')) {
+                        el.readOnly = true;
+                    } else if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'))) {
+                        el.disabled = true;
+                    }
+                }
+            });
+        });
         <?php endif; ?>
     </script>
     <style>

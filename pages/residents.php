@@ -785,6 +785,34 @@ require_once __DIR__ . "/../components/header.php";
                 });
             });
 
+            // Disable all form fields in edit modal for view-only users (roles 4,5,6,7)
+            <?php if (in_array($role, [4,5,6,7], true)): ?>
+            document.querySelectorAll('#editResidentForm input, #editResidentForm select, #editResidentForm textarea, #editResidentForm button[type="submit"]').forEach(el => {
+                if (el.type !== 'hidden') {
+                    if (el.tagName === 'INPUT' && (el.type === 'text' || el.type === 'date' || el.type === 'number' || el.type === 'email' || el.type === 'tel')) {
+                        el.readOnly = true;
+                    } else if (el.tagName === 'SELECT' || el.tagName === 'TEXTAREA' || (el.tagName === 'INPUT' && (el.type === 'checkbox' || el.type === 'radio'))) {
+                        el.disabled = true;
+                    }
+                }
+            });
+            <?php endif; ?>
+
+            // Prevent delete for view-only users (roles 4,5,6,7)
+            <?php if (in_array($role, [4,5,6,7], true)): ?>
+            document.querySelectorAll('.deleteBtn').forEach(btn => {
+                btn.addEventListener('click', function(e) {
+                    e.preventDefault();
+                    Swal.fire({
+                        icon: 'error',
+                        title: 'Permission Denied',
+                        text: 'You do not have permission to delete residents.',
+                        confirmButtonColor: '#3085d6'
+                    });
+                });
+            });
+            <?php endif; ?>
+
             // Search functionality
             document.getElementById('searchInput').addEventListener('input', function() {
                 const term = this.value.toLowerCase();
