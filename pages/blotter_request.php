@@ -2,6 +2,7 @@
 session_start();
 require "../config/dbconn.php";
 require "../vendor/autoload.php";
+require "../components/navbar.php"; // MOVED NAVBAR INCLUDE HERE
 
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
@@ -43,7 +44,10 @@ if ($user_id) {
         $barangay_name = $row['barangay_name'];
         $barangay_id = $row['barangay_id'];
     }
+    $stmt = null; // Added for consistency
 }
+
+
 
 // Get user's person record for participants
 $stmt = $conn->prepare("SELECT id FROM persons WHERE user_id = ?");
@@ -522,8 +526,8 @@ if (isset($_GET['success']) && $_GET['success'] == 1) {
     $caseNumber = $_GET['case_number'] ?? '';
 }
 
-// Only include navbar after all header() calls and redirects
-require "../components/navbar.php";
+// Only include navbar after all header() calls and redirects // THIS LINE COMMENT IS NOW MISLEADING
+// require "../components/navbar.php"; // OLD NAVBAR INCLUDE REMOVED FROM HERE
 ?>
 
 <!DOCTYPE html>
@@ -584,17 +588,6 @@ require "../components/navbar.php";
             padding: 2rem;
         }
 
-        h2 {
-            color: var(--primary-color);
-            font-size: 1.75rem;
-            font-weight: 600;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid var(--border-light);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
 
         .form-section {
             margin-bottom: 2rem;

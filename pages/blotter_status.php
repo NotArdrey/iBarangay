@@ -1,7 +1,7 @@
 <?php
 session_start();
 require "../config/dbconn.php";
-
+require "../components/navbar.php";
 // Add this line to ensure $conn is set from $pdo
 $conn = $pdo;
 global $conn;
@@ -33,6 +33,8 @@ if ($user_id) {
     }
     $stmt = null;
 }
+
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     // Check if it's a JSON request
@@ -267,9 +269,6 @@ if (isset($_GET['action']) && isset($_GET['case_id'])) {
     }
 }
 
-// NOW INCLUDE NAVBAR AFTER VARIABLES ARE SET
-require "../components/navbar.php";
-
 // Check if the new columns exist before using them
 $columnCheck = $pdo->query("SHOW COLUMNS FROM blotter_cases LIKE 'hearing_attempts'");
 $hasNewColumns = $columnCheck->rowCount() > 0;
@@ -311,11 +310,26 @@ try {
 
 // For each case, fetch hearing information and summons details
 foreach ($cases as &$case) {
+    // Initialize proposal-related fields for $case to prevent undefined index errors
+    $case['current_proposal_id'] = null;
+    $case['proposed_date'] = null;
+    $case['proposed_time'] = null;
+    $case['hearing_location'] = null;
+    $case['presiding_officer'] = null;
+    $case['proposal_status'] = null;
+    $case['user_confirmed'] = 0; // Default to 0 (false)
+    $case['captain_confirmed'] = 0; // Default to 0 (false)
+    $case['user_remarks'] = null;
+    $case['captain_remarks'] = null;
+    $case['conflict_reason'] = null;
+    $case['complainant_confirmed'] = 0; // Default to 0 (false)
+    $case['respondent_confirmed'] = 0;  // Default to 0 (false)
+    $case['witness_confirmed'] = 0;    // Default to 0 (false)
+
     // Fetch latest schedule proposal for this case
     $stmt2 = $pdo->prepare("
-        SELECT sp.*, 
-            COALESCE(CONCAT(p.first_name, ' ', p.last_name), 'System') as proposed_by_name,
-            sp.proposed_by_role_id as confirmed_by_role
+        SELECT sp.*,
+            COALESCE(CONCAT(p.first_name, ' ', p.last_name), 'System') as proposed_by_name
         FROM schedule_proposals sp
         LEFT JOIN users u ON sp.proposed_by_user_id = u.id
         LEFT JOIN persons p ON u.id = p.user_id
@@ -327,20 +341,20 @@ foreach ($cases as &$case) {
     $proposal = $stmt2->fetch(PDO::FETCH_ASSOC);
 
     if ($proposal) {
-        $case['current_proposal_id'] = $proposal['id'];
-        $case['proposed_date'] = $proposal['proposed_date'];
-        $case['proposed_time'] = $proposal['proposed_time'];
-        $case['hearing_location'] = $proposal['hearing_location'];
-        $case['presiding_officer'] = $proposal['presiding_officer'];
-        $case['proposal_status'] = $proposal['status'];
-        $case['user_confirmed'] = $proposal['user_confirmed'];
-        $case['captain_confirmed'] = $proposal['captain_confirmed'];
-        $case['user_remarks'] = $proposal['user_remarks'];
-        $case['captain_remarks'] = $proposal['captain_remarks'];
-        $case['conflict_reason'] = $proposal['conflict_reason'];
-        $case['confirmed_by_role'] = $proposal['confirmed_by_role'] ?? null;
-        $case['complainant_confirmed'] = $proposal['complainant_confirmed'];
-        $case['respondent_confirmed']  = $proposal['respondent_confirmed'];
+        $case['current_proposal_id'] = $proposal['id']; // 'id' should exist if $proposal is true
+        $case['proposed_date'] = $proposal['proposed_date'] ?? null;
+        $case['proposed_time'] = $proposal['proposed_time'] ?? null;
+        $case['hearing_location'] = $proposal['hearing_location'] ?? null;
+        $case['presiding_officer'] = $proposal['presiding_officer'] ?? null;
+        $case['proposal_status'] = $proposal['status'] ?? null;
+        $case['user_confirmed'] = $proposal['user_confirmed'] ?? 0;
+        $case['captain_confirmed'] = $proposal['captain_confirmed'] ?? 0;
+        $case['user_remarks'] = $proposal['user_remarks'] ?? null;
+        $case['captain_remarks'] = $proposal['captain_remarks'] ?? null;
+        $case['conflict_reason'] = $proposal['conflict_reason'] ?? null;
+        $case['complainant_confirmed'] = $proposal['complainant_confirmed'] ?? 0;
+        $case['respondent_confirmed']  = $proposal['respondent_confirmed'] ?? 0;
+        $case['witness_confirmed'] = $proposal['witness_confirmed'] ?? 0; // Added for consistency
     }
     $case['has_email'] = !empty($case['user_email']);
 
@@ -436,17 +450,7 @@ unset($case);
             min-height: auto;
         }
 
-        h2 {
-            color: var(--primary-color);
-            font-size: 1.75rem;
-            font-weight: 600;
-            margin-bottom: 2rem;
-            padding-bottom: 1rem;
-            border-bottom: 2px solid var(--border-light);
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
-        }
+       
 
         h2 i {
             color: var(--secondary-color);

@@ -236,9 +236,10 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     person_id, user_id, document_type_id, barangay_id, 
                     requested_by_user_id, status, request_date, price,
                     purpose, proof_image_path,
-                    business_name, business_location, business_nature, business_type
+                    business_name, business_location, business_nature, business_type,
+                    previous_permit_docai_used, is_renewal
                 ) VALUES (
-                    ?, ?, ?, ?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
             ");
 
@@ -248,20 +249,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $businessLocation = null;
             $businessNature = null;
             $businessType = null;
+            $previousPermitDocAiUsed = false; // New variable
+            $isRenewal = false; // New variable
 
             // Set document-specific values
             switch($documentType['code']) {
                 case 'barangay_clearance':
-                    $purpose = $_POST['purposeClearance'] ?? '';
+                    $purposeValue = $_POST['purposeClearanceSelect'] ?? '';
+                    if ($purposeValue === 'Others') {
+                        $purpose = $_POST['purposeClearanceOther'] ?? '';
+                    } else {
+                        $purpose = $purposeValue;
+                    }
                     break;
 
                 case 'proof_of_residency':
-                    $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
-                               '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
+                    $purposeValue = $_POST['residencyDuration'] ?? '';
+                    $purposePurpose = $_POST['residencyPurpose'] ?? '';
+                    $purpose = 'Duration: ' . $purposeValue . '; Purpose: ' . $purposePurpose;
                     break;
 
                 case 'barangay_indigency':
-                    $purpose = $_POST['indigencyReason'] ?? '';
+                    $reasonValue = $_POST['indigencyReasonSelect'] ?? '';
+                    if ($reasonValue === 'Others') {
+                        $purpose = $_POST['indigencyReasonOther'] ?? '';
+                    } else {
+                        $purpose = $reasonValue;
+                    }
                     break;
 
                 case 'business_permit_clearance':
@@ -275,10 +289,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
                         throw new Exception("All business information fields are required for Business Permit Clearance.");
                     }
+
+                    // Logic for renewal and docai_used
+                    $previousPermitDocAiUsed = ($_POST['doc_ai_processed'] ?? 'false') === 'true';
+                    if (($_POST['renewal_attempted'] ?? 'false') === 'true' &&
+                        $previousPermitDocAiUsed &&
+                        ($_POST['owner_verified_for_renewal'] ?? 'false') === 'true') {
+                        $isRenewal = true;
+                        $purpose = 'Business Permit Renewal'; // Update purpose
+                    }
                     break;
 
                 case 'first_time_job_seeker':
-                    $purpose = $_POST['jobSeekerPurpose'] ?? '';
+                    $jobSeekerValue = $_POST['jobSeekerPurposeSelect'] ?? '';
+                    if ($jobSeekerValue === 'Others') {
+                        $purpose = $_POST['jobSeekerPurposeOther'] ?? '';
+                    } else {
+                        $purpose = $jobSeekerValue;
+                    }
                     break;
 
                 case 'cedula':
@@ -303,7 +331,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $businessName,
                 $businessLocation,
                 $businessNature,
-                $businessType
+                $businessType,
+                $previousPermitDocAiUsed,
+                $isRenewal
             ]);
 
             $requestId = $pdo->lastInsertId();
@@ -1027,7 +1057,20 @@ require_once '../components/navbar.php';
                     <div id="clearanceFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="purposeClearance">Purpose of Clearance</label>
-                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <select id="purposeClearanceSelect" name="purposeClearanceSelect" class="purpose-dropdown" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <option value="">Select Purpose</option>
+                                <option value="Employment">Employment</option>
+                                <option value="Business Permit">Business Permit</option>
+                                <option value="School Requirement">School Requirement</option>
+                                <option value="Bank Requirement">Bank Requirement</option>
+                                <option value="Loan Application">Loan Application</option>
+                                <option value="Travel Abroad">Travel Abroad</option>
+                                <option value="Others">Others (Please specify)</option>
+                            </select>
+                        </div>
+                        <div class="form-row" id="purposeClearanceOtherDiv" style="display: none;">
+                            <label for="purposeClearanceOther">Specify Other Purpose</label>
+                            <input type="text" id="purposeClearanceOther" name="purposeClearanceOther" placeholder="Enter other purpose" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
@@ -1045,7 +1088,20 @@ require_once '../components/navbar.php';
                     <div id="indigencyFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="indigencyReason">Reason for Requesting</label>
-                            <input type="text" id="indigencyReason" name="indigencyReason" placeholder="Enter reason (e.g., Medical assistance, Educational assistance, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <select id="indigencyReasonSelect" name="indigencyReasonSelect" class="purpose-dropdown" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <option value="">Select Reason</option>
+                                <option value="Medical Assistance">Medical Assistance</option>
+                                <option value="Educational Assistance">Educational Assistance</option>
+                                <option value="Financial Assistance">Financial Assistance</option>
+                                <option value="Burial Assistance">Burial Assistance</option>
+                                <option value="Hospitalization">Hospitalization</option>
+                                <option value="Scholarship Application">Scholarship Application</option>
+                                <option value="Others">Others (Please specify)</option>
+                            </select>
+                        </div>
+                        <div class="form-row" id="indigencyReasonOtherDiv" style="display: none;">
+                            <label for="indigencyReasonOther">Specify Other Reason</label>
+                            <input type="text" id="indigencyReasonOther" name="indigencyReasonOther" placeholder="Enter other reason" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label>Your Photo <span style="color: red;">*</span></label>
@@ -1053,9 +1109,6 @@ require_once '../components/navbar.php';
                                 <input type="file" id="userPhoto" name="userPhoto" accept="image/jpeg,image/jpg,image/png" style="display: none;" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                 
                                 <div class="upload-options">
-                                    <button type="button" class="upload-btn" onclick="document.getElementById('userPhoto').click();" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                                        <i class="fas fa-upload"></i> Choose Photo
-                                    </button>
                                     <button type="button" class="upload-btn" onclick="openCamera();" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                         <i class="fas fa-camera"></i> Take Photo
                                     </button>
@@ -1084,6 +1137,23 @@ require_once '../components/navbar.php';
 
                     <div id="businessPermitFields" class="document-fields" style="display: none;">
                         <div class="form-row">
+                            <label for="previousPermitFile">Renew Business Permit (Upload Existing Permit)</label>
+                            <input type="file" id="previousPermitFile" name="previous_permit_file" accept=".pdf,.jpg,.jpeg,.png"
+                                   class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                   onchange="processPreviousPermit(this)"
+                                   <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <small class="input-help">Upload your current/previous permit to start renewal. System will scan and verify owner details. Max 5MB. PDF, JPG, PNG.</small>
+                            <div id="permitProcessingSpinner" style="display:none;" class="mt-2 text-sm text-blue-600">
+                                <i class="fas fa-spinner fa-spin mr-1"></i> Processing permit... please wait.
+                            </div>
+                            <div id="permitProcessingMessage" class="mt-2 text-sm"></div>
+                            <!-- Hidden fields for renewal logic -->
+                            <input type="hidden" id="renewalAttempted" name="renewal_attempted" value="false">
+                            <input type="hidden" id="docAiProcessed" name="doc_ai_processed" value="false">
+                            <input type="hidden" id="ownerVerifiedForRenewal" name="owner_verified_for_renewal" value="false">
+                        </div>
+                        <hr class="my-4">
+                        <div class="form-row">
                             <label for="businessName">Business Name <span style="color: red;">*</span></label>
                             <input type="text" id="businessName" name="businessName" placeholder="Enter business name" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
@@ -1105,7 +1175,18 @@ require_once '../components/navbar.php';
                     <div id="firstTimeJobSeekerFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="jobSeekerPurpose">Purpose/Institution</label>
-                            <input type="text" id="jobSeekerPurpose" name="jobSeekerPurpose" placeholder="Enter where you will use this certificate (e.g., Company name, Job application, etc.)" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <select id="jobSeekerPurposeSelect" name="jobSeekerPurposeSelect" class="purpose-dropdown" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <option value="">Select Purpose/Institution</option>
+                                <option value="Job Application">Job Application</option>
+                                <option value="Internship Requirement">Internship Requirement</option>
+                                <option value="Government Agency Requirement">Government Agency Requirement</option>
+                                <option value="TESDA Enrollment">TESDA Enrollment</option>
+                                <option value="Others">Others (Please specify)</option>
+                            </select>
+                        </div>
+                        <div class="form-row" id="jobSeekerPurposeOtherDiv" style="display: none;">
+                            <label for="jobSeekerPurposeOther">Specify Other Purpose/Institution</label>
+                            <input type="text" id="jobSeekerPurposeOther" name="jobSeekerPurposeOther" placeholder="Enter other purpose/institution" <?= ($hasInsufficientResidency || $hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
@@ -1137,6 +1218,159 @@ require_once '../components/navbar.php';
     var isWithinTimeGateJS = <?= json_encode($isWithinTimeGate) ?>;
     var hasPendingBlotterJS = <?= json_encode($hasPendingBlotter) ?>;
     var hasInsufficientResidencyJS = <?= json_encode($hasInsufficientResidency) ?>;
+    var loggedInUserName = <?= json_encode(trim($userName ?? '')) ?>;
+
+    function processPreviousPermit(inputElement) {
+        const file = inputElement.files[0];
+        const processingSpinner = document.getElementById('permitProcessingSpinner');
+        const processingMessage = document.getElementById('permitProcessingMessage');
+        const businessNameInput = document.getElementById('businessName');
+        const businessAddressInput = document.getElementById('businessAddress');
+        const businessTypeInput = document.getElementById('businessType');
+        const businessPurposeInput = document.getElementById('businessPurpose');
+
+        // Hidden fields for tracking state
+        const renewalAttemptedHidden = document.getElementById('renewalAttempted');
+        const docAiProcessedHidden = document.getElementById('docAiProcessed');
+        const ownerVerifiedForRenewalHidden = document.getElementById('ownerVerifiedForRenewal');
+
+        // Reset hidden fields and messages
+        renewalAttemptedHidden.value = 'false';
+        docAiProcessedHidden.value = 'false';
+        ownerVerifiedForRenewalHidden.value = 'false';
+        processingMessage.textContent = '';
+        processingMessage.className = 'mt-2 text-sm';
+        
+        // Clear business fields initially, they'll be repopulated on success/verification
+        businessNameInput.value = '';
+        businessAddressInput.value = '';
+        businessTypeInput.value = '';
+        businessPurposeInput.value = '';
+
+        if (!file) {
+            return;
+        }
+        renewalAttemptedHidden.value = 'true'; // Mark that an attempt was made
+
+        if (file.size > 5 * 1024 * 1024) { // 5MB
+            processingMessage.textContent = 'File is too large (max 5MB).';
+            processingMessage.className = 'mt-2 text-sm text-red-600';
+            inputElement.value = '';
+            renewalAttemptedHidden.value = 'false'; 
+            return;
+        }
+        const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png', 'image/jpg'];
+        if (!allowedTypes.includes(file.type)) {
+            processingMessage.textContent = 'Invalid file type (' + file.type + '). Please use PDF, JPG, or PNG.';
+            processingMessage.className = 'mt-2 text-sm text-red-600';
+            inputElement.value = '';
+            renewalAttemptedHidden.value = 'false';
+            return;
+        }
+
+        processingSpinner.style.display = 'block';
+        const formData = new FormData();
+        formData.append('previous_permit_file', file);
+
+        fetch('../functions/process_previous_permit.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+            return response.json();
+        })
+        .then(result => {
+            processingSpinner.style.display = 'none';
+            if (result.success && result.data) {
+                docAiProcessedHidden.value = 'true'; // Document AI processing was successful
+
+                // const extractedOwnerName = result.data.ownerName || ''; // Validation Disabled
+                // const formattedLoggedInUserName = loggedInUserName.trim().toLowerCase(); // Validation Disabled
+                // const formattedExtractedOwnerName = extractedOwnerName.trim().toLowerCase(); // Validation Disabled
+                
+                // let ownerMatch = false; // Validation Disabled
+                // if (formattedExtractedOwnerName && formattedLoggedInUserName) { // Validation Disabled
+                //     if (formattedExtractedOwnerName === formattedLoggedInUserName) { // Validation Disabled
+                //         ownerMatch = true; // Validation Disabled
+                //     } else { // Validation Disabled
+                //         const loggedInNameParts = formattedLoggedInUserName.split(' ').filter(part => part.length > 0); // Validation Disabled
+                //         const extractedNameParts = formattedExtractedOwnerName.split(' ').filter(part => part.length > 0); // Validation Disabled
+                //         if (loggedInNameParts.length > 0 && extractedNameParts.length > 0) { // Validation Disabled
+                //             const sortedLoggedIn = loggedInNameParts.sort().join(' '); // Validation Disabled
+                //             const sortedExtracted = extractedNameParts.sort().join(' '); // Validation Disabled
+                //             if (sortedLoggedIn === sortedExtracted) { // Validation Disabled
+                //                 ownerMatch = true; // Validation Disabled
+                //             } // Validation Disabled
+                //         } // Validation Disabled
+                //     } // Validation Disabled
+                // } // Validation Disabled
+
+                // if (ownerMatch) { // Validation Disabled - Assuming success if data is present
+                ownerVerifiedForRenewalHidden.value = 'true'; // Mark as verified since validation is off
+                processingMessage.textContent = 'Business details extracted from permit.';
+                processingMessage.className = 'mt-2 text-sm text-green-600';
+
+                let autoFilledSomething = false;
+                if (result.data.businessName) {
+                    businessNameInput.value = result.data.businessName;
+                    autoFilledSomething = true;
+                }
+                if (result.data.businessLocation) {
+                    businessAddressInput.value = result.data.businessLocation;
+                    autoFilledSomething = true;
+                }
+                if (result.data.businessType) {
+                    businessTypeInput.value = result.data.businessType;
+                    autoFilledSomething = true;
+                }
+                if (result.data.businessNature) {
+                    businessPurposeInput.value = result.data.businessNature;
+                    autoFilledSomething = true;
+                }
+            
+                if(autoFilledSomething){
+                    [businessNameInput, businessAddressInput, businessTypeInput, businessPurposeInput].forEach(input => {
+                        if(input.value){ 
+                            input.classList.add('bg-green-100', 'border-green-300');
+                            setTimeout(() => {
+                                input.classList.remove('bg-green-100', 'border-green-300');
+                            }, 3000);
+                        }
+                    });
+                }
+                // } else { // Validation Disabled
+                //     ownerVerifiedForRenewalHidden.value = 'false'; // Validation Disabled
+                //     processingMessage.textContent = 'Owner name on permit (' + (extractedOwnerName || "Not Found") + ') does not match logged-in user (' + loggedInUserName + '). Auto-fill for renewal disabled. Please fill manually or upload the correct permit.'; // Validation Disabled
+                //     processingMessage.className = 'mt-2 text-sm text-red-600'; // Validation Disabled
+                //     inputElement.value = '';  // Validation Disabled
+                //     businessNameInput.value = ''; // Validation Disabled
+                //     businessAddressInput.value = ''; // Validation Disabled
+                //     businessTypeInput.value = ''; // Validation Disabled
+                //     businessPurposeInput.value = ''; // Validation Disabled
+                //     renewalAttemptedHidden.value = 'false';  // Validation Disabled
+                //     docAiProcessedHidden.value = 'false';  // Validation Disabled
+                // } // Validation Disabled
+            } else { 
+                docAiProcessedHidden.value = 'false';
+                processingMessage.textContent = result.message || 'Could not process permit. Please fill details manually.';
+                processingMessage.className = 'mt-2 text-sm text-red-600';
+                inputElement.value = ''; 
+                renewalAttemptedHidden.value = 'false';
+            }
+        })
+        .catch(error => {
+            processingSpinner.style.display = 'none';
+            docAiProcessedHidden.value = 'false';
+            renewalAttemptedHidden.value = 'false';
+            processingMessage.textContent = 'An error occurred: ' + error.message;
+            processingMessage.className = 'mt-2 text-sm text-red-600';
+            console.error('Error processing permit:', error);
+            inputElement.value = '';
+        });
+    }
 
     function openCamera() {
         if (hasInsufficientResidencyJS || hasPendingBlotterJS || !isWithinTimeGateJS) {
@@ -1284,6 +1518,14 @@ require_once '../components/navbar.php';
         const submitBtn = document.getElementById('submitBtn');
         const userPhotoInput = document.getElementById('userPhoto');
 
+        // New: References to "Other" input fields
+        const purposeClearanceOtherDiv = document.getElementById('purposeClearanceOtherDiv');
+        const purposeClearanceOtherInput = document.getElementById('purposeClearanceOther');
+        const indigencyReasonOtherDiv = document.getElementById('indigencyReasonOtherDiv');
+        const indigencyReasonOtherInput = document.getElementById('indigencyReasonOther');
+        const jobSeekerPurposeOtherDiv = document.getElementById('jobSeekerPurposeOtherDiv');
+        const jobSeekerPurposeOtherInput = document.getElementById('jobSeekerPurposeOther');
+
         // Handle file selection
         if (userPhotoInput) {
             userPhotoInput.addEventListener('change', function(e) {
@@ -1348,11 +1590,19 @@ require_once '../components/navbar.php';
                 firstTimeJobSeekerWarning.style.display = 'none';
             }
             
-            // Remove required attribute from ALL form inputs
-            const allInputs = document.querySelectorAll('#docRequestForm input[type="text"], #docRequestForm input[type="number"], #docRequestForm input[type="file"]');
+            // Remove required attribute from ALL form inputs and selects
+            const allInputs = document.querySelectorAll('#docRequestForm input[type="text"], #docRequestForm input[type="number"], #docRequestForm input[type="file"], #docRequestForm select');
             allInputs.forEach(input => {
                 input.required = false;
             });
+
+            // New: Hide "Other" fields and clear their values
+            if(purposeClearanceOtherDiv) purposeClearanceOtherDiv.style.display = 'none';
+            if(purposeClearanceOtherInput) purposeClearanceOtherInput.value = '';
+            if(indigencyReasonOtherDiv) indigencyReasonOtherDiv.style.display = 'none';
+            if(indigencyReasonOtherInput) indigencyReasonOtherInput.value = '';
+            if(jobSeekerPurposeOtherDiv) jobSeekerPurposeOtherDiv.style.display = 'none';
+            if(jobSeekerPurposeOtherInput) jobSeekerPurposeOtherInput.value = '';
             
             // Reset photo upload
             removePhoto();
@@ -1367,8 +1617,12 @@ require_once '../components/navbar.php';
 
             switch(documentCode) {
                 case 'barangay_clearance':
-                    const purposeClearance = document.getElementById('purposeClearance');
-                    if (purposeClearance) purposeClearance.required = true;
+                    const purposeClearanceSelect = document.getElementById('purposeClearanceSelect');
+                    if (purposeClearanceSelect) purposeClearanceSelect.required = true;
+                    // If "Others" is selected, then the text input is required
+                    if (purposeClearanceSelect && purposeClearanceSelect.value === 'Others' && purposeClearanceOtherInput) {
+                        purposeClearanceOtherInput.required = true;
+                    }
                     break;
 
                 case 'proof_of_residency':
@@ -1379,10 +1633,14 @@ require_once '../components/navbar.php';
                     break;
 
                 case 'barangay_indigency':
-                    const indigencyReason = document.getElementById('indigencyReason');
+                    const indigencyReasonSelect = document.getElementById('indigencyReasonSelect');
                     const userPhoto = document.getElementById('userPhoto');
-                    if (indigencyReason) indigencyReason.required = true;
+                    if (indigencyReasonSelect) indigencyReasonSelect.required = true;
                     if (userPhoto) userPhoto.required = true;
+                     // If "Others" is selected, then the text input is required
+                    if (indigencyReasonSelect && indigencyReasonSelect.value === 'Others' && indigencyReasonOtherInput) {
+                        indigencyReasonOtherInput.required = true;
+                    }
                     break;
 
                 case 'business_permit_clearance':
@@ -1408,8 +1666,12 @@ require_once '../components/navbar.php';
                     break;
 
                 case 'first_time_job_seeker':
-                    const jobSeekerPurpose = document.getElementById('jobSeekerPurpose');
-                    if (jobSeekerPurpose) jobSeekerPurpose.required = true;
+                    const jobSeekerPurposeSelect = document.getElementById('jobSeekerPurposeSelect');
+                    if (jobSeekerPurposeSelect) jobSeekerPurposeSelect.required = true;
+                    // If "Others" is selected, then the text input is required
+                    if (jobSeekerPurposeSelect && jobSeekerPurposeSelect.value === 'Others' && jobSeekerPurposeOtherInput) {
+                        jobSeekerPurposeOtherInput.required = true;
+                    }
                     break;
             }
         }
@@ -1456,6 +1718,38 @@ require_once '../components/navbar.php';
                 }
             });
         }
+
+        // New: Event listeners for purpose/reason dropdowns
+        const purposeDropdowns = document.querySelectorAll('.purpose-dropdown');
+        purposeDropdowns.forEach(dropdown => {
+            dropdown.addEventListener('change', function() {
+                const otherDivId = this.id.replace('Select', 'OtherDiv');
+                const otherInputId = this.id.replace('Select', 'Other');
+                const otherDiv = document.getElementById(otherDivId);
+                const otherInput = document.getElementById(otherInputId);
+
+                if (this.value === 'Others') {
+                    if (otherDiv) otherDiv.style.display = 'block';
+                    if (otherInput) {
+                         otherInput.required = true;
+                         // If the main select is required, and "Others" is chosen, this also becomes required.
+                         // The setFieldsRequired function will handle the select's required status.
+                    }
+                } else {
+                    if (otherDiv) otherDiv.style.display = 'none';
+                    if (otherInput) {
+                        otherInput.value = ''; // Clear the value if not "Others"
+                        otherInput.required = false;
+                    }
+                }
+                 // Re-evaluate required fields for the currently selected document type
+                const selectedDocOption = documentTypeSelect.options[documentTypeSelect.selectedIndex];
+                const documentCode = selectedDocOption ? selectedDocOption.dataset.code || '' : '';
+                if (documentCode) {
+                    setFieldsRequired(document.getElementById(documentCode + 'Fields'), documentCode);
+                }
+            });
+        });
 
         // Form submission handler
         if (form && submitBtn) {

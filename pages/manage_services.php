@@ -11,14 +11,24 @@ if (!in_array($_SESSION['role_id'], [3,4,5,6,7])) {
 
 $barangay_id = $_SESSION['barangay_id'];
 
-// Fetch services
+// Fetch active services
 $stmt = $pdo->prepare("
     SELECT * FROM custom_services 
-    WHERE barangay_id = ?
+    WHERE barangay_id = ? AND is_archived = FALSE
     ORDER BY display_order, name
 ");
 $stmt->execute([$barangay_id]);
-$services = $stmt->fetchAll();
+$activeServices = $stmt->fetchAll();
+
+// Fetch archived services
+$stmtArchived = $pdo->prepare("
+    SELECT *, DATE_FORMAT(archived_at, '%Y-%m-%d %h:%i %p') as formatted_archived_at FROM custom_services 
+    WHERE barangay_id = ? AND is_archived = TRUE
+    ORDER BY archived_at DESC, name
+");
+$stmtArchived->execute([$barangay_id]);
+$archivedServices = $stmtArchived->fetchAll();
+
 ?>
 
 <!DOCTYPE html>
@@ -32,6 +42,18 @@ $services = $stmt->fetchAll();
     <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/sweetalert2@11/dist/sweetalert2.min.css">
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@10"></script>
+    <style>
+        .tab-button.active {
+            border-bottom: 2px solid #3B82F6;
+            color: #3B82F6;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
+    </style>
 </head>
 <body class="bg-gray-100">
     <div class="container mx-auto px-4 py-8">
@@ -44,44 +66,102 @@ $services = $stmt->fetchAll();
             </div>
         </div>
 
-        <!-- Services Section -->
-        <div class="bg-white rounded-lg shadow-md p-6">
-            <h2 class="text-xl font-semibold mb-4">Available Services</h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                <?php foreach ($services as $service): ?>
-                <div class="border rounded-lg p-4 <?php echo $service['is_active'] ? 'bg-white' : 'bg-gray-100'; ?>">
-                    <div class="flex justify-between items-start mb-3">
-                        <div class="flex items-center">
-                            <i class="fas <?php echo htmlspecialchars($service['icon']); ?> text-2xl text-green-500 mr-3"></i>
-                            <div>
-                                <h3 class="text-lg font-medium"><?php echo htmlspecialchars($service['name']); ?></h3>
-                                <?php if (!empty($service['service_photo'])): ?>
-                                    <span class="text-xs text-green-600"><i class="fas fa-image mr-1"></i>Photo attached</span>
-                                <?php endif; ?>
+        <!-- Tabs Navigation -->
+        <div class="mb-4 border-b border-gray-200">
+            <nav class="-mb-px flex space-x-8" aria-label="Tabs">
+                <button class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300 active" data-tab="active-services">
+                    Active Services
+                </button>
+                <button class="tab-button whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm text-gray-500 hover:text-gray-700 hover:border-gray-300" data-tab="archived-services">
+                    Archived Services
+                </button>
+            </nav>
+        </div>
+
+        <!-- Active Services Section -->
+        <div id="active-services" class="tab-content active">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4">Available Services</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <?php if (empty($activeServices)): ?>
+                        <p class="text-gray-500 col-span-full">No active services found.</p>
+                    <?php else: ?>
+                        <?php foreach ($activeServices as $service): ?>
+                        <div class="border rounded-lg p-4 <?php echo $service['is_active'] ? 'bg-white' : 'bg-gray-100'; ?>">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex items-center">
+                                    <i class="fas <?php echo htmlspecialchars($service['icon']); ?> text-2xl text-green-500 mr-3"></i>
+                                    <div>
+                                        <h3 class="text-lg font-medium"><?php echo htmlspecialchars($service['name']); ?></h3>
+                                        <?php if (!empty($service['service_photo'])): ?>
+                                            <span class="text-xs text-green-600"><i class="fas fa-image mr-1"></i>Photo attached</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button onclick="viewService(<?php echo $service['id']; ?>)" class="text-blue-500 hover:text-blue-700" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <button onclick="editService(<?php echo $service['id']; ?>)" class="text-yellow-500 hover:text-yellow-700" title="Edit">
+                                        <i class="fas fa-edit"></i>
+                                    </button>
+                                    <button onclick="archiveService(<?php echo $service['id']; ?>)" class="text-gray-500 hover:text-gray-700" title="Archive">
+                                        <i class="fas fa-archive"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <p class="text-gray-600 text-sm mb-3"><?php echo htmlspecialchars($service['description']); ?></p>
+                            <div class="text-sm text-gray-500">
+                                <p><i class="fas fa-clock mr-2"></i><?php echo htmlspecialchars($service['processing_time']); ?></p>
+                                <p><i class="fas fa-money-bill mr-2"></i><?php echo htmlspecialchars($service['fees']); ?></p>
                             </div>
                         </div>
-                        <div class="flex space-x-2">
-                       
-                            <button onclick="viewService(<?php echo $service['id']; ?>)" class="text-blue-500">
-                                <i class="fas fa-eye"></i>
-                            </button>
-                            <button onclick="editService(<?php echo $service['id']; ?>)" class="text-yellow-500">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <button onclick="deleteService(<?php echo $service['id']; ?>)" class="text-red-500">
-                                <i class="fas fa-trash"></i>
-                            </button>
-                        </div>
-                    </div>
-                    <p class="text-gray-600 text-sm mb-3"><?php echo htmlspecialchars($service['description']); ?></p>
-                    <div class="text-sm text-gray-500">
-                        <p><i class="fas fa-clock mr-2"></i><?php echo htmlspecialchars($service['processing_time']); ?></p>
-                        <p><i class="fas fa-money-bill mr-2"></i><?php echo htmlspecialchars($service['fees']); ?></p>
-                    </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
                 </div>
-                <?php endforeach; ?>
             </div>
         </div>
+
+        <!-- Archived Services Section -->
+        <div id="archived-services" class="tab-content">
+            <div class="bg-white rounded-lg shadow-md p-6">
+                <h2 class="text-xl font-semibold mb-4">Archived Services</h2>
+                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    <?php if (empty($archivedServices)): ?>
+                        <p class="text-gray-500 col-span-full">No archived services found.</p>
+                    <?php else: ?>
+                        <?php foreach ($archivedServices as $service): ?>
+                        <div class="border rounded-lg p-4 bg-gray-100 opacity-75">
+                            <div class="flex justify-between items-start mb-3">
+                                <div class="flex items-center">
+                                    <i class="fas <?php echo htmlspecialchars($service['icon']); ?> text-2xl text-gray-400 mr-3"></i>
+                                    <div>
+                                        <h3 class="text-lg font-medium text-gray-700"><?php echo htmlspecialchars($service['name']); ?></h3>
+                                        <?php if (!empty($service['service_photo'])): ?>
+                                            <span class="text-xs text-gray-500"><i class="fas fa-image mr-1"></i>Photo attached</span>
+                                        <?php endif; ?>
+                                    </div>
+                                </div>
+                                <div class="flex space-x-2">
+                                    <button onclick="viewService(<?php echo $service['id']; ?>)" class="text-blue-500 hover:text-blue-700" title="View">
+                                        <i class="fas fa-eye"></i>
+                                    </button>
+                                    <!-- Add Unarchive button here if needed later -->
+                                </div>
+                            </div>
+                            <p class="text-gray-500 text-sm mb-3"><?php echo htmlspecialchars($service['description']); ?></p>
+                            <div class="text-sm text-gray-400">
+                                <p><i class="fas fa-clock mr-2"></i><?php echo htmlspecialchars($service['processing_time']); ?></p>
+                                <p><i class="fas fa-money-bill mr-2"></i><?php echo htmlspecialchars($service['fees']); ?></p>
+                                <p class="mt-2 text-red-500"><i class="fas fa-archive mr-2"></i>Archived on: <?php echo htmlspecialchars($service['formatted_archived_at'] ?? 'N/A'); ?></p>
+                            </div>
+                        </div>
+                        <?php endforeach; ?>
+                    <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
     </div>
 
     <!-- Add Service Modal -->
@@ -442,6 +522,23 @@ $services = $stmt->fetchAll();
     </div>
 
     <script>
+    document.addEventListener('DOMContentLoaded', function () {
+        const tabButtons = document.querySelectorAll('.tab-button');
+        const tabContents = document.querySelectorAll('.tab-content');
+
+        tabButtons.forEach(button => {
+            button.addEventListener('click', () => {
+                // Deactivate all buttons and content
+                tabButtons.forEach(btn => btn.classList.remove('active'));
+                tabContents.forEach(content => content.classList.remove('active'));
+
+                // Activate clicked button and corresponding content
+                button.classList.add('active');
+                document.getElementById(button.dataset.tab).classList.add('active');
+            });
+        });
+    });
+
     // Photo Upload Functions
     function handlePhotoUpload(input) {
         const file = input.files[0];
@@ -818,19 +915,20 @@ $services = $stmt->fetchAll();
         });
     }
 
-    // Delete Service
-    function deleteService(serviceId) {
+    // Archive Service
+    function archiveService(serviceId) {
         Swal.fire({
-            title: 'Are you sure?',
-            text: "You won't be able to revert this!",
+            title: 'Are you sure you want to archive this service?',
+            text: "Archived services can be viewed but not directly used by residents.",
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonColor: '#d33',
+            confirmButtonColor: '#DD6B55', // Archive color (Orange-Red)
             cancelButtonColor: '#3085d6',
-            confirmButtonText: 'Yes, delete it!'
+            confirmButtonText: 'Yes, archive it!',
+            cancelButtonText: 'Cancel'
         }).then((result) => {
             if (result.isConfirmed) {
-                fetch('../functions/delete_service.php', {
+                fetch('../functions/archive_service.php', { // Updated endpoint
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
@@ -841,8 +939,8 @@ $services = $stmt->fetchAll();
                 .then(data => {
                     if (data.success) {
                         Swal.fire(
-                            'Deleted!',
-                            'Service has been deleted.',
+                            'Archived!',
+                            'Service has been archived.',
                             'success'
                         ).then(() => {
                             location.reload();
@@ -850,7 +948,7 @@ $services = $stmt->fetchAll();
                     } else {
                         Swal.fire(
                             'Error!',
-                            data.message || 'Failed to delete service',
+                            data.message || 'Failed to archive service',
                             'error'
                         );
                     }
