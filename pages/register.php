@@ -59,6 +59,66 @@ function checkPhoneExists($phone) {
         background-color: rgba(76, 175, 80, 0.1);
       }
     }
+
+    .password-strength {
+      margin-top: 10px;
+    }
+
+    .strength-meter {
+      height: 5px;
+      background-color: #eee;
+      border-radius: 3px;
+      margin-bottom: 5px;
+      transition: all 0.3s ease;
+    }
+
+    .strength-text {
+      font-size: 12px;
+      margin-bottom: 10px;
+      color: #666;
+    }
+
+    .strength-requirements {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .requirement {
+      margin: 5px 0;
+      color: #999;
+      display: flex;
+      align-items: center;
+    }
+
+    .requirement::before {
+      content: '×';
+      margin-right: 5px;
+      color: #dc3545;
+    }
+
+    .requirement.valid {
+      color: #28a745;
+    }
+
+    .requirement.valid::before {
+      content: '✓';
+      color: #28a745;
+    }
+
+    .strength-meter.weak {
+      background-color: #dc3545;
+      width: 25%;
+    }
+
+    .strength-meter.medium {
+      background-color: #ffc107;
+      width: 50%;
+    }
+
+    .strength-meter.strong {
+      background-color: #28a745;
+      width: 100%;
+    }
   </style>
 </head>
 
@@ -161,6 +221,16 @@ function checkPhoneExists($phone) {
               <div class="eye-slash"></div>
             </div>
           </button>
+        </div>
+        <div class="password-strength">
+          <div class="strength-meter"></div>
+          <div class="strength-text"></div>
+          <div class="strength-requirements">
+            <p class="requirement" data-requirement="length">At least 8 characters</p>
+            <p class="requirement" data-requirement="uppercase">One uppercase letter</p>
+            <p class="requirement" data-requirement="number">One number</p>
+            <p class="requirement" data-requirement="special">One special character</p>
+          </div>
         </div>
       </div>
       <div class="input-group">
@@ -683,6 +753,50 @@ function checkPhoneExists($phone) {
           timer: 3000,
           timerProgressBar: true
         });
+      }
+    });
+
+    // Add password strength checker
+    document.getElementById('password').addEventListener('input', function(e) {
+      const password = e.target.value;
+      const strengthMeter = document.querySelector('.strength-meter');
+      const strengthText = document.querySelector('.strength-text');
+      const requirements = document.querySelectorAll('.requirement');
+      
+      // Reset classes
+      strengthMeter.className = 'strength-meter';
+      requirements.forEach(req => req.classList.remove('valid'));
+      
+      // Check requirements
+      const hasLength = password.length >= 8;
+      const hasUppercase = /[A-Z]/.test(password);
+      const hasNumber = /[0-9]/.test(password);
+      const hasSpecial = /[!@#$%^&*(),.?":{}|<>]/.test(password);
+      
+      // Update requirement indicators
+      if (hasLength) requirements[0].classList.add('valid');
+      if (hasUppercase) requirements[1].classList.add('valid');
+      if (hasNumber) requirements[2].classList.add('valid');
+      if (hasSpecial) requirements[3].classList.add('valid');
+      
+      // Calculate strength
+      const strength = [hasLength, hasUppercase, hasNumber, hasSpecial].filter(Boolean).length;
+      
+      // Update strength meter and text
+      if (password.length === 0) {
+        strengthText.textContent = '';
+      } else if (strength === 1) {
+        strengthMeter.classList.add('weak');
+        strengthText.textContent = 'Weak password';
+        strengthText.style.color = '#dc3545';
+      } else if (strength === 2 || strength === 3) {
+        strengthMeter.classList.add('medium');
+        strengthText.textContent = 'Medium password';
+        strengthText.style.color = '#ffc107';
+      } else if (strength === 4) {
+        strengthMeter.classList.add('strong');
+        strengthText.textContent = 'Strong password';
+        strengthText.style.color = '#28a745';
       }
     });
   </script>
