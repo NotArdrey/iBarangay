@@ -294,7 +294,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         error_log("Setting accessible barangays in session: " . print_r($barangays, true));
 
         // Always redirect to barangay selection
-        if ($roleInfo['role_id'] === 9) {
+        if ($roleInfo['role_id'] === 8) {
             header("Location: ../pages/select_barangay.php");
             exit;
         } else {
@@ -466,7 +466,7 @@ if (stripos($contentType, "application/json") !== false) {
             )
         ]);
         exit;
-        
+
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
