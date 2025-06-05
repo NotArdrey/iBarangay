@@ -141,11 +141,51 @@ function updateUserBarangay(PDO $pdo, int $user_id, int $barangay_id): bool
             return false;
         }
 
-        // Update the user's barangay_id
-        $updateStmt = $pdo->prepare("UPDATE users SET barangay_id = ? WHERE id = ?");
-        $updateStmt->execute([$barangay_id, $user_id]);
+        // Start transaction
+        $pdo->beginTransaction();
 
-        // Log the change
+        // Update the user's barangay_id in users table
+        $updateUserStmt = $pdo->prepare("UPDATE users SET barangay_id = ? WHERE id = ?");
+        $updateUserStmt->execute([$barangay_id, $user_id]);
+
+        // First, find and clear the user_id from the current person record
+        $clearCurrentPersonStmt = $pdo->prepare("
+            UPDATE persons 
+            SET user_id = NULL 
+            WHERE user_id = ?
+        ");
+        $clearCurrentPersonStmt->execute([$user_id]);
+
+        // Find the person record in the selected barangay
+        $findPersonStmt = $pdo->prepare("
+            SELECT p.id 
+            FROM persons p
+            JOIN household_members hm ON p.id = hm.person_id
+            JOIN households h ON hm.household_id = h.id
+            WHERE h.barangay_id = ? 
+            AND p.user_id IS NULL
+            LIMIT 1
+        ");
+        $findPersonStmt->execute([$barangay_id]);
+        $personId = $findPersonStmt->fetchColumn();
+
+        if ($personId) {
+            // Update the person's user_id
+            $updatePersonStmt = $pdo->prepare("UPDATE persons SET user_id = ? WHERE id = ?");
+            $updatePersonStmt->execute([$user_id, $personId]);
+
+            // Log the person update
+            logAuditTrail(
+                $pdo,
+                $user_id,
+                "UPDATE",
+                "persons",
+                $personId,
+                "Updated user_id for person in barangay " . $barangay_id
+            );
+        }
+
+        // Log the user update
         logAuditTrail(
             $pdo,
             $user_id,
@@ -155,8 +195,12 @@ function updateUserBarangay(PDO $pdo, int $user_id, int $barangay_id): bool
             "Updated barangay_id to " . $barangay_id
         );
 
+        $pdo->commit();
         return true;
     } catch (Exception $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         error_log("Error updating user barangay: " . $e->getMessage());
         return false;
     }
@@ -259,6 +303,70 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             throw new Exception("Account not verified or inactive");
         }
 
+        // Get the selected barangay ID from session
+        $selected_barangay_id = $_SESSION['barangay_id'] ?? null;
+        
+        if ($selected_barangay_id) {
+            // First, find ALL records that have this user_id
+            $currentRecordsQuery = "SELECT p.id, b.id as barangay_id, b.name as barangay_name
+                                  FROM persons p 
+                                  JOIN household_members hm ON p.id = hm.person_id 
+                                  JOIN households h ON hm.household_id = h.id 
+                                  JOIN barangay b ON h.barangay_id = b.id 
+                                  WHERE p.user_id = ?";
+            $currentStmt = $pdo->prepare($currentRecordsQuery);
+            $currentStmt->execute([$user['id']]);
+            $currentRecords = $currentStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Set all current records to NULL
+            foreach ($currentRecords as $record) {
+                $resetQuery = "UPDATE persons SET user_id = NULL WHERE id = ?";
+                $resetStmt = $pdo->prepare($resetQuery);
+                $resetStmt->execute([$record['id']]);
+                
+                // Log the unlink
+                logAuditTrail(
+                    $pdo,
+                    $user['id'],
+                    'UPDATE',
+                    'persons',
+                    (int)$record['id'],
+                    "Unlinked user from barangay: " . $record['barangay_name']
+                );
+            }
+            
+            // Now find and update the record in the selected barangay
+            $censusQuery = "SELECT p.id, p.first_name, p.last_name, b.name as barangay_name 
+                           FROM persons p 
+                           JOIN household_members hm ON p.id = hm.person_id 
+                           JOIN households h ON hm.household_id = h.id 
+                           JOIN barangay b ON h.barangay_id = b.id 
+                           WHERE LOWER(p.first_name) = LOWER(?) 
+                           AND LOWER(p.last_name) = LOWER(?) 
+                           AND p.user_id IS NULL
+                           AND b.id = ?";
+            $censusStmt = $pdo->prepare($censusQuery);
+            $censusStmt->execute([$user['first_name'], $user['last_name'], $selected_barangay_id]);
+            $censusRecords = $censusStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            if (count($censusRecords) > 0) {
+                // Update the matching record with user_id
+                $updateQuery = "UPDATE persons SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+                $updateStmt = $pdo->prepare($updateQuery);
+                $updateStmt->execute([$user['id'], $censusRecords[0]['id']]);
+                
+                // Log the update
+                logAuditTrail(
+                    $pdo,
+                    $user['id'],
+                    'UPDATE',
+                    'persons',
+                    (int)$censusRecords[0]['id'],
+                    "Linked census record in " . $censusRecords[0]['barangay_name'] . " to user account"
+                );
+            }
+        }
+
         // Get user role information
         $roleInfo = getUserRoleInfo($pdo, $user['id']);
         if (!$roleInfo) {
@@ -285,6 +393,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         $_SESSION['first_name'] = $user['first_name'] ?? '';
         $_SESSION['middle_name'] = $user['middle_name'] ?? '';
         $_SESSION['last_name'] = $user['last_name'] ?? '';
+        $_SESSION['religion'] = $user['religion'] ?? '';
+        $_SESSION['education_level'] = $user['education_level'] ?? '';
 
         // Get and store accessible barangays
         $barangays = getUserBarangays($pdo, $user['id']);
@@ -294,7 +404,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         error_log("Setting accessible barangays in session: " . print_r($barangays, true));
 
         // Always redirect to barangay selection
-        if ($roleInfo['role_id'] === 9) {
+        if ($roleInfo['role_id'] === 8) {
             header("Location: ../pages/select_barangay.php");
             exit;
         } else {
@@ -333,7 +443,7 @@ if (stripos($contentType, "application/json") !== false) {
 
         // Check existing user
         $stmt = $pdo->prepare("
-            SELECT u.id, u.email, p.first_name, p.middle_name, p.last_name
+            SELECT u.id, u.email, p.first_name, p.middle_name, p.last_name, p.religion, p.education_level
             FROM users u
             LEFT JOIN persons p ON u.id = p.user_id
             WHERE u.email = ?
@@ -379,6 +489,8 @@ if (stripos($contentType, "application/json") !== false) {
             $_SESSION['role_id']    = 8;
             $_SESSION['first_name'] = $tokenInfo['given_name'] ?? '';
             $_SESSION['last_name']  = $tokenInfo['family_name'] ?? '';
+            $_SESSION['religion'] = $user['religion'] ?? '';
+            $_SESSION['education_level'] = $user['education_level'] ?? '';
 
             logAuditTrail(
                 $pdo,
@@ -427,6 +539,8 @@ if (stripos($contentType, "application/json") !== false) {
             $_SESSION['first_name'] = $user['first_name'] ?? '';
             $_SESSION['middle_name'] = $user['middle_name'] ?? '';
             $_SESSION['last_name'] = $user['last_name'] ?? '';
+            $_SESSION['religion'] = $user['religion'] ?? '';
+            $_SESSION['education_level'] = $user['education_level'] ?? '';
 
             if ($roleInfo['barangay_id']) {
                 $_SESSION['barangay_id']   = $roleInfo['barangay_id'];
@@ -466,7 +580,7 @@ if (stripos($contentType, "application/json") !== false) {
             )
         ]);
         exit;
-        
+
     } catch (Exception $e) {
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
