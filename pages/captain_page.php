@@ -41,8 +41,59 @@ extract(captain_loadData($pdo, $bid));
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11.10.7/dist/sweetalert2.all.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 </head>
-<body class="bg-gray-50">
+<body class="bg-gray-100">
     <main class="container mx-auto p-6">
+        <!-- Signature Management Section -->
+        <div class="bg-white rounded-lg shadow-sm mb-8">
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-semibold text-gray-800 flex items-center">
+                    <i class="fas fa-signature text-blue-600 mr-2"></i>Digital Signature Management
+                </h2>
+            </div>
+            <div class="p-6">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <!-- Current Signature Display -->
+                    <div>
+                        <h3 class="text-lg font-medium mb-4">Current Signature</h3>
+                        <div id="currentSignatureDisplay" class="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center">
+                            <p class="text-gray-500">Loading signature...</p>
+                        </div>
+                    </div>
+                    
+                    <!-- Upload New Signature -->
+                    <div>
+                        <h3 class="text-lg font-medium mb-4">Upload New Signature</h3>
+                        <form id="signatureUploadForm" enctype="multipart/form-data">
+                            <input type="hidden" name="csrf_token" value="<?= $_SESSION['csrf_token'] ?>">
+                            <input type="hidden" name="upload_signature" value="1">
+                            <div class="mb-4">
+                                <input type="file" name="signature_file" id="signatureFile" 
+                                       accept="image/jpeg,image/png,image/gif" 
+                                       class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500" required>
+                                <p class="text-sm text-gray-500 mt-1">Supported formats: JPEG, PNG, GIF. Max size: 2MB</p>
+                            </div>
+                            <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded">
+                                <i class="fas fa-upload mr-2"></i>Upload Signature
+                            </button>
+                        </form>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Document Requests Management Section -->
+        <div class="bg-white rounded-lg shadow-sm mb-8">
+            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
+                <h2 class="text-xl font-semibold text-gray-800 flex items-center">
+                    <i class="fas fa-file-alt text-blue-600 mr-2"></i>Document Requests Reports
+                </h2>
+                <button onclick="openFinancialReportModal()" 
+                        class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
+                    <i class="fas fa-chart-line mr-2"></i>Generate Financial Report
+                </button>
+            </div>
+        </div>
+
         <!-- User Management Section -->
         <div class="mt-8 bg-white rounded-lg shadow-sm">
             <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
@@ -106,6 +157,61 @@ extract(captain_loadData($pdo, $bid));
             </div>
         </div>
     </main>
+
+    <!-- Financial Report Modal -->
+    <div id="financialReportModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
+        <div class="container mx-auto p-6 flex items-center justify-center h-full">
+            <div class="bg-white rounded-lg w-96 p-6">
+                <h3 class="text-lg font-medium mb-4">Generate Financial Report</h3>
+                <form id="financialReportForm">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Report Type</label>
+                        <select name="report_type" class="w-full border p-2 rounded" required>
+                            <option value="monthly">Monthly Report</option>
+                            <option value="yearly">Yearly Report</option>
+                            <option value="custom">Custom Date Range</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium mb-2">Year</label>
+                        <select name="year" class="w-full border p-2 rounded" required>
+                            <?php for($y = date('Y'); $y >= 2020; $y--): ?>
+                                <option value="<?= $y ?>" <?= $y == date('Y') ? 'selected' : '' ?>><?= $y ?></option>
+                            <?php endfor; ?>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-4" id="monthField">
+                        <label class="block text-sm font-medium mb-2">Month</label>
+                        <select name="month" class="w-full border p-2 rounded">
+                            <?php 
+                            $months = [
+                                1 => 'January', 2 => 'February', 3 => 'March', 4 => 'April',
+                                5 => 'May', 6 => 'June', 7 => 'July', 8 => 'August',
+                                9 => 'September', 10 => 'October', 11 => 'November', 12 => 'December'
+                            ];
+                            foreach($months as $num => $name): ?>
+                                <option value="<?= $num ?>" <?= $num == date('n') ? 'selected' : '' ?>><?= $name ?></option>
+                            <?php endforeach; ?>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-4 hidden" id="customDateFields">
+                        <label class="block text-sm font-medium mb-2">Start Date</label>
+                        <input type="date" name="start_date" class="w-full border p-2 rounded mb-2">
+                        <label class="block text-sm font-medium mb-2">End Date</label>
+                        <input type="date" name="end_date" class="w-full border p-2 rounded">
+                    </div>
+                    
+                    <div class="flex justify-end space-x-2">
+                        <button type="button" onclick="closeFinancialReportModal()" class="px-4 py-2 border rounded">Cancel</button>
+                        <button type="submit" class="bg-green-500 text-white px-4 py-2 rounded">Generate Report</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
 
     <!-- Add/Promote User Modal -->
     <div id="addUserModal" class="fixed inset-0 bg-black bg-opacity-50 hidden">
@@ -229,6 +335,128 @@ extract(captain_loadData($pdo, $bid));
     </div>
 
     <script>
+        // Load current signature on page load
+        document.addEventListener('DOMContentLoaded', function() {
+            loadCurrentSignature();
+            
+            // Financial report form handling
+            document.querySelector('select[name="report_type"]').addEventListener('change', function() {
+                const monthField = document.getElementById('monthField');
+                const customFields = document.getElementById('customDateFields');
+                
+                if (this.value === 'yearly') {
+                    monthField.classList.add('hidden');
+                    customFields.classList.add('hidden');
+                } else if (this.value === 'custom') {
+                    monthField.classList.add('hidden');
+                    customFields.classList.remove('hidden');
+                } else {
+                    monthField.classList.remove('hidden');
+                    customFields.classList.add('hidden');
+                }
+            });
+        });
+
+        // Load current signature
+        async function loadCurrentSignature() {
+            try {
+                const response = await fetch('?get_current_signature=1');
+                const data = await response.json();
+                const display = document.getElementById('currentSignatureDisplay');
+                
+                if (data.success && data.signature_path) {
+                    display.innerHTML = `
+                        <img src="../${data.signature_path}" alt="Current Signature" 
+                             class="max-w-full max-h-32 mx-auto border rounded">
+                        <p class="text-sm text-gray-600 mt-2">Uploaded: ${data.uploaded_at || 'Unknown'}</p>
+                    `;
+                } else {
+                    display.innerHTML = `
+                        <i class="fas fa-signature text-4xl text-gray-300 mb-2"></i>
+                        <p class="text-gray-500">No signature uploaded</p>
+                    `;
+                }
+            } catch (error) {
+                console.error('Error loading signature:', error);
+                document.getElementById('currentSignatureDisplay').innerHTML = `
+                    <p class="text-red-500">Error loading signature</p>
+                `;
+            }
+        }
+
+        // Handle signature upload
+        document.getElementById('signatureUploadForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const fileInput = document.getElementById('signatureFile');
+            
+            if (!fileInput.files[0]) {
+                Swal.fire('Error', 'Please select a file to upload', 'error');
+                return;
+            }
+            
+            // Validate file size (2MB)
+            if (fileInput.files[0].size > 2 * 1024 * 1024) {
+                Swal.fire('Error', 'File size must be less than 2MB', 'error');
+                return;
+            }
+            
+            try {
+                Swal.fire({
+                    title: 'Uploading...',
+                    text: 'Please wait while we upload your signature.',
+                    allowOutsideClick: false,
+                    didOpen: () => Swal.showLoading()
+                });
+                
+                const response = await fetch('', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    Swal.fire('Success!', 'Signature uploaded successfully', 'success').then(() => {
+                        loadCurrentSignature();
+                        this.reset();
+                    });
+                } else {
+                    Swal.fire('Error', data.message || 'Failed to upload signature', 'error');
+                }
+            } catch (error) {
+                Swal.fire('Error', 'An error occurred while uploading', 'error');
+            }
+        });
+
+        // Financial Report Modal Functions
+        function openFinancialReportModal() {
+            document.getElementById('financialReportModal').classList.remove('hidden');
+        }
+
+        function closeFinancialReportModal() {
+            document.getElementById('financialReportModal').classList.add('hidden');
+        }
+
+        // Handle financial report generation
+        document.getElementById('financialReportForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const params = new URLSearchParams();
+            
+            for (let [key, value] of formData.entries()) {
+                if (value) params.append(key, value);
+            }
+            
+            // Open report in new window
+            const url = `doc_request.php?action=generate_financial_report&${params.toString()}`;
+            window.open(url, '_blank');
+            
+            closeFinancialReportModal();
+        });
+
         async function toggleStatus(userId, action) {
             try {
                 const response = await fetch(`?toggle_status=1&user_id=${userId}&action=${action}`);

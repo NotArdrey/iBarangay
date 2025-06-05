@@ -29,6 +29,126 @@ function captain_checkAccess(PDO $pdo) {
 }
 
 function captain_handleActions(PDO $pdo, $bid) {
+    // Get current signature
+    if (isset($_GET['get_current_signature'])) {
+        header('Content-Type: application/json');
+        $current_admin_id = $_SESSION['user_id'];
+        $role = $_SESSION['role_id'];
+        
+        // Only handle captain signatures in this function
+        if ($role === ROLE_CAPTAIN) {
+            $stmt = $pdo->prepare("SELECT esignature_path as signature_path, updated_at FROM users WHERE id = ?");
+            $stmt->execute([$current_admin_id]);
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($result && $result['signature_path']) {
+                echo json_encode([
+                    'success' => true,
+                    'signature_path' => $result['signature_path'],
+                    'uploaded_at' => $result['updated_at']
+                ]);
+            } else {
+                echo json_encode(['success' => false, 'message' => 'No signature found']);
+            }
+        } else {
+            echo json_encode(['success' => false, 'message' => 'Only Captain can access signatures through this endpoint']);
+        }
+        exit;
+    }
+
+    // Upload signature
+    if (isset($_POST['upload_signature'])) {
+        if (!hash_equals($_SESSION['csrf_token'], $_POST['csrf_token'] ?? '')) {
+            echo json_encode(['success'=>false,'message'=>'Invalid CSRF token']);
+            exit;
+        }
+        
+        $current_admin_id = $_SESSION['user_id'];
+        $role = $_SESSION['role_id'];
+        
+        // Validate that user is a captain
+        if ($role !== ROLE_CAPTAIN) {
+            echo json_encode(['success'=>false,'message'=>'Only Captain can upload signatures through this endpoint']);
+            exit;
+        }
+
+        if (!isset($_FILES['signature_file']) || $_FILES['signature_file']['error'] !== UPLOAD_ERR_OK) {
+            echo json_encode(['success'=>false,'message'=>'No file uploaded or upload error']);
+            exit;
+        }
+
+        // Validate file type and size
+        $allowedTypes = ['image/jpeg', 'image/png', 'image/gif'];
+        $maxSize = 2 * 1024 * 1024; // 2MB
+
+        if (!in_array($_FILES['signature_file']['type'], $allowedTypes)) {
+            echo json_encode(['success'=>false,'message'=>'Invalid file type. Only JPEG, PNG, and GIF are allowed']);
+            exit;
+        }
+
+        if ($_FILES['signature_file']['size'] > $maxSize) {
+            echo json_encode(['success'=>false,'message'=>'File size too large. Maximum 2MB allowed']);
+            exit;
+        }
+
+        // Create signature directory if it doesn't exist
+        $uploadDir = '../uploads/signatures/';
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0755, true);
+        }
+
+        // Generate unique filename for captain
+        $extension = pathinfo($_FILES['signature_file']['name'], PATHINFO_EXTENSION);
+        $filename = 'captain_signature_' . $current_admin_id . '_' . time() . '.' . $extension;
+        $filepath = $uploadDir . $filename;
+
+        if (!move_uploaded_file($_FILES['signature_file']['tmp_name'], $filepath)) {
+            echo json_encode(['success'=>false,'message'=>'Failed to save uploaded file']);
+            exit;
+        }
+
+        // Update the captain signature field with correct path format
+        $dbPath = 'uploads/signatures/' . $filename;
+        
+        $stmt = $pdo->prepare("UPDATE users SET esignature_path = ?, updated_at = NOW() WHERE id = ? AND role_id = ?");
+        if ($stmt->execute([$dbPath, $current_admin_id, ROLE_CAPTAIN])) {
+            // Verify the file was saved and path is correct
+            $verifyPath = '../' . $dbPath;
+            if (file_exists($verifyPath)) {
+                echo json_encode([
+                    'success' => true,
+                    'message' => 'Captain signature uploaded successfully',
+                    'signature_path' => $dbPath,
+                    'file_exists' => true,
+                    'debug_info' => [
+                        'uploaded_filename' => $filename,
+                        'db_path' => $dbPath,
+                        'verify_path' => $verifyPath,
+                        'file_size' => filesize($verifyPath),
+                        'current_admin_id' => $current_admin_id
+                    ]
+                ]);
+            } else {
+                echo json_encode([
+                    'success' => false,
+                    'message' => 'Signature uploaded to database but file verification failed',
+                    'signature_path' => $dbPath,
+                    'file_exists' => false,
+                    'debug_info' => [
+                        'uploaded_filename' => $filename,
+                        'db_path' => $dbPath,
+                        'verify_path' => $verifyPath
+                    ]
+                ]);
+            }
+        } else {
+            // Clean up the uploaded file if database update failed
+            @unlink($filepath);
+            echo json_encode(['success'=>false,'message'=>'Failed to update database']);
+        }
+        exit;
+    }
+
     // toggle status
     if (isset($_GET['toggle_status'])) {
         $uid = (int)$_GET['user_id'];

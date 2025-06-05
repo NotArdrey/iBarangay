@@ -71,7 +71,193 @@ if (isset($_GET['action'])) {
     $response = ['success' => false, 'message' => ''];
 
     try {
-        if ($action === 'get_document_prices') {
+        if ($action === 'generate_financial_report') {
+            // Generate financial report for document requests
+            $reportType = $_GET['report_type'] ?? 'monthly';
+            $year = intval($_GET['year'] ?? date('Y'));
+            $month = intval($_GET['month'] ?? date('n'));
+            $startDate = $_GET['start_date'] ?? '';
+            $endDate = $_GET['end_date'] ?? '';
+            
+            // Build date conditions based on report type
+            $dateCondition = '';
+            $params = ['bid' => $bid];
+            $reportTitle = '';
+            
+            if ($reportType === 'monthly') {
+                $dateCondition = "AND YEAR(dr.request_date) = :year AND MONTH(dr.request_date) = :month";
+                $params['year'] = $year;
+                $params['month'] = $month;
+                $reportTitle = date('F Y', mktime(0, 0, 0, $month, 1, $year)) . ' Financial Report';
+            } elseif ($reportType === 'yearly') {
+                $dateCondition = "AND YEAR(dr.request_date) = :year";
+                $params['year'] = $year;
+                $reportTitle = $year . ' Annual Financial Report';
+            } elseif ($reportType === 'custom' && $startDate && $endDate) {
+                $dateCondition = "AND DATE(dr.request_date) BETWEEN :start_date AND :end_date";
+                $params['start_date'] = $startDate;
+                $params['end_date'] = $endDate;
+                $reportTitle = 'Financial Report (' . date('M d, Y', strtotime($startDate)) . ' - ' . date('M d, Y', strtotime($endDate)) . ')';
+            }
+            
+            // Get financial data
+            $stmt = $pdo->prepare("
+                SELECT 
+                    dt.name as document_type,
+                    COUNT(dr.id) as total_requests,
+                    SUM(dr.price) as total_revenue,
+                    AVG(dr.price) as average_fee,
+                    DATE_FORMAT(dr.request_date, '%Y-%m') as period
+                FROM document_requests dr
+                JOIN document_types dt ON dr.document_type_id = dt.id
+                WHERE dr.barangay_id = :bid
+                  AND dr.status IN ('completed', 'complete')
+                  AND dr.price > 0
+                  $dateCondition
+                GROUP BY dt.id, dt.name
+                ORDER BY total_revenue DESC
+            ");
+            $stmt->execute($params);
+            $reportData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Get overall totals
+            $totalStmt = $pdo->prepare("
+                SELECT 
+                    COUNT(dr.id) as grand_total_requests,
+                    SUM(dr.price) as grand_total_revenue
+                FROM document_requests dr
+                WHERE dr.barangay_id = :bid
+                  AND dr.status IN ('completed', 'complete')
+                  AND dr.price > 0
+                  $dateCondition
+            ");
+            $totalStmt->execute($params);
+            $totals = $totalStmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Get barangay info and signatures
+            $barangayStmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
+            $barangayStmt->execute([$bid]);
+            $barangayName = $barangayStmt->fetchColumn();
+            
+            // Get captain and chief signatures
+            $sigStmt = $pdo->prepare("
+                SELECT 
+                    u.first_name, u.last_name, u.role_id,
+                    u.esignature_path, u.chief_esignature_path
+                FROM users u 
+                WHERE u.barangay_id = ? AND u.role_id IN (?, ?) AND u.is_active = 1
+            ");
+            $sigStmt->execute([$bid, ROLE_CAPTAIN, ROLE_CHAIRPERSON]);
+            $officials = $sigStmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $captainInfo = null;
+            $chiefInfo = null;
+            foreach ($officials as $official) {
+                if ($official['role_id'] == ROLE_CAPTAIN) {
+                    $captainInfo = $official;
+                } elseif ($official['role_id'] == ROLE_CHAIRPERSON) {
+                    $chiefInfo = $official;
+                }
+            }
+            
+            // Generate PDF HTML
+            ob_start();
+            ?>
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta charset="utf-8">
+                <style>
+                    body { font-family: Arial, sans-serif; margin: 20px; }
+                    .header { text-align: center; margin-bottom: 30px; }
+                    .title { font-size: 18px; font-weight: bold; margin: 10px 0; }
+                    .subtitle { font-size: 14px; color: #666; }
+                    table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+                    th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
+                    th { background-color: #f5f5f5; font-weight: bold; }
+                    .text-right { text-align: right; }
+                    .total-row { background-color: #f9f9f9; font-weight: bold; }
+                    .signatures { margin-top: 50px; }
+                    .signature-box { display: inline-block; width: 300px; margin: 20px; text-align: center; }
+                    .signature-img { max-width: 150px; max-height: 50px; }
+                    .signature-line { border-top: 1px solid #000; margin-top: 50px; }
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <div class="title">BARANGAY <?= strtoupper(htmlspecialchars($barangayName)) ?></div>
+                    <div class="title"><?= htmlspecialchars($reportTitle) ?></div>
+                    <div class="subtitle">Generated on <?= date('F d, Y') ?></div>
+                </div>
+                
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Document Type</th>
+                            <th class="text-right">Total Requests</th>
+                            <th class="text-right">Total Revenue</th>
+                            <th class="text-right">Average Fee</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($reportData as $row): ?>
+                        <tr>
+                            <td><?= htmlspecialchars($row['document_type']) ?></td>
+                            <td class="text-right"><?= number_format($row['total_requests']) ?></td>
+                            <td class="text-right">₱<?= number_format($row['total_revenue'], 2) ?></td>
+                            <td class="text-right">₱<?= number_format($row['average_fee'], 2) ?></td>
+                        </tr>
+                        <?php endforeach; ?>
+                        <tr class="total-row">
+                            <td><strong>TOTAL</strong></td>
+                            <td class="text-right"><strong><?= number_format($totals['grand_total_requests']) ?></strong></td>
+                            <td class="text-right"><strong>₱<?= number_format($totals['grand_total_revenue'], 2) ?></strong></td>
+                            <td class="text-right">-</td>
+                        </tr>
+                    </tbody>
+                </table>
+                
+                <div class="signatures">
+                    <div class="signature-box">
+                        <?php if ($captainInfo && !empty($captainInfo['esignature_path'])): ?>
+                            <img src="<?= '../' . htmlspecialchars($captainInfo['esignature_path']) ?>" 
+                                 alt="Captain Signature" class="signature-img">
+                        <?php endif; ?>
+                        <div class="signature-line"></div>
+                        <div>
+                            <strong><?= $captainInfo ? htmlspecialchars($captainInfo['first_name'] . ' ' . $captainInfo['last_name']) : 'Barangay Captain' ?></strong><br>
+                            Barangay Captain
+                        </div>
+                    </div>
+                    
+                    <div class="signature-box">
+                        <?php if ($chiefInfo && !empty($chiefInfo['chief_esignature_path'])): ?>
+                            <img src="<?= '../' . htmlspecialchars($chiefInfo['chief_esignature_path']) ?>" 
+                                 alt="Chief Signature" class="signature-img">
+                        <?php endif; ?>
+                        <div class="signature-line"></div>
+                        <div>
+                            <strong><?= $chiefInfo ? htmlspecialchars($chiefInfo['first_name'] . ' ' . $chiefInfo['last_name']) : 'Barangay Chairperson' ?></strong><br>
+                            Barangay Chairperson
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+            <?php
+            $html = ob_get_clean();
+            
+            $pdf = new Dompdf();
+            $pdf->loadHtml($html, 'UTF-8');
+            $pdf->setPaper('A4', 'portrait');
+            $pdf->render();
+            
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: inline; filename="Financial-Report-' . date('Y-m-d') . '.pdf"');
+            echo $pdf->output();
+            exit;
+
+        } elseif ($action === 'get_document_prices') {
             // Get all document types
             $docs = $pdo->query("SELECT id, name, default_fee FROM document_types WHERE is_active = 1")->fetchAll(PDO::FETCH_ASSOC);
 

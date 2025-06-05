@@ -190,9 +190,9 @@ $householdStmt->execute([':person_id' => $docRequest['person_id']]);
 $householdInfo = $householdStmt->fetch(PDO::FETCH_ASSOC);
 
 // ======================================
-// FETCH BARANGAY OFFICIALS (DYNAMIC)
+// FETCH BARANGAY OFFICIALS (DYNAMIC) WITH SIGNATURES
 // ======================================
-// Query to get barangay officials for the specific barangay
+// Query to get barangay officials for the specific barangay including their signatures
 $officialsSql = "
     SELECT
         CONCAT(p.first_name, ' ', COALESCE(p.middle_name, ''), ' ', p.last_name) AS full_name,
@@ -200,11 +200,15 @@ $officialsSql = "
         p.middle_name,
         p.last_name,
         r.name AS role_name,
-        r.id AS role_id
+        r.id AS role_id,
+        u.esignature_path,
+        u.updated_at as signature_updated_at
     FROM users u
     JOIN persons p ON u.id = p.user_id
     JOIN roles r ON u.role_id = r.id
-    WHERE u.barangay_id = :barangay_id AND r.id IN (3, 4, 5)
+    WHERE u.barangay_id = :barangay_id 
+      AND r.id IN (3, 4, 5, 7)
+      AND u.is_active = 1
     ORDER BY r.id ASC
 ";
 
@@ -214,31 +218,45 @@ $stmtOfficials->execute([':barangay_id' => $docRequest['barangay_id']]);
 $barangayOfficials = $stmtOfficials->fetchAll(PDO::FETCH_ASSOC);
 
 // ======================================
-// INITIALIZE OFFICIALS DATA WITH BARANGAY-SPECIFIC DEFAULTS
+// INITIALIZE OFFICIALS DATA WITH BARANGAY-SPECIFIC DEFAULTS AND SIGNATURES
 // ======================================
 // Set barangay-specific default values for officials
 $barangayNameForDefaults = strtoupper($docRequest['barangay_name']);
 $captain = [
     'full_name' => $barangayNameForDefaults . ' BARANGAY CAPTAIN', 
-    'role_name' => 'barangay_captain'
+    'role_name' => 'barangay_captain',
+    'esignature_path' => null,
+    'signature_updated_at' => null
 ];
 $secretary = [
     'full_name' => $barangayNameForDefaults . ' BARANGAY SECRETARY', 
-    'role_name' => 'barangay_secretary'
+    'role_name' => 'barangay_secretary',
+    'esignature_path' => null,
+    'signature_updated_at' => null
 ];
 $treasurer = [
     'full_name' => $barangayNameForDefaults . ' BARANGAY TREASURER', 
-    'role_name' => 'barangay_treasurer'
+    'role_name' => 'barangay_treasurer',
+    'esignature_path' => null,
+    'signature_updated_at' => null
+];
+$chairperson = [
+    'full_name' => $barangayNameForDefaults . ' BARANGAY CHAIRPERSON', 
+    'role_name' => 'barangay_chairperson',
+    'esignature_path' => null,
+    'signature_updated_at' => null
 ];
 
-// Map fetched officials to their roles
+// Map fetched officials to their roles with signature information
 foreach ($barangayOfficials as $official) {
-    if ($official['role_id'] == 3) {
+    if ($official['role_id'] == 3) { // Captain
         $captain = $official;
-    } elseif ($official['role_id'] == 4) {
+    } elseif ($official['role_id'] == 4) { // Secretary
         $secretary = $official;
-    } elseif ($official['role_id'] == 5) {
+    } elseif ($official['role_id'] == 5) { // Treasurer
         $treasurer = $official;
+    } elseif ($official['role_id'] == 7) { // Chairperson
+        $chairperson = $official;
     }
 }
 
@@ -1027,7 +1045,53 @@ $barangaySettings = $barangaySettingsStmt->fetch(PDO::FETCH_ASSOC);
             
             <!-- Official's Signature -->
             <div class="signature-block">
-                <div class="signature-line"></div>
+                <?php 
+                // Enhanced signature debugging and display
+                $hasSignature = !empty($captain['esignature_path']);
+                $signaturePath = $hasSignature ? $captain['esignature_path'] : '';
+                
+                // Ensure consistent path format
+                if ($hasSignature) {
+                    // Remove any leading '../' or './' and ensure it starts with uploads/
+                    $cleanPath = ltrim($signaturePath, './');
+                    if (!str_starts_with($cleanPath, 'uploads/')) {
+                        $cleanPath = 'uploads/' . ltrim($cleanPath, '/');
+                    }
+                    $fullSignaturePath = '../' . $cleanPath;
+                } else {
+                    $fullSignaturePath = '';
+                }
+                
+                $fileExists = $hasSignature && $fullSignaturePath && file_exists($fullSignaturePath);
+                
+                // Debug output (will be visible in HTML source)
+                echo "<!-- CAPTAIN SIGNATURE DEBUG -->\n";
+                echo "<!-- Has Signature: " . ($hasSignature ? 'YES' : 'NO') . " -->\n";
+                echo "<!-- Original Path: " . htmlspecialchars($signaturePath) . " -->\n";
+                echo "<!-- Clean Path: " . htmlspecialchars($cleanPath ?? 'N/A') . " -->\n";
+                echo "<!-- Full Path: " . htmlspecialchars($fullSignaturePath) . " -->\n";
+                echo "<!-- File Exists: " . ($fileExists ? 'YES' : 'NO') . " -->\n";
+                echo "<!-- Captain Role ID: " . ($captain['role_id'] ?? 'N/A') . " -->\n";
+                echo "<!-- Captain Data: " . htmlspecialchars(json_encode($captain)) . " -->\n";
+                
+                // Display signature if available and file exists
+                if ($hasSignature && $fileExists): ?>
+                    <div style="text-align: center; margin-bottom: 5px;">
+                        <img src="<?= htmlspecialchars($fullSignaturePath) ?>" 
+                             alt="Captain Signature" 
+                             style="max-width: 120px; max-height: 40px; margin-bottom: 2px; border: 1px solid #ddd;"
+                             onerror="console.error('Signature image failed to load: <?= htmlspecialchars($fullSignaturePath) ?>');">
+                    </div>
+                <?php else: ?>
+                    <div class="signature-line"></div>
+                    <?php if ($hasSignature && !$fileExists): ?>
+                        <!-- DEBUG: Signature path exists but file not found -->
+                        <!-- Original: <?= htmlspecialchars($signaturePath) ?> -->
+                        <!-- Attempted: <?= htmlspecialchars($fullSignaturePath) ?> -->
+                    <?php elseif (!$hasSignature): ?>
+                        <!-- DEBUG: No signature path in database for captain -->
+                    <?php endif; ?>
+                <?php endif; ?>
                 <div class="official-name"><?= strtoupper($captain['full_name']) ?></div>
                 <div class="official-title">Punong Barangay</div>
             </div>
