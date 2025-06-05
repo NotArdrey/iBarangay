@@ -99,31 +99,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_SERVER['CONTENT_TYPE']) &&
             $confirmations = $confirmStmt->fetch(PDO::FETCH_ASSOC);
             
             if ($confirmations['complainant_confirmed'] && $confirmations['respondent_confirmed']) {
-                // All have confirmed - finalize the schedule
+                // All have confirmed - finalize the schedule proposal status
                 $pdo->prepare("UPDATE schedule_proposals SET status = 'all_confirmed' WHERE id = ?")->execute([$proposalId]);
                 
-                // Insert hearing record
-                $pdo->prepare("
-                    INSERT INTO case_hearings 
-                    (blotter_case_id, hearing_date, hearing_time, hearing_type, hearing_outcome, 
-                     presiding_officer_name, presiding_officer_position, hearing_number)
-                    VALUES (?, ?, ?, 'mediation', 'scheduled', ?, ?, 
-                            (SELECT COALESCE(MAX(hearing_number), 0) + 1 
-                             FROM case_hearings ch 
-                             WHERE ch.blotter_case_id = ?))
-                ")->execute([
-                    $proposal['blotter_case_id'], 
-                    $proposal['proposed_date'], 
-                    $proposal['proposed_time'],
-                    $proposal['presiding_officer'],
-                    $proposal['presiding_officer_position'],
-                    $proposal['blotter_case_id']
-                ]);
+                // The case_hearings record was already created by the admin when they scheduled.
+                // The blotter_cases status and hearing_count were also handled at that time.
                 
-                // Update case status
-                $pdo->prepare("UPDATE blotter_cases SET status = 'open', scheduling_status = 'scheduled' WHERE id = ?")->execute([$proposal['blotter_case_id']]);
-                
-                $message = 'Schedule confirmed by all parties. Hearing is now set.';
+                $message = 'Availability confirmed by all parties for the proposed schedule. The hearing will proceed as planned by the admin.';
             } else {
                 $message = 'Your confirmation has been recorded. Waiting for other participants.';
             }
@@ -164,45 +146,39 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_SERVER['CONTENT_TYPE']) &&
                 WHERE id = ?
             ")->execute([$conflictReason, $proposalId]);
             
-            // Increment hearing_count for the case as this attempt is consumed
-            $pdo->prepare("UPDATE blotter_cases SET hearing_count = COALESCE(hearing_count, 0) + 1 WHERE id = ?")
-                ->execute([$caseId]);
-
-            // Check if max hearing attempts reached after increment
-            $stmtCaseDetails = $pdo->prepare("
-                SELECT hearing_count, max_hearing_attempts 
-                FROM blotter_cases 
+            // NEW LOGIC: If any participant is unavailable, the case immediately becomes CFA eligible.
+            $cfaReasonForUnavailable = 'Participant marked as unavailable for scheduled hearing.';
+            $pdo->prepare("
+                UPDATE blotter_cases 
+                SET is_cfa_eligible = TRUE, 
+                    status = 'cfa_eligible', 
+                    cfa_reason = ?, 
+                    scheduling_status = 'cfa_pending_issuance'
                 WHERE id = ?
+            ")->execute([$cfaReasonForUnavailable, $caseId]);
+            
+            // Mark the original 'scheduled' hearing entry as 'cancelled' due to this conflict
+            $updateHearingStmt = $pdo->prepare("
+                UPDATE case_hearings
+                SET hearing_outcome = 'cancelled',
+                    resolution_details = CONCAT(COALESCE(resolution_details, ''), 'Participant unavailable: ', ?),
+                    updated_at = NOW()
+                WHERE schedule_proposal_id = ? AND hearing_outcome = 'scheduled'
             ");
-            $stmtCaseDetails->execute([$caseId]);
-            $caseDetails = $stmtCaseDetails->fetch(PDO::FETCH_ASSOC);
 
-            if ($caseDetails) {
-                $currentHearingCount = (int)$caseDetails['hearing_count'];
-                $maxHearings = (int)($caseDetails['max_hearing_attempts'] ?? 3); // Default to 3 if not set
-
-                if ($currentHearingCount >= $maxHearings) {
-                    // Mark as CFA eligible
-                    $pdo->prepare("
-                        UPDATE blotter_cases 
-                        SET is_cfa_eligible = TRUE, 
-                            status = 'cfa_eligible', 
-                            cfa_reason = 'Maximum hearing attempts reached due to participant unavailability', 
-                            scheduling_status = 'cfa_pending_issuance'
-                        WHERE id = ?
-                    ")->execute([$caseId]);
+            if ($updateHearingStmt->execute([$conflictReason, $proposalId])) {
+                if ($updateHearingStmt->rowCount() > 0) {
+                    $message = 'Your unavailability has been recorded. The hearing is cancelled, and the case is now eligible for CFA. The case administrator will be notified.';
                 } else {
-                    // Still more attempts allowed, set for rescheduling
-                    $pdo->prepare("
-                        UPDATE blotter_cases 
-                        SET scheduling_status = 'pending_schedule' 
-                        WHERE id = ?
-                    ")->execute([$caseId]);
+                     $message = 'Your unavailability has been recorded (the specific hearing instance was not found or already cancelled). The case is now eligible for CFA. The case administrator will be notified.';
                 }
+            } else {
+                 // Should not happen if query is correct, implies DB error
+                 $message = 'Your unavailability has been recorded, but there was an issue updating the specific hearing details. The case is now eligible for CFA. The case administrator will be notified.';
             }
             
             $pdo->commit();
-            echo json_encode(['success' => true, 'message' => 'Your unavailability has been recorded. The organizer will be notified.']);
+            echo json_encode(['success' => true, 'message' => $message]);
             exit;
         } catch (PDOException $e) {
             $pdo->rollBack();
@@ -928,6 +904,45 @@ unset($case);
                 font-size: 0.85rem;
             }
         }
+
+        /* Updated styles for Confirm/Reject buttons on blotter_status.php */
+        .confirm-btn,
+        .reject-btn {
+            padding: 0.6rem 1.2rem; /* Increased padding */
+            border-radius: 8px;    /* Slightly more rounded corners */
+            font-weight: 500;
+            font-size: 0.9rem;     /* Slightly larger font */
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.6rem;         /* Increased gap for icon */
+            text-decoration: none;
+            border: none;          /* Ensure no default border interferes */
+            box-shadow: var(--shadow-sm); /* Add a subtle shadow */
+        }
+
+        .confirm-btn:hover,
+        .reject-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+        }
+
+        .confirm-btn {
+            background-color: var(--success-color);
+            color: white;
+        }
+        .confirm-btn:hover {
+            background-color: #047857; /* Darker shade of success */
+        }
+
+        .reject-btn {
+            background-color: var(--error-color);
+            color: white;
+        }
+        .reject-btn:hover {
+            background-color: #b91c1c; /* Darker shade of error */
+        }
     </style>
 </head>
 <body>
@@ -1055,11 +1070,11 @@ unset($case);
                                     <div class="schedule-actions">
                                         <button class="confirm-btn btn-success"
                                             data-proposal="<?= $case['current_proposal_id'] ?>">
-                                            Confirm Availability
+                                            <i class="fas fa-check"></i> Confirm Availability
                                         </button>
                                         <button class="reject-btn btn-danger"
                                             data-proposal="<?= $case['current_proposal_id'] ?>">
-                                            Not Available
+                                            <i class="fas fa-times"></i> Not Available
                                         </button>
                                     </div>
                                 <?php endif; ?>

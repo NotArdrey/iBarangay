@@ -2151,7 +2151,28 @@ $stmt = $pdo->prepare("
           AND sp.status IN ('pending_captain_approval', 'pending_chief_approval', 'pending_user_confirmation')
         ORDER BY sp.id DESC
         LIMIT 1
-      ) AS pending_schedule_time
+      ) AS pending_schedule_time,
+      (
+        SELECT sp_latest.id
+        FROM schedule_proposals sp_latest
+        WHERE sp_latest.blotter_case_id = bc.id
+        ORDER BY sp_latest.id DESC
+        LIMIT 1
+      ) AS latest_proposal_id,
+      (
+        SELECT sp_latest.status
+        FROM schedule_proposals sp_latest
+        WHERE sp_latest.blotter_case_id = bc.id
+        ORDER BY sp_latest.id DESC
+        LIMIT 1
+      ) AS latest_proposal_status,
+      (
+        SELECT sp_latest.conflict_reason
+        FROM schedule_proposals sp_latest
+        WHERE sp_latest.blotter_case_id = bc.id
+        ORDER BY sp_latest.id DESC
+        LIMIT 1
+      ) AS latest_proposal_conflict_reason
     FROM blotter_cases bc
     LEFT JOIN blotter_case_categories bcc
       ON bc.id = bcc.blotter_case_id
@@ -2668,6 +2689,14 @@ require_once "../components/header.php";
             
             <!-- Regular action buttons -->
             <div class="hearing-actions">
+              <?php if (($case['latest_proposal_status'] ?? null) === 'conflict'): ?>
+                <div class="schedule-pending-info bg-red-100 border border-red-300 text-red-700 rounded p-2 my-1 text-xs" style="width: 100%; margin-bottom: 5px;">
+                    <strong>Schedule Conflict!</strong><br>
+                    Reason: <?= htmlspecialchars($case['latest_proposal_conflict_reason'] ?? 'A participant is unavailable.') ?><br>
+                    Please reschedule the hearing.
+                </div>
+              <?php endif; ?>
+
               <?php if ($canManageBlotter): ?>
                   <button class="view-details-btn text-blue-600 hover:text-blue-900 mr-2" data-id="<?= $case['id'] ?>">View</button>
                   <button class="edit-btn text-indigo-600 hover:text-indigo-900" data-id="<?= $case['id'] ?>">Edit</button>
@@ -2682,10 +2711,20 @@ require_once "../components/header.php";
               <?php
                 // Determine if Schedule Hearing button should be shown
                 $showScheduleButton = $canScheduleHearings &&
-                                      ($case['hearing_count'] < 3) &&
-                                      !$case['has_pending_hearing'] &&
+                                      ($case['hearing_count'] < ($case['max_hearing_attempts'] ?? 3)) && // Check against max_hearing_attempts
+                                      !$case['has_pending_hearing'] && // Key condition: No active 'scheduled' hearing
                                       !$case['last_hearing_postponed_with_next_date'] &&
-                                      !in_array($case['status'], ['closed', 'solved', 'completed', 'cfa_eligible', 'endorsed_to_court', 'dismissed']);
+                                      !in_array($case['status'], ['closed', 'solved', 'completed', 'cfa_eligible', 'endorsed_to_court', 'dismissed']) &&
+                                      // Added: Allow scheduling if latest proposal is 'conflict' OR blotter case scheduling_status indicates need for new schedule
+                                      ((
+                                        ($case['latest_proposal_status'] ?? null) === 'conflict'
+                                      ) ||
+                                       (
+                                           // Conditions for when not a conflict driven reschedule
+                                           // These are already checked above, so we just check scheduling_status
+                                           in_array(($case['scheduling_status'] ?? null), ['pending_schedule', 'none', 'cancelled', null, ''], true)
+                                       )
+                                      );
 
                 // Determine if Record Hearing Report button should be shown
                 $showRecordReportButton = $canScheduleHearings && $case['has_pending_hearing'];
