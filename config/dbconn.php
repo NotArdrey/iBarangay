@@ -12,9 +12,9 @@ Env::load();
 
 // Database configuration using environment variables
 $host = Env::get('DB_HOST', 'localhost');
-$dbname = Env::get('DB_NAME', 'ibarangay_db');
+$dbname = Env::get('DB_NAME', 'barangay');
 $username = Env::get('DB_USER', 'root');
-$password = Env::get('DB_PASS', '');
+$password = Env::get('DB_PASS', 'password');
 
 // DSN (Data Source Name)
 $dsn = "mysql:host=$host;dbname=$dbname;charset=utf8mb4";

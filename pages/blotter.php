@@ -111,19 +111,25 @@ function updateCaseStatus($pdo, $caseId, $newStatus, $userId) {
     return $stmt->rowCount() > 0;
 }
 
-function generateCFACertificate($pdo, $caseId, $complainantId, $issuedBy) {
+function generateCFACertificate($pdo, $caseId, $complainantPersonId, $issuedBy, $reason = 'Failed mediation after maximum hearings') {
     $certNumber = 'CFA-' . date('Y') . '-' . str_pad($caseId, 4, '0', STR_PAD_LEFT);
     $stmt = $pdo->prepare("
         INSERT INTO cfa_certificates 
         (blotter_case_id, complainant_person_id, issued_by_user_id, certificate_number, issued_at, reason)
-        VALUES (?, ?, ?, ?, NOW(), 'Failed mediation after maximum hearings')
+        VALUES (?, ?, ?, ?, NOW(), ?)
     ");
-    $stmt->execute([$caseId, $complainantId, $issuedBy, $certNumber]);
+    $stmt->execute([$caseId, $complainantPersonId, $issuedBy, $certNumber, $reason]);
+    $cfaCertId = $pdo->lastInsertId();
+    
     $pdo->prepare("
         UPDATE blotter_cases 
-        SET status = 'endorsed_to_court', cfa_issued_at = NOW(), endorsed_to_court_at = NOW() 
+        SET status = 'endorsed_to_court', cfa_issued_at = NOW(), endorsed_to_court_at = NOW(), scheduling_status = 'completed' 
         WHERE id = ?
     ")->execute([$caseId]);
+
+    // Add audit trail for CFA issuance
+    logAuditTrail($pdo, $issuedBy, 'INSERT', 'cfa_certificates', $cfaCertId, "CFA issued for case $caseId. Cert: $certNumber. Reason: $reason");
+
     return $certNumber;
 }
 
@@ -1454,26 +1460,62 @@ if (!empty($_GET['action'])) {
                       $proposalStatus
                   ]);
                   $proposalId = $pdo->lastInsertId();
-                  sendSummonsEmails($pdo, $id, $proposalId);
-                  // Increment hearing attempts if new columns exist
-                  if ($hasNewColumns) {
-                      $pdo->prepare("UPDATE blotter_cases SET hearing_attempts = COALESCE(hearing_attempts, 0) + 1 WHERE id = ?")
-                          ->execute([$id]);
-                        $pdo->prepare("UPDATE blotter_cases SET hearing_count = COALESCE(hearing_count, 0) + 1 WHERE id = ?")
-                            ->execute([$proposal['case_id']]);
+
+                  // Calculate next hearing_number for the case_hearings table
+                  $stmtHearingNum = $pdo->prepare("SELECT MAX(hearing_number) FROM case_hearings WHERE blotter_case_id = ?");
+                  $stmtHearingNum->execute([$id]);
+                  $maxHearingNumber = $stmtHearingNum->fetchColumn();
+                  $nextHearingNumber = ($maxHearingNumber === null ? 0 : (int)$maxHearingNumber) + 1;
+
+                  // Get details of the current admin scheduling this hearing
+                  $userStmt = $pdo->prepare("SELECT first_name, last_name FROM users WHERE id = ?");
+                  $userStmt->execute([$current_admin_id]);
+                  $currentUserDetails = $userStmt->fetch(PDO::FETCH_ASSOC);
+                  $actualPresidingOfficerName = $currentUserDetails['first_name'] . ' ' . $currentUserDetails['last_name'];
+                  $actualPresidingOfficerPosition = '';
+                  if ($role === ROLE_CAPTAIN) {
+                      $actualPresidingOfficerPosition = 'barangay_captain';
+                  } elseif ($role === ROLE_CHIEF) {
+                      $actualPresidingOfficerPosition = 'chief_officer';
                   }
 
-                  // set scheduling_status to match UI condition (schedule_proposed)
-                  $pdo->prepare("UPDATE blotter_cases SET scheduling_status='schedule_proposed' WHERE id=?")
+                  // Insert into case_hearings
+                  $stmtInsertHearing = $pdo->prepare("
+                      INSERT INTO case_hearings
+                      (blotter_case_id, hearing_number, hearing_date, hearing_type, 
+                       presiding_officer_name, presiding_officer_position, 
+                       hearing_outcome, created_by_user_id, schedule_proposal_id)
+                      VALUES(?, ?, CONCAT(?, ' ', ?), 'mediation', ?, ?, 'scheduled', ?, ?)
+                  ");
+                  $stmtInsertHearing->execute([
+                      $id, // blotter_case_id
+                      $nextHearingNumber,
+                      $data['hearing_date'],
+                      $data['hearing_time'],
+                      $actualPresidingOfficerName,
+                      $actualPresidingOfficerPosition,
+                      $current_admin_id, // created_by_user_id
+                      $proposalId        // schedule_proposal_id
+                  ]);
+                  $newHearingId = $pdo->lastInsertId();
+                  
+                  sendSummonsEmails($pdo, $id, $proposalId);
+                  
+                  // Unconditionally increment hearing_count as it always exists and a hearing is being scheduled.
+                  $pdo->prepare("UPDATE blotter_cases SET hearing_count = COALESCE(hearing_count, 0) + 1 WHERE id = ?")
+                      ->execute([$id]);
+
+                  // Update blotter_cases status and scheduling_status
+                  $pdo->prepare("UPDATE blotter_cases SET scheduling_status='scheduled', status = (CASE WHEN status = 'pending' THEN 'open' ELSE status END) WHERE id=?")
                       ->execute([$id]);
 
                   $pdo->commit();
-                  logAuditTrail($pdo, $current_admin_id,'INSERT','schedule_proposals',$proposalId,
-                      "Scheduled hearing pending approval/unavailability mark by $otherRoleFriendlyName"
+                  logAuditTrail($pdo, $current_admin_id,'INSERT','case_hearings',$newHearingId,
+                      "Hearing scheduled for case $id (Proposal ID: $proposalId), awaiting participant confirmation."
                   );
                   echo json_encode([
                     'success'=>true,
-                    'message'=>'Schedule proposed; awaiting confirmation/unavailability mark by '.$otherRoleFriendlyName
+                    'message'=>'Hearing scheduled for '.date('M d, Y', strtotime($data['hearing_date'])).' at '.date('g:i A', strtotime($data['hearing_time'])).'. Awaiting participant confirmations.'
                   ]);
                   break;
   case 'approve_schedule':
@@ -1730,7 +1772,236 @@ if (!empty($_GET['action'])) {
                     echo json_encode(['success'=>true,'message'=>'Your confirmation is recorded. Waiting on other party']);
                 }
                 exit;
-        }
+
+            case 'submit_hearing_outcome':
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF, ROLE_SECRETARY])) {
+                    echo json_encode(['success' => false, 'message' => 'You do not have permission to record hearing outcomes.']);
+                    exit;
+                }
+
+                $hearingId = filter_input(INPUT_POST, 'hearing_id', FILTER_VALIDATE_INT);
+                $caseId = filter_input(INPUT_POST, 'case_id', FILTER_VALIDATE_INT);
+                $presidingOfficerName = trim(filter_input(INPUT_POST, 'presiding_officer_name', FILTER_SANITIZE_STRING));
+                $presidingOfficerPosition = trim(filter_input(INPUT_POST, 'presiding_officer_position', FILTER_SANITIZE_STRING));
+                $hearingOutcome = trim(filter_input(INPUT_POST, 'hearing_outcome', FILTER_SANITIZE_STRING));
+                $resolutionDetails = trim(filter_input(INPUT_POST, 'resolution_details', FILTER_SANITIZE_STRING));
+                $nextHearingDateStr = trim(filter_input(INPUT_POST, 'next_hearing_date', FILTER_SANITIZE_STRING));
+                $nextHearingTimeStr = trim(filter_input(INPUT_POST, 'next_hearing_time', FILTER_SANITIZE_STRING));
+
+                if (!$hearingId || !$caseId || !$presidingOfficerName || !$hearingOutcome) {
+                    echo json_encode(['success' => false, 'message' => 'Missing required fields. Please ensure Hearing ID, Case ID, Presiding Officer, and Outcome are provided.']);
+                    exit;
+                }
+
+                $validOutcomes = ['resolved', 'failed', 'postponed'];
+                if (!in_array($hearingOutcome, $validOutcomes)) {
+                    echo json_encode(['success' => false, 'message' => 'Invalid hearing outcome specified.']);
+                    exit;
+                }
+
+                $nextHearingDateTime = null;
+                if ($hearingOutcome === 'postponed') {
+                    if (empty($nextHearingDateStr) || empty($nextHearingTimeStr)) {
+                        echo json_encode(['success' => false, 'message' => 'Next hearing date and time are required for postponed cases.']);
+                        exit;
+                    }
+                    try {
+                        $nextHearingDateTime = new DateTime($nextHearingDateStr . ' ' . $nextHearingTimeStr);
+                        $nextHearingDateTime = $nextHearingDateTime->format('Y-m-d H:i:s');
+                    } catch (Exception $e) {
+                        echo json_encode(['success' => false, 'message' => 'Invalid next hearing date or time format.']);
+                        exit;
+                    }
+                }
+
+                try {
+                    $pdo->beginTransaction();
+
+                    // Update case_hearings
+                    $stmtUpdateHearing = $pdo->prepare("
+                        UPDATE case_hearings
+                        SET hearing_outcome = ?,
+                            presiding_officer_name = ?,
+                            presiding_officer_position = ?,
+                            resolution_details = ?,
+                            next_hearing_date = ?,
+                            updated_at = NOW()
+                        WHERE id = ? AND blotter_case_id = ?
+                    ");
+                    $stmtUpdateHearing->execute([
+                        $hearingOutcome,
+                        $presidingOfficerName,
+                        $presidingOfficerPosition,
+                        $resolutionDetails,
+                        $nextHearingDateTime, // This will be NULL if not postponed
+                        $hearingId,
+                        $caseId
+                    ]);
+
+                    if ($stmtUpdateHearing->rowCount() === 0) {
+                        $pdo->rollBack();
+                        echo json_encode(['success' => false, 'message' => 'Failed to update hearing record. It might not exist or case ID mismatch.']);
+                        exit;
+                    }
+                    
+                    // Fetch max hearing attempts for the case
+                    $stmtCaseInfo = $pdo->prepare("SELECT status, hearing_count, max_hearing_attempts FROM blotter_cases WHERE id = ?");
+                    $stmtCaseInfo->execute([$caseId]);
+                    $caseInfo = $stmtCaseInfo->fetch(PDO::FETCH_ASSOC);
+
+                    if(!$caseInfo) {
+                        $pdo->rollBack();
+                        echo json_encode(['success' => false, 'message' => 'Case not found.']);
+                        exit;
+                    }
+                    $currentHearingCount = (int)($caseInfo['hearing_count'] ?? 0); // Total scheduled
+                    $maxHearings = (int)($caseInfo['max_hearing_attempts'] ?? 3); // Default to 3 if not set
+
+                    // Count actual completed (resolved or failed) hearings for CFA eligibility check
+                    $stmtCompletedHearings = $pdo->prepare("
+                        SELECT COUNT(*) 
+                        FROM case_hearings 
+                        WHERE blotter_case_id = ? AND hearing_outcome IN ('resolved', 'failed')
+                    ");
+                    $stmtCompletedHearings->execute([$caseId]);
+                    $completedHearingsCount = (int)$stmtCompletedHearings->fetchColumn();
+
+
+                    $newCaseStatus = $caseInfo['status'];
+                    $newSchedulingStatus = '';
+                    $cfaReason = null;
+                    $isCfaEligible = 0; // Use 0 for FALSE for is_cfa_eligible TINYINT
+
+                    if ($hearingOutcome === 'resolved') {
+                        $newCaseStatus = 'solved';
+                        $newSchedulingStatus = 'completed';
+                        $pdo->prepare("UPDATE blotter_cases SET resolved_at = NOW() WHERE id = ?")->execute([$caseId]);
+                    } elseif ($hearingOutcome === 'failed') {
+                        if ($completedHearingsCount >= $maxHearings) {
+                            $newCaseStatus = 'cfa_eligible';
+                            $newSchedulingStatus = 'cfa_pending_issuance';
+                            $isCfaEligible = 1; // Use 1 for TRUE
+                            $cfaReason = 'Failed mediation after maximum hearings (' . $completedHearingsCount . '/' . $maxHearings . ')';
+                        } else {
+                            $newCaseStatus = 'open'; // Remains open for more hearings
+                            $newSchedulingStatus = 'pending_schedule';
+                        }
+                    } elseif ($hearingOutcome === 'postponed') {
+                        $newCaseStatus = 'open'; // Remains open
+                        $newSchedulingStatus = 'pending_schedule'; // Needs new scheduling
+                    }
+
+                    $updateBlotterSql = "UPDATE blotter_cases SET status = ?, scheduling_status = ?";
+                    $updateBlotterParams = [$newCaseStatus, $newSchedulingStatus];
+
+                    if ($hearingOutcome === 'failed' && $isCfaEligible === 1) {
+                        $updateBlotterSql .= ", is_cfa_eligible = ?, cfa_reason = ?";
+                        $updateBlotterParams[] = $isCfaEligible;
+                        $updateBlotterParams[] = $cfaReason;
+                    }
+                    $updateBlotterSql .= " WHERE id = ?";
+                    $updateBlotterParams[] = $caseId;
+
+                    $stmtUpdateBlotter = $pdo->prepare($updateBlotterSql);
+                    $stmtUpdateBlotter->execute($updateBlotterParams);
+
+                    logAuditTrail($pdo, $current_admin_id, 'UPDATE', 'case_hearings', $hearingId, "Outcome recorded: $hearingOutcome. Case ID: $caseId");
+                    $pdo->commit();
+                    echo json_encode(['success' => true, 'message' => "Hearing outcome '$hearingOutcome' recorded successfully for case ID $caseId."]);
+
+                } catch (PDOException $e) {
+                    $pdo->rollBack();
+                    error_log("Error in submit_hearing_outcome: " . $e->getMessage());
+                    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    error_log("General error in submit_hearing_outcome: " . $e->getMessage());
+                    echo json_encode(['success' => false, 'message' => 'An unexpected error occurred: ' . $e->getMessage()]);
+                }
+                exit;
+
+            case 'issue_cfa':
+                if (!in_array($role, [ROLE_CAPTAIN, ROLE_CHIEF])) {
+                    echo json_encode(['success' => false, 'message' => 'You do not have permission to issue CFA certificates.']);
+                    exit;
+                }
+
+                $requestData = json_decode(file_get_contents('php://input'), true);
+                $caseId = filter_var($id, FILTER_VALIDATE_INT); // $id comes from $_GET['id'] which is the case_id for this action
+                $complainantId = filter_var($requestData['complainant_id'] ?? null, FILTER_VALIDATE_INT);
+
+                if (!$caseId || !$complainantId) {
+                    echo json_encode(['success' => false, 'message' => 'Invalid Case ID or Complainant ID provided.']);
+                    exit;
+                }
+
+                try {
+                    $pdo->beginTransaction();
+
+                    // Check if the case is actually eligible for CFA
+                    $stmtCheckCase = $pdo->prepare("
+                        SELECT is_cfa_eligible, status, hearing_count, max_hearing_attempts 
+                        FROM blotter_cases 
+                        WHERE id = ? AND barangay_id = ?
+                    ");
+                    $stmtCheckCase->execute([$caseId, $bid]);
+                    $caseDetails = $stmtCheckCase->fetch(PDO::FETCH_ASSOC);
+
+                    if (!$caseDetails) {
+                        $pdo->rollBack();
+                        echo json_encode(['success' => false, 'message' => 'Case not found.']);
+                        exit;
+                    }
+
+                    $isManuallyEligible = ($caseDetails['is_cfa_eligible'] == 1);
+                    $hasReachedMaxHearings = (($caseDetails['hearing_count'] ?? 0) >= ($caseDetails['max_hearing_attempts'] ?? 3));
+
+                    if (!$isManuallyEligible && !$hasReachedMaxHearings) {
+                        $pdo->rollBack();
+                        echo json_encode(['success' => false, 'message' => 'Case is not yet eligible for CFA. Maximum hearings not reached or not marked as eligible.']);
+                        exit;
+                    }
+                    
+                    if (in_array($caseDetails['status'], ['endorsed_to_court', 'closed', 'solved', 'completed'])) {
+                        $pdo->rollBack();
+                        echo json_encode(['success' => false, 'message' => 'CFA cannot be issued for a case that is already ' . $caseDetails['status'] . '.']);
+                        exit;
+                    }
+
+                    // Determine the actual person_id for CFA certificate, or null if not a registered person
+                    $actualPersonIdForCFA = null;
+                    if ($complainantId) {
+                        $stmtCheckPerson = $pdo->prepare("SELECT id FROM persons WHERE id = ?");
+                        $stmtCheckPerson->execute([$complainantId]);
+                        if ($stmtCheckPerson->fetch()) {
+                            $actualPersonIdForCFA = $complainantId;
+                        }
+                    }
+
+                    // Determine CFA Reason
+                    $cfaReason = $caseDetails['is_cfa_eligible'] == 1 
+                                 ? ($caseDetails['cfa_reason'] ?? 'Failed mediation after maximum hearings') 
+                                 : 'Maximum hearings reached, CFA issued upon request.';
+
+                    // Call the updated generateCFACertificate function
+                    $certificateNumber = generateCFACertificate($pdo, $caseId, $actualPersonIdForCFA, $current_admin_id, $cfaReason);
+                    
+                    $pdo->commit();
+                    echo json_encode(['success' => true, 'message' => 'CFA certificate issued successfully.', 'certificate_number' => $certificateNumber]);
+
+                } catch (PDOException $e) {
+                    $pdo->rollBack();
+                    error_log("Database error in issue_cfa: " . $e->getMessage());
+                    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+                } catch (Exception $e) {
+                    $pdo->rollBack();
+                    error_log("General error in issue_cfa: " . $e->getMessage());
+                    echo json_encode(['success' => false, 'message' => 'An unexpected error occurred: ' . $e->getMessage()]);
+                }
+                exit;
+
+            // Make sure this new case is added BEFORE the default case if it exists, or at the end of the switch.
+        } // This closes the main switch($action)
     } catch (PDOException $e) {
         echo json_encode(['success'=>false,'message'=>$e->getMessage()]);
     }
@@ -2397,7 +2668,10 @@ require_once "../components/header.php";
                 $showRecordReportButton = $canScheduleHearings && $case['has_pending_hearing'];
                 
                 // Determine if Issue CFA button should be shown
-                $showIssueCFAButton = $canIssueCFA && $case['is_cfa_eligible'] && !in_array($case['status'], ['endorsed_to_court', 'closed', 'solved', 'completed']);
+                $isMaxHearingsReachedForButton = (($case['hearing_count'] ?? 0) >= ($case['max_hearing_attempts'] ?? 3));
+                $showIssueCFAButton = $canIssueCFA &&
+                                      ($case['is_cfa_eligible'] == 1 || $isMaxHearingsReachedForButton) &&
+                                      !in_array($case['status'], ['endorsed_to_court', 'closed', 'solved', 'completed']);
 
                 // Determine if Complete Case button should be shown
                 $showCompleteButton = $canManageBlotter && in_array($case['status'], ['open', 'solved', 'pending', 'cfa_eligible']) && !in_array($case['status'], ['closed', 'completed', 'dismissed', 'endorsed_to_court']);
