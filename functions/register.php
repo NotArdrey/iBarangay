@@ -419,12 +419,16 @@ function verifyPersonInCensus($pdo, $data) {
         $stmt->execute($params);
         $records = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
-        // Check if person exists in both records
-        if (count($records) > 1) {
+        // Check if person exists in both census and temporary in the SAME barangay
+        $censusBarangayIds = array_column(array_filter($records, fn($r) => $r['source'] === 'census'), 'barangay_id');
+        $tempBarangayIds = array_column(array_filter($records, fn($r) => $r['source'] === 'temporary'), 'barangay_id');
+        $overlap = array_intersect($censusBarangayIds, $tempBarangayIds);
+        
+        if (!empty($overlap)) {
             return [
                 'success' => false,
-                'message' => 'Person found in both census and temporary records. Please contact the barangay office for assistance.',
-                'debug_info' => ['Person exists in multiple records']
+                'message' => 'Person found in both census and temporary records in the same barangay. Please contact the barangay office for assistance.',
+                'debug_info' => ['Person exists in both records in the same barangay']
             ];
         }
 
@@ -443,6 +447,48 @@ function verifyPersonInCensus($pdo, $data) {
                 ];
             } else {
                 $mismatchDetails[] = "ID number mismatch in " . $record['source'] . " records";
+            }
+        }
+        // If person exists in multiple records (different barangays)
+        elseif (count($records) > 1) {
+            $censusRecords = array_filter($records, fn($r) => $r['source'] === 'census');
+            $tempRecords = array_filter($records, fn($r) => $r['source'] === 'temporary');
+            
+            // If only census records exist
+            if (!empty($censusRecords) && empty($tempRecords)) {
+                return [
+                    'success' => true,
+                    'person_id' => $censusRecords[0]['id'],
+                    'barangay_id' => $censusRecords[0]['barangay_id'],
+                    'message' => 'Person verified in census records.',
+                    'source' => 'census',
+                    'multiple_records' => true,
+                    'records' => $censusRecords
+                ];
+            }
+            // If only temporary records exist
+            elseif (empty($censusRecords) && !empty($tempRecords)) {
+                return [
+                    'success' => true,
+                    'person_id' => $tempRecords[0]['id'],
+                    'barangay_id' => $tempRecords[0]['barangay_id'],
+                    'message' => 'Person verified in temporary records.',
+                    'source' => 'temporary',
+                    'multiple_records' => true,
+                    'records' => $tempRecords
+                ];
+            }
+            // If both census and temporary records exist in different barangays
+            else {
+                return [
+                    'success' => true,
+                    'person_id' => $censusRecords[0]['id'], // Default to first census record
+                    'barangay_id' => $censusRecords[0]['barangay_id'],
+                    'message' => 'Person verified in multiple records.',
+                    'source' => 'census',
+                    'multiple_records' => true,
+                    'records' => array_merge($censusRecords, $tempRecords)
+                ];
             }
         }
 
@@ -555,6 +601,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:last_name))
         AND LOWER(TRIM(first_name)) = LOWER(TRIM(:first_name))
         AND date_of_birth = :birth_date
+        AND (is_archived = 0 OR is_archived IS NULL)
     ";
     $params = [
         ':first_name' => trim($_POST['first_name']),
@@ -599,8 +646,56 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
     // Verify person_id is provided - this confirms the person exists in the database
     if (empty($person_id)) {
         $errors[] = "Identity verification failed. Only verified residents can register.";
+    } else if ($record_source === 'temporary') {
+        // Handle registration for temporary records
+        // Fetch the temporary record
+        $stmt = $pdo->prepare("SELECT * FROM temporary_records WHERE id = ?");
+        $stmt->execute([$person_id]);
+        $tempPerson = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$tempPerson) {
+            $errors[] = "Temporary record not found. Please try again or contact the barangay office.";
+        } else {
+            // Migrate temporary record to persons table
+            $insertPerson = $pdo->prepare("INSERT INTO persons (first_name, middle_name, last_name, birth_date, birth_place, gender, civil_status, citizenship, contact_number, is_archived) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, FALSE)");
+            $insertPerson->execute([
+                $tempPerson['first_name'],
+                $tempPerson['middle_name'],
+                $tempPerson['last_name'],
+                $tempPerson['date_of_birth'],
+                $tempPerson['place_of_birth'] ?? '',
+                'MALE', // Default or map if available
+                'SINGLE', // Default or map if available
+                'Filipino', // Default
+                null // contact_number
+            ]);
+            $new_person_id = $pdo->lastInsertId();
+            // Insert address
+            $insertAddress = $pdo->prepare("INSERT INTO addresses (person_id, barangay_id, house_no, street, municipality, province, region, is_primary, is_permanent, residency_type, years_in_san_rafael) VALUES (?, ?, ?, ?, ?, ?, ?, 1, 0, 'Home Owner', 0)");
+            $insertAddress->execute([
+                $new_person_id,
+                $tempPerson['barangay_id'],
+                $tempPerson['house_number'] ?? '',
+                $tempPerson['street'] ?? '',
+                $tempPerson['municipality'] ?? '',
+                $tempPerson['province'] ?? '',
+                $tempPerson['region'] ?? ''
+            ]);
+            // Optionally, insert ID info
+            $insertId = $pdo->prepare("INSERT INTO person_identification (person_id, other_id_type, other_id_number) VALUES (?, ?, ?)");
+            $insertId->execute([
+                $new_person_id,
+                $tempPerson['id_type'] ?? '',
+                $tempPerson['id_number'] ?? ''
+            ]);
+            // Set person_id to new value
+            $person_id = $new_person_id;
+            // Optionally, archive or delete the temporary record
+            $pdo->prepare("UPDATE temporary_records SET is_archived = 'TRUE' WHERE id = ?")->execute([$tempPerson['id']]);
+            // Set selected_barangay_id for user creation
+            $selected_barangay_id = $tempPerson['barangay_id'];
+        }
     } else {
-        // Check if person exists and is not already linked to a user account
+        // Check if person exists and is not already linked to a user account (census)
         $stmt = $pdo->prepare("
             SELECT p.id, p.user_id, p.first_name, p.last_name, p.gender, a.barangay_id 
             FROM persons p 

@@ -73,6 +73,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:temp_last_name))
             AND LOWER(TRIM(first_name)) = LOWER(TRIM(:temp_first_name))
             AND date_of_birth = :temp_birth_date
+            AND (is_archived = 0 OR is_archived IS NULL)
         ";
         // Prepare separate parameter arrays for each query
         $censusParams = [
@@ -98,22 +99,55 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $tempStmt = $pdo->prepare($tempSql);
         $tempStmt->execute($tempParams);
         $tempRecords = $tempStmt->fetchAll(PDO::FETCH_ASSOC);
-        // If found in both census and temporary (any barangay), block registration
-        if (count($censusRecords) > 0 && count($tempRecords) > 0) {
-            echo json_encode([
-                'status' => 'error',
-                'message' => 'Person found in both census and temporary records. Please contact the barangay office for assistance.',
-                'exists' => false
-            ]);
-            exit;
-        }
+
         // If found in multiple barangays, allow selection (prefer census if both types, but not both in same barangay)
         $allRecords = array_merge($censusRecords, $tempRecords);
         if (count($allRecords) > 1) {
             $censusBarangays = array_filter($allRecords, fn($r) => $r['source'] === 'census');
             $tempBarangays = array_filter($allRecords, fn($r) => $r['source'] === 'temporary');
+            
+            // Check if person exists in both census and temporary in the SAME barangay
+            $censusBarangayIds = array_column($censusBarangays, 'barangay_id');
+            $tempBarangayIds = array_column($tempBarangays, 'barangay_id');
+            $overlap = array_intersect($censusBarangayIds, $tempBarangayIds);
+            
+            if (!empty($overlap)) {
+                echo json_encode([
+                    'status' => 'error',
+                    'message' => 'Registration cannot proceed because your information exists in both census and temporary records for the same barangay. This usually means your details are pending verification or update. Please visit or contact your barangay office to resolve this before registering online.',
+                    'exists' => false
+                ]);
+                exit;
+            }
+
+            // If only census records exist
             if (count($censusBarangays) > 0 && count($tempBarangays) === 0) {
-                // Only census records, allow selection
+                // Group census records by barangay_id
+                $grouped = [];
+                foreach ($censusBarangays as $r) {
+                    $grouped[$r['barangay_id']][] = $r;
+                }
+                $filtered = [];
+                foreach ($grouped as $barangay_id => $records) {
+                    // Try to find a record with both religion and education_level
+                    $best = null;
+                    foreach ($records as $rec) {
+                        // Fetch religion and education_level for this person
+                        $stmt = $pdo->prepare("SELECT religion, education_level FROM persons WHERE id = ?");
+                        $stmt->execute([$rec['id']]);
+                        $row = $stmt->fetch(PDO::FETCH_ASSOC);
+                        if (!empty($row['religion']) && !empty($row['education_level'])) {
+                            $best = $rec;
+                            break;
+                        }
+                    }
+                    if ($best) {
+                        $filtered[] = $best;
+                    } else {
+                        // Fallback: just use the first record for this barangay
+                        $filtered[] = $records[0];
+                    }
+                }
                 $barangay_records = array_map(function($r) use ($pdo) {
                     return [
                         'id' => $r['barangay_id'],
@@ -121,17 +155,18 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                         'source' => 'census',
                         'person_id' => $r['id']
                     ];
-                }, $censusBarangays);
+                }, $filtered);
                 echo json_encode([
                     'status' => 'success',
                     'exists' => true,
-                    'person_id' => $censusBarangays[0]['id'],
+                    'person_id' => $filtered[0]['id'],
                     'source' => 'census',
                     'barangay_records' => $barangay_records
                 ]);
                 exit;
-            } elseif (count($tempBarangays) > 0 && count($censusBarangays) === 0) {
-                // Only temporary records, allow selection
+            } 
+            // If only temporary records exist
+            elseif (count($tempBarangays) > 0 && count($censusBarangays) === 0) {
                 $barangay_records = array_map(function($r) use ($pdo) {
                     return [
                         'id' => $r['barangay_id'],
@@ -148,8 +183,10 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     'barangay_records' => $barangay_records
                 ]);
                 exit;
-            } elseif (count($censusBarangays) > 0 && count($tempBarangays) > 0) {
-                // Found in census in one barangay and temporary in another, only allow census
+            } 
+            // If found in both census and temporary in DIFFERENT barangays
+            elseif (count($censusBarangays) > 0 && count($tempBarangays) > 0) {
+                // Only show census records in the dropdown if any census records exist
                 $barangay_records = array_map(function($r) use ($pdo) {
                     return [
                         'id' => $r['barangay_id'],
@@ -161,7 +198,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 echo json_encode([
                     'status' => 'success',
                     'exists' => true,
-                    'person_id' => $censusBarangays[0]['id'],
+                    'person_id' => $censusBarangays[0]['id'], // Default to first census record
                     'source' => 'census',
                     'barangay_records' => $barangay_records
                 ]);
@@ -202,6 +239,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
             WHERE LOWER(TRIM(last_name)) = LOWER(TRIM(:temp_last_name))
             OR LOWER(TRIM(first_name)) = LOWER(TRIM(:temp_first_name))
             OR date_of_birth = :temp_birth_date
+            AND (is_archived = 0 OR is_archived IS NULL)
         ";
         $partialParams = [
             ':census_first_name' => $first_name,

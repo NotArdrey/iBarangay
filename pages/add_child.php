@@ -362,6 +362,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             <a href="temporary_record.php" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
                 Temporary Records
             </a>
+            <a href="archived_records.php" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+                Archived Records
+            </a>
         </div>
         <section id="add-child" class="bg-white rounded-lg shadow-sm p-6 mb-8">
             <h2 class="text-3xl font-bold text-blue-800">CHILDREN 0-17 YEARS OLD</h2>
@@ -1064,13 +1067,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             const form = document.querySelector('form');
             form.addEventListener('submit', function(e) {
                 e.preventDefault();
-                
+
                 // Get the selected values
                 const selectedPurok = purokSelect.value;
                 const selectedHousehold = householdSelect.value;
                 const idType = document.getElementById('id_type').value.trim();
                 const idNumber = document.getElementById('id_number').value.trim();
-                
+
                 // Validate purok and household selection
                 if (!selectedPurok) {
                     Swal.fire({
@@ -1082,7 +1085,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     purokSelect.focus();
                     return;
                 }
-                
+
                 if (!selectedHousehold) {
                     Swal.fire({
                         icon: 'error',
