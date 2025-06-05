@@ -2,6 +2,208 @@
 session_start();
 require "../config/dbconn.php";
 
+// Handle AJAX requests BEFORE any HTML output or navbar include
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    // Check if this is an AJAX request
+    $isAjax = !empty($_SERVER['HTTP_X_REQUESTED_WITH']) && 
+              strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) === 'xmlhttprequest';
+    
+    // Check content type for JSON
+    $contentType = $_SERVER['CONTENT_TYPE'] ?? '';
+    $isJsonRequest = strpos($contentType, 'application/json') !== false;
+    
+    if ($isJsonRequest || $isAjax) {
+        // Prevent any HTML output
+        ob_clean();
+        
+        // Set JSON response headers
+        header('Content-Type: application/json');
+        
+        try {
+            $data = json_decode(file_get_contents('php://input'), true);
+            
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                echo json_encode(['success' => false, 'message' => 'Invalid JSON data']);
+                exit;
+            }
+            
+            if (!isset($data['action'])) {
+                echo json_encode(['success' => false, 'message' => 'No action specified']);
+                exit;
+            }
+            
+            if ($data['action'] === 'confirm_availability' && isset($data['proposal_id'])) {
+                try {
+                    $proposalId = intval($data['proposal_id']);
+                    $userId = $_SESSION['user_id'] ?? null;
+                    
+                    if (!$userId) {
+                        echo json_encode(['success' => false, 'message' => 'User not authenticated']);
+                        exit;
+                    }
+                    
+                    // Get person_id from user_id
+                    $personStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = ?");
+                    $personStmt->execute([$userId]);
+                    $personId = $personStmt->fetchColumn();
+                    
+                    if (!$personId) {
+                        echo json_encode(['success' => false, 'message' => 'Person record not found']);
+                        exit;
+                    }
+                    
+                    // Get proposal and case details
+                    $proposalStmt = $pdo->prepare("
+                        SELECT sp.*, bp.role, sp.blotter_case_id 
+                        FROM schedule_proposals sp
+                        JOIN blotter_participants bp ON sp.blotter_case_id = bp.blotter_case_id AND bp.person_id = ?
+                        WHERE sp.id = ?
+                    ");
+                    $proposalStmt->execute([$personId, $proposalId]);
+                    $proposal = $proposalStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if (!$proposal) {
+                        echo json_encode(['success' => false, 'message' => 'Proposal not found or you are not a participant']);
+                        exit;
+                    }
+                    
+                    $pdo->beginTransaction();
+                    
+                    // Update based on participant role
+                    if ($proposal['role'] === 'complainant') {
+                        $stmt = $pdo->prepare("UPDATE schedule_proposals SET complainant_confirmed = 1 WHERE id = ?");
+                        $stmt->execute([$proposalId]);
+                    } elseif ($proposal['role'] === 'respondent') {
+                        $stmt = $pdo->prepare("UPDATE schedule_proposals SET respondent_confirmed = 1 WHERE id = ?");
+                        $stmt->execute([$proposalId]);
+                    } elseif ($proposal['role'] === 'witness') {
+                        $stmt = $pdo->prepare("UPDATE schedule_proposals SET witness_confirmed = 1 WHERE id = ?");
+                        $stmt->execute([$proposalId]);
+                    }
+                    
+                    // Check if all required parties have confirmed
+                    $confirmStmt = $pdo->prepare("
+                        SELECT complainant_confirmed, respondent_confirmed
+                        FROM schedule_proposals 
+                        WHERE id = ?
+                    ");
+                    $confirmStmt->execute([$proposalId]);
+                    $confirmations = $confirmStmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($confirmations['complainant_confirmed'] && $confirmations['respondent_confirmed']) {
+                        // All have confirmed - finalize the schedule proposal status
+                        $pdo->prepare("UPDATE schedule_proposals SET status = 'all_confirmed' WHERE id = ?")->execute([$proposalId]);
+                        
+                        $message = 'Availability confirmed by all parties for the proposed schedule. The hearing will proceed as planned by the admin.';
+                    } else {
+                        $message = 'Your confirmation has been recorded. Waiting for other participants.';
+                    }
+                    
+                    $pdo->commit();
+                    echo json_encode(['success' => true, 'message' => $message]);
+                    exit;
+                    
+                } catch (PDOException $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+                    exit;
+                } catch (Exception $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+                    exit;
+                }
+                
+            } elseif ($data['action'] === 'reject_availability' && isset($data['proposal_id'])) {
+                try {
+                    $proposalId = intval($data['proposal_id']);
+                    $conflictReason = $data['conflict_reason'] ?? 'No reason provided';
+                    
+                    // Get proposal and case ID
+                    $stmt = $pdo->prepare("SELECT blotter_case_id FROM schedule_proposals WHERE id = ?");
+                    $stmt->execute([$proposalId]);
+                    $caseId = $stmt->fetchColumn();
+                    
+                    if (!$caseId) {
+                        echo json_encode(['success' => false, 'message' => 'Proposal not found']);
+                        exit;
+                    }
+                    
+                    $pdo->beginTransaction();
+                    
+                    // Update proposal status to conflict
+                    $pdo->prepare("
+                        UPDATE schedule_proposals 
+                        SET status = 'conflict', conflict_reason = ? 
+                        WHERE id = ?
+                    ")->execute([$conflictReason, $proposalId]);
+                    
+                    // NEW LOGIC: If any participant is unavailable, the case immediately becomes CFA eligible.
+                    $cfaReasonForUnavailable = 'Participant marked as unavailable for scheduled hearing.';
+                    $pdo->prepare("
+                        UPDATE blotter_cases 
+                        SET is_cfa_eligible = TRUE, 
+                            status = 'cfa_eligible', 
+                            cfa_reason = ?, 
+                            scheduling_status = 'cfa_pending_issuance'
+                        WHERE id = ?
+                    ")->execute([$cfaReasonForUnavailable, $caseId]);
+                    
+                    // Mark the original 'scheduled' hearing entry as 'cancelled' due to this conflict
+                    $updateHearingStmt = $pdo->prepare("
+                        UPDATE case_hearings
+                        SET hearing_outcome = 'cancelled',
+                            resolution_details = CONCAT(COALESCE(resolution_details, ''), 'Participant unavailable: ', ?),
+                            updated_at = NOW()
+                        WHERE schedule_proposal_id = ? AND hearing_outcome = 'scheduled'
+                    ");
+
+                    if ($updateHearingStmt->execute([$conflictReason, $proposalId])) {
+                        if ($updateHearingStmt->rowCount() > 0) {
+                            $message = 'Your unavailability has been recorded. The hearing is cancelled, and the case is now eligible for CFA. The case administrator will be notified.';
+                        } else {
+                             $message = 'Your unavailability has been recorded (the specific hearing instance was not found or already cancelled). The case is now eligible for CFA. The case administrator will be notified.';
+                        }
+                    } else {
+                         $message = 'Your unavailability has been recorded, but there was an issue updating the specific hearing details. The case is now eligible for CFA. The case administrator will be notified.';
+                    }
+                    
+                    $pdo->commit();
+                    echo json_encode(['success' => true, 'message' => $message]);
+                    exit;
+                    
+                } catch (PDOException $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
+                    exit;
+                } catch (Exception $e) {
+                    if ($pdo->inTransaction()) {
+                        $pdo->rollBack();
+                    }
+                    echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
+                    exit;
+                }
+                
+            } else {
+                echo json_encode(['success' => false, 'message' => 'Invalid request parameters']);
+                exit;
+            }
+            
+        } catch (Exception $e) {
+            echo json_encode(['success' => false, 'message' => 'Server error: ' . $e->getMessage()]);
+            exit;
+        }
+    }
+}
+
+// Include navbar and other components AFTER AJAX handling
+require "../components/navbar.php";
+
 // Add this line to ensure $conn is set from $pdo
 $conn = $pdo;
 global $conn;
@@ -39,161 +241,6 @@ if ($user_id) {
 
 $columnCheck = $pdo->query("SHOW COLUMNS FROM blotter_cases LIKE 'hearing_attempts'");
 $hasNewColumns = $columnCheck->rowCount() > 0;
-
-// Handle AJAX requests for schedule confirmations and rejections
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_SERVER['CONTENT_TYPE']) && strpos($_SERVER['CONTENT_TYPE'], 'application/json') !== false) {
-    $data = json_decode(file_get_contents('php://input'), true);
-    header('Content-Type: application/json');
-    
-    if (isset($data['action']) && $data['action'] === 'confirm_availability' && isset($data['proposal_id'])) {
-        try {
-            $proposalId = intval($data['proposal_id']);
-            $userId = $_SESSION['user_id'];
-            
-            // Get person_id from user_id
-            $personStmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = ?");
-            $personStmt->execute([$userId]);
-            $personId = $personStmt->fetchColumn();
-            
-            if (!$personId) {
-                echo json_encode(['success' => false, 'message' => 'Person record not found']);
-                exit;
-            }
-            
-            // Get proposal and case details
-            $proposalStmt = $pdo->prepare("
-                SELECT sp.*, bp.role, sp.blotter_case_id 
-                FROM schedule_proposals sp
-                JOIN blotter_participants bp ON sp.blotter_case_id = bp.blotter_case_id AND bp.person_id = ?
-                WHERE sp.id = ?
-            ");
-            $proposalStmt->execute([$personId, $proposalId]);
-            $proposal = $proposalStmt->fetch(PDO::FETCH_ASSOC);
-            
-            if (!$proposal) {
-                echo json_encode(['success' => false, 'message' => 'Proposal not found or you are not a participant']);
-                exit;
-            }
-            
-            $pdo->beginTransaction();
-            
-            // Update based on participant role
-            if ($proposal['role'] === 'complainant') {
-                $stmt = $pdo->prepare("UPDATE schedule_proposals SET complainant_confirmed = 1 WHERE id = ?");
-                $stmt->execute([$proposalId]);
-            } elseif ($proposal['role'] === 'respondent') {
-                $stmt = $pdo->prepare("UPDATE schedule_proposals SET respondent_confirmed = 1 WHERE id = ?");
-                $stmt->execute([$proposalId]);
-            } elseif ($proposal['role'] === 'witness') {
-                $stmt = $pdo->prepare("UPDATE schedule_proposals SET witness_confirmed = 1 WHERE id = ?");
-                $stmt->execute([$proposalId]);
-            }
-            
-            // Check if all required parties have confirmed
-            $confirmStmt = $pdo->prepare("
-                SELECT complainant_confirmed, respondent_confirmed
-                FROM schedule_proposals 
-                WHERE id = ?
-            ");
-            $confirmStmt->execute([$proposalId]);
-            $confirmations = $confirmStmt->fetch(PDO::FETCH_ASSOC);
-            
-            if ($confirmations['complainant_confirmed'] && $confirmations['respondent_confirmed']) {
-                // All have confirmed - finalize the schedule proposal status
-                $pdo->prepare("UPDATE schedule_proposals SET status = 'all_confirmed' WHERE id = ?")->execute([$proposalId]);
-                
-                // The case_hearings record was already created by the admin when they scheduled.
-                // The blotter_cases status and hearing_count were also handled at that time.
-                
-                $message = 'Availability confirmed by all parties for the proposed schedule. The hearing will proceed as planned by the admin.';
-            } else {
-                $message = 'Your confirmation has been recorded. Waiting for other participants.';
-            }
-            
-            $pdo->commit();
-            echo json_encode(['success' => true, 'message' => $message]);
-            exit;
-        } catch (PDOException $e) {
-            $pdo->rollBack();
-            echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
-            exit;
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
-            exit;
-        }
-    } elseif (isset($data['action']) && $data['action'] === 'reject_availability' && isset($data['proposal_id'])) {
-        try {
-            $proposalId = intval($data['proposal_id']);
-            $conflictReason = $data['conflict_reason'] ?? 'No reason provided';
-            
-            // Get proposal and case ID
-            $stmt = $pdo->prepare("SELECT blotter_case_id FROM schedule_proposals WHERE id = ?");
-            $stmt->execute([$proposalId]);
-            $caseId = $stmt->fetchColumn();
-            
-            if (!$caseId) {
-                echo json_encode(['success' => false, 'message' => 'Proposal not found']);
-                exit;
-            }
-            
-            $pdo->beginTransaction();
-            
-            // Update proposal status to conflict
-            $pdo->prepare("
-                UPDATE schedule_proposals 
-                SET status = 'conflict', conflict_reason = ? 
-                WHERE id = ?
-            ")->execute([$conflictReason, $proposalId]);
-            
-            // NEW LOGIC: If any participant is unavailable, the case immediately becomes CFA eligible.
-            $cfaReasonForUnavailable = 'Participant marked as unavailable for scheduled hearing.';
-            $pdo->prepare("
-                UPDATE blotter_cases 
-                SET is_cfa_eligible = TRUE, 
-                    status = 'cfa_eligible', 
-                    cfa_reason = ?, 
-                    scheduling_status = 'cfa_pending_issuance'
-                WHERE id = ?
-            ")->execute([$cfaReasonForUnavailable, $caseId]);
-            
-            // Mark the original 'scheduled' hearing entry as 'cancelled' due to this conflict
-            $updateHearingStmt = $pdo->prepare("
-                UPDATE case_hearings
-                SET hearing_outcome = 'cancelled',
-                    resolution_details = CONCAT(COALESCE(resolution_details, ''), 'Participant unavailable: ', ?),
-                    updated_at = NOW()
-                WHERE schedule_proposal_id = ? AND hearing_outcome = 'scheduled'
-            ");
-
-            if ($updateHearingStmt->execute([$conflictReason, $proposalId])) {
-                if ($updateHearingStmt->rowCount() > 0) {
-                    $message = 'Your unavailability has been recorded. The hearing is cancelled, and the case is now eligible for CFA. The case administrator will be notified.';
-                } else {
-                     $message = 'Your unavailability has been recorded (the specific hearing instance was not found or already cancelled). The case is now eligible for CFA. The case administrator will be notified.';
-                }
-            } else {
-                 // Should not happen if query is correct, implies DB error
-                 $message = 'Your unavailability has been recorded, but there was an issue updating the specific hearing details. The case is now eligible for CFA. The case administrator will be notified.';
-            }
-            
-            $pdo->commit();
-            echo json_encode(['success' => true, 'message' => $message]);
-            exit;
-        } catch (PDOException $e) {
-            $pdo->rollBack();
-            echo json_encode(['success' => false, 'message' => 'Database error: ' . $e->getMessage()]);
-            exit;
-        } catch (Exception $e) {
-            $pdo->rollBack();
-            echo json_encode(['success' => false, 'message' => 'Error: ' . $e->getMessage()]);
-            exit;
-        }
-    } else {
-        echo json_encode(['success' => false, 'message' => 'Invalid request']);
-        exit;
-    }
-}
 
 // Fetch all cases where the user is a participant (either as person or external)
 $sql = "
@@ -283,7 +330,6 @@ foreach ($cases as &$case) {
     }
 }
 unset($case);
-
 ?>
 <!DOCTYPE html>
 <html lang="en">
@@ -1211,7 +1257,8 @@ unset($case);
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'Accept': 'application/json'
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest'
                             },
                             body: JSON.stringify({ 
                                 action: 'confirm_availability', 
@@ -1219,19 +1266,22 @@ unset($case);
                             })
                         });
                         
+                        // Log response for debugging
+                        const responseText = await res.text();
+                        console.log('Response:', responseText);
+                        
                         // Check if response is ok
                         if (!res.ok) {
                             throw new Error(`HTTP error! status: ${res.status}`);
                         }
                         
-                        const contentType = res.headers.get('content-type');
-                        if (!contentType || !contentType.includes('application/json')) {
-                            const text = await res.text();
-                            console.error('Non-JSON response:', text);
-                            throw new Error('Server returned non-JSON response');
+                        let data;
+                        try {
+                            data = JSON.parse(responseText);
+                        } catch (parseError) {
+                            console.error('Failed to parse JSON:', responseText);
+                            throw new Error('Server returned invalid JSON response');
                         }
-                        
-                        const data = await res.json();
                         
                         if (data.success) {
                             await Swal.fire('Success', data.message, 'success');
@@ -1277,7 +1327,8 @@ unset($case);
                             method: 'POST',
                             headers: {
                                 'Content-Type': 'application/json',
-                                'Accept': 'application/json'
+                                'Accept': 'application/json',
+                                'X-Requested-With': 'XMLHttpRequest'
                             },
                             body: JSON.stringify({ 
                                 action: 'reject_availability', 
@@ -1286,19 +1337,22 @@ unset($case);
                             })
                         });
                         
+                        // Log response for debugging
+                        const responseText = await res.text();
+                        console.log('Response:', responseText);
+                        
                         // Check if response is ok
                         if (!res.ok) {
                             throw new Error(`HTTP error! status: ${res.status}`);
                         }
                         
-                        const contentType = res.headers.get('content-type');
-                        if (!contentType || !contentType.includes('application/json')) {
-                            const text = await res.text();
-                            console.error('Non-JSON response:', text);
-                            throw new Error('Server returned non-JSON response');
+                        let data;
+                        try {
+                            data = JSON.parse(responseText);
+                        } catch (parseError) {
+                            console.error('Failed to parse JSON:', responseText);
+                            throw new Error('Server returned invalid JSON response');
                         }
-                        
-                        const data = await res.json();
                         
                         if (data.success) {
                             await Swal.fire('Success', data.message, 'success');
