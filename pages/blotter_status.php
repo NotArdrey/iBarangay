@@ -121,32 +121,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_SERVER['CONTENT_TYPE']) &&
                 ]);
                 
                 // Update case status
-                $pdo->prepare("UPDATE blotter_cases SET status = 'open' WHERE id = ?")->execute([$proposal['blotter_case_id']]);
-                
-                // Increment hearing attempts if columns exist
-                if ($hasNewColumns) {
-                    $pdo->prepare("UPDATE blotter_cases SET hearing_attempts = COALESCE(hearing_attempts, 0) + 1 WHERE id = ?")
-                        ->execute([$proposal['blotter_case_id']]);
-
-                    // Check if max attempts reached after increment
-                    $checkStmt = $pdo->prepare("
-                        SELECT hearing_attempts, max_hearing_attempts,
-                               hearing_attempts >= max_hearing_attempts AS max_reached
-                        FROM blotter_cases WHERE id = ?");
-                    $checkStmt->execute([$proposal['blotter_case_id']]);
-                    $attemptCheck = $checkStmt->fetch(PDO::FETCH_ASSOC);
-                    
-                    if ($attemptCheck && $attemptCheck['max_reached']) {
-                        // Mark as CFA eligible if max attempts reached
-                        $pdo->prepare("
-                            UPDATE blotter_cases 
-                            SET is_cfa_eligible = TRUE, 
-                                status = 'cfa_eligible', 
-                                cfa_reason = 'Maximum hearing attempts reached' 
-                            WHERE id = ?
-                        ")->execute([$proposal['blotter_case_id']]);
-                    }
-                }
+                $pdo->prepare("UPDATE blotter_cases SET status = 'open', scheduling_status = 'scheduled' WHERE id = ?")->execute([$proposal['blotter_case_id']]);
                 
                 $message = 'Schedule confirmed by all parties. Hearing is now set.';
             } else {
@@ -189,27 +164,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_SERVER['CONTENT_TYPE']) &&
                 WHERE id = ?
             ")->execute([$conflictReason, $proposalId]);
             
-            // Increment hearing attempts if columns exist - this is the key fix
-            if ($hasNewColumns) {
-                $pdo->prepare("UPDATE blotter_cases SET hearing_attempts = COALESCE(hearing_attempts, 0) + 1 WHERE id = ?")
-                    ->execute([$caseId]);
-                $pdo->prepare("UPDATE blotter_cases SET hearing_count = COALESCE(hearing_count, 0) + 1 WHERE id = ?")
-                    ->execute([$proposal['blotter_case_id']]);
-                // Check if max attempts reached after increment
-                $checkStmt = $pdo->prepare("
-                    SELECT hearing_attempts, max_hearing_attempts,
-                           hearing_attempts >= max_hearing_attempts AS max_reached
-                    FROM blotter_cases WHERE id = ?");
-                $checkStmt->execute([$caseId]);
-                $attemptCheck = $checkStmt->fetch(PDO::FETCH_ASSOC);
-                
-                if ($attemptCheck && $attemptCheck['max_reached']) {
-                    // Mark as CFA eligible if max attempts reached
+            // Increment hearing_count for the case as this attempt is consumed
+            $pdo->prepare("UPDATE blotter_cases SET hearing_count = COALESCE(hearing_count, 0) + 1 WHERE id = ?")
+                ->execute([$caseId]);
+
+            // Check if max hearing attempts reached after increment
+            $stmtCaseDetails = $pdo->prepare("
+                SELECT hearing_count, max_hearing_attempts 
+                FROM blotter_cases 
+                WHERE id = ?
+            ");
+            $stmtCaseDetails->execute([$caseId]);
+            $caseDetails = $stmtCaseDetails->fetch(PDO::FETCH_ASSOC);
+
+            if ($caseDetails) {
+                $currentHearingCount = (int)$caseDetails['hearing_count'];
+                $maxHearings = (int)($caseDetails['max_hearing_attempts'] ?? 3); // Default to 3 if not set
+
+                if ($currentHearingCount >= $maxHearings) {
+                    // Mark as CFA eligible
                     $pdo->prepare("
                         UPDATE blotter_cases 
                         SET is_cfa_eligible = TRUE, 
                             status = 'cfa_eligible', 
-                            cfa_reason = 'Maximum hearing attempts reached after conflict' 
+                            cfa_reason = 'Maximum hearing attempts reached due to participant unavailability', 
+                            scheduling_status = 'cfa_pending_issuance'
+                        WHERE id = ?
+                    ")->execute([$caseId]);
+                } else {
+                    // Still more attempts allowed, set for rescheduling
+                    $pdo->prepare("
+                        UPDATE blotter_cases 
+                        SET scheduling_status = 'pending_schedule' 
                         WHERE id = ?
                     ")->execute([$caseId]);
                 }
@@ -239,17 +225,14 @@ $sql = "
            GROUP_CONCAT(DISTINCT cc.name SEPARATOR ', ') AS categories,
            bp.role,
            p.id AS person_id,
-           ep.id AS external_id,
            u.email as user_email
     FROM blotter_cases bc
     JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
-    LEFT JOIN persons p ON bp.person_id = p.id
-    LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
+    JOIN persons p ON bp.person_id = p.id AND p.user_id = ?
     LEFT JOIN users u ON p.user_id = u.id
     LEFT JOIN blotter_case_categories bcc ON bc.id = bcc.blotter_case_id
     LEFT JOIN case_categories cc ON bcc.category_id = cc.id
-    WHERE (p.user_id = ? OR ep.id IS NOT NULL)
-      AND bc.status != 'deleted'
+    WHERE bc.status != 'deleted'
     GROUP BY bc.id, bp.id
     ORDER BY bc.created_at DESC
 ";
@@ -308,10 +291,6 @@ foreach ($cases as &$case) {
     if (!empty($case['person_id'])) {
         $stmt_pid = $pdo->prepare("SELECT id FROM blotter_participants WHERE blotter_case_id = ? AND person_id = ?");
         $stmt_pid->execute([$case['id'], $case['person_id']]);
-        $participant_id = $stmt_pid->fetchColumn();
-    } elseif (!empty($case['external_id'])) {
-        $stmt_pid = $pdo->prepare("SELECT id FROM blotter_participants WHERE blotter_case_id = ? AND external_participant_id = ?");
-        $stmt_pid->execute([$case['id'], $case['external_id']]);
         $participant_id = $stmt_pid->fetchColumn();
     }
     if ($participant_id) {
@@ -1057,14 +1036,19 @@ unset($case);
                                 $userRoleInCase = $case['role']; // 'complainant', 'respondent', 'witness'
                                 $canConfirmThisUser = false;
                                 
-                                if (($case['proposal_status'] === 'pending_user_confirmation' ||
-                                     $case['proposal_status'] === 'both_confirmed' ||
-                                     $case['proposal_status'] === 'all_confirmed')) {
+                                if ($case['status'] === 'open' && 
+                                    ($case['proposal_status'] === 'pending_user_confirmation' ||
+                                     $case['proposal_status'] === 'both_confirmed')) { // 'both_confirmed' might mean one party confirmed
                                     if ($userRoleInCase === 'complainant' && empty($case['complainant_confirmed'])) $canConfirmThisUser = true;
                                     if ($userRoleInCase === 'respondent' && empty($case['respondent_confirmed'])) $canConfirmThisUser = true;
                                     // Assuming 'witness_confirmed' is a general flag for all witnesses for now.
                                     // If individual witness tracking is needed, this logic would be more complex.
                                     if ($userRoleInCase === 'witness' && empty($case['witness_confirmed'])) $canConfirmThisUser = true; 
+                                }
+                                
+                                // Explicitly ensure buttons do not show if all_confirmed, regardless of individual flags
+                                if ($case['proposal_status'] === 'all_confirmed') {
+                                    $canConfirmThisUser = false;
                                 }
                                 
                                 if ($canConfirmThisUser): ?>

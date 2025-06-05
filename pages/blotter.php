@@ -1431,33 +1431,59 @@ if (!empty($_GET['action'])) {
               
                   $pdo->beginTransaction();
                   
-                  // Set status based on who is proposing the schedule
-                  $proposalStatus = '';
-                  $otherRoleFriendlyName = '';
+                  // Unified status setting: always pending_user_confirmation
+                  $proposalStatus = 'pending_user_confirmation';
+                  $captainConfirmed = 0;
+                  $captainConfirmedAt = null;
+                  $chiefConfirmed = 0;
+                  $chiefConfirmedAt = null;
+                  $successMessageDetail = 'Awaiting participant confirmations.';
+                  $auditMessageDetail = ''; // Will be set based on role
+
+                  // Get details of the current admin scheduling this hearing for presiding officer fields
+                  $userStmt = $pdo->prepare("SELECT first_name, last_name FROM users WHERE id = ?");
+                  $userStmt->execute([$current_admin_id]);
+                  $currentUserDetails = $userStmt->fetch(PDO::FETCH_ASSOC);
+                  $actualPresidingOfficerName = $currentUserDetails['first_name'] . ' ' . $currentUserDetails['last_name'];
+                  $actualPresidingOfficerPosition = '';
+
                   if ($role === ROLE_CAPTAIN) {
-                      $proposalStatus = 'pending_chief_approval'; // Waiting for Chief Officer
-                      $otherRoleFriendlyName = 'Chief Officer';
-                  } else { // ROLE_CHIEF is proposing
-                      $proposalStatus = 'pending_captain_approval'; // Waiting for Barangay Captain
-                      $otherRoleFriendlyName = 'Barangay Captain';
+                      $captainConfirmed = 1;
+                      $captainConfirmedAt = date('Y-m-d H:i:s'); // NOW()
+                      $actualPresidingOfficerPosition = 'barangay_captain';
+                      $auditMessageDetail = "Hearing scheduled by Captain, awaiting participant confirmation.";
+                  } elseif ($role === ROLE_CHIEF) {
+                      $chiefConfirmed = 1; 
+                      $chiefConfirmedAt = date('Y-m-d H:i:s'); // NOW()
+                      $actualPresidingOfficerPosition = 'chief_officer';
+                      $auditMessageDetail = "Hearing scheduled by Chief Officer, awaiting participant confirmation.";
+                  } else {
+                      $pdo->rollBack();
+                      echo json_encode(['success'=>false,'message'=>'Invalid role for scheduling.']);
+                      exit;
                   }
                   
                   $stmt = $pdo->prepare("
                       INSERT INTO schedule_proposals
                       (blotter_case_id, proposed_by_user_id, proposed_by_role_id, proposed_date, proposed_time,
-                       hearing_location, presiding_officer, presiding_officer_position, status)
-                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                       hearing_location, presiding_officer, presiding_officer_position, status,
+                       captain_confirmed, captain_confirmed_at, chief_confirmed, chief_confirmed_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                   ");
                   $stmt->execute([
                       $id,
                       $current_admin_id,
-                      $role,
+                      $role, // proposed_by_role_id
                       $data['hearing_date'],
                       $data['hearing_time'],
                       $data['hearing_location'] ?? 'Barangay Hall',
-                      $data['presiding_officer'] ?? ($role === ROLE_CAPTAIN ? 'Barangay Captain' : 'Chief Officer'),
-                      $data['officer_position'] ?? ($role === ROLE_CAPTAIN ? 'barangay_captain' : 'chief_officer'),
-                      $proposalStatus
+                      $actualPresidingOfficerName, 
+                      $actualPresidingOfficerPosition, 
+                      $proposalStatus,
+                      $captainConfirmed,
+                      $captainConfirmedAt,
+                      $chiefConfirmed,
+                      $chiefConfirmedAt
                   ]);
                   $proposalId = $pdo->lastInsertId();
 
@@ -1511,11 +1537,11 @@ if (!empty($_GET['action'])) {
 
                   $pdo->commit();
                   logAuditTrail($pdo, $current_admin_id,'INSERT','case_hearings',$newHearingId,
-                      "Hearing scheduled for case $id (Proposal ID: $proposalId), awaiting participant confirmation."
+                      "$auditMessageDetail (Case $id, Proposal ID: $proposalId)"
                   );
                   echo json_encode([
                     'success'=>true,
-                    'message'=>'Hearing scheduled for '.date('M d, Y', strtotime($data['hearing_date'])).' at '.date('g:i A', strtotime($data['hearing_time'])).'. Awaiting participant confirmations.'
+                    'message'=>'Hearing scheduled for '.date('M d, Y', strtotime($data['hearing_date'])).' at '.date('g:i A', strtotime($data['hearing_time'])).'. ' . $successMessageDetail
                   ]);
                   break;
   case 'approve_schedule':
@@ -1726,51 +1752,48 @@ if (!empty($_GET['action'])) {
                 if (!$isComplainant && !$isRespondent) {
                     echo json_encode(['success'=>false,'message'=>'Not a party']); exit;
                 }
+                
+                $pdo->beginTransaction(); // Start transaction
+
+                $message = ''; // Initialize message
+
                 // on reject → immediate conflict
                 if ($decision === 'reject') {
+                    $reasonForRejection = $_REQUEST['reason'] ?? 'Declined by participant';
                     $pdo->prepare("UPDATE schedule_proposals SET status='conflict', conflict_reason=? WHERE id=?")
-                        ->execute([$_REQUEST['reason'] ?? 'Declined', $proposalId]);
-                    // reset blotter_cases to allow new proposals
-                    $pdo->prepare("UPDATE blotter_cases SET scheduling_status='pending_schedule' WHERE id=?")
-                        ->execute([$proposal['blotter_case_id']]);
-                    echo json_encode(['success'=>true,'message'=>'You have declined this schedule']); exit;
+                        ->execute([$reasonForRejection, $proposalId]);
+                    
+                    // Note: The hearing attempt was counted when the admin scheduled it.
+                    // Admin will see the 'conflict' and decide on next steps (reschedule or CFA if applicable).
+                    $message = 'You have declined this schedule. The case administrator will be notified.';
+                    logAuditTrail($pdo, $_SESSION['user_id'], 'UPDATE', 'schedule_proposals', $proposalId, 'Participant rejected schedule: ' . $reasonForRejection);
+                
+                } else { // decision === 'confirm'
+                    $col = $isComplainant ? 'complainant_confirmed' : 'respondent_confirmed';
+                    $pdo->prepare("UPDATE schedule_proposals SET {$col}=TRUE WHERE id=?")
+                        ->execute([$proposalId]);
+                    
+                    // Re-fetch to see if both True
+                    $sp2 = $pdo->prepare("SELECT complainant_confirmed, respondent_confirmed FROM schedule_proposals WHERE id=?");
+                    $sp2->execute([$proposalId]);
+                    $flags = $sp2->fetch(PDO::FETCH_ASSOC);
+                    
+                    if ($flags && $flags['complainant_confirmed'] && $flags['respondent_confirmed']) {
+                        // Both parties confirmed via this mechanism. Update proposal status.
+                        // The case_hearings record was already created with 'scheduled' outcome when admin scheduled it.
+                        // The blotter_cases status was also set to 'open' and 'scheduled' at that time.
+                        $pdo->prepare("UPDATE schedule_proposals SET status='all_confirmed' WHERE id=?")
+                            ->execute([$proposalId]);
+                        $message = 'Hearing confirmed by both parties. The scheduled hearing will proceed.';
+                        logAuditTrail($pdo, $_SESSION['user_id'], 'UPDATE', 'schedule_proposals', $proposalId, 'Participant confirmed schedule; all parties confirmed.');
+                    } else {
+                        $message = 'Your confirmation is recorded. Waiting on the other party.';
+                        logAuditTrail($pdo, $_SESSION['user_id'], 'UPDATE', 'schedule_proposals', $proposalId, 'Participant confirmed schedule; awaiting other party.');
+                    }
                 }
                 
-                $col = $isComplainant ? 'complainant_confirmed' : 'respondent_confirmed';
-                $pdo->prepare("UPDATE schedule_proposals SET {$col}=TRUE WHERE id=?")
-                    ->execute([$proposalId]);
-                // re‐fetch to see if both True
-                $sp2 = $pdo->prepare("SELECT complainant_confirmed,respondent_confirmed FROM schedule_proposals WHERE id=?");
-                $sp2->execute([$proposalId]);
-                $flags = $sp2->fetch(PDO::FETCH_ASSOC);
-                if ($flags['complainant_confirmed'] && $flags['respondent_confirmed']) {
-                    // finalize hearing
-                    $pdo->beginTransaction();
-                    // insert hearing
-                    $pdo->prepare("
-                      INSERT INTO case_hearings 
-                        (blotter_case_id, hearing_date, hearing_type, hearing_outcome,
-                         presiding_officer_name, presiding_officer_position, hearing_number)
-                      VALUES(?,CONCAT(?, ' ',?), 'mediation','scheduled',?,?,?)
-                    ")->execute([
-                      $proposal['blotter_case_id'],
-                      $proposal['proposed_date'],
-                      $proposal['proposed_time'],
-                      $proposal['presiding_officer'],
-                      $proposal['presiding_officer_position'],
-                      ($proposal['hearing_number'] ?? 0) + 1
-                    ]);
-                    // update case
-                    $pdo->prepare("
-                      UPDATE blotter_cases
-                      SET scheduling_status='scheduled', status='open'
-                      WHERE id=?
-                    ")->execute([$proposal['blotter_case_id']]);
-                    $pdo->commit();
-                    echo json_encode(['success'=>true,'message'=>'Hearing confirmed by both parties']);
-                } else {
-                    echo json_encode(['success'=>true,'message'=>'Your confirmation is recorded. Waiting on other party']);
-                }
+                $pdo->commit(); // Commit transaction
+                echo json_encode(['success'=>true,'message'=>$message]);
                 exit;
 
             case 'submit_hearing_outcome':
