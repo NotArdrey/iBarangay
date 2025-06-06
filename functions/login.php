@@ -67,133 +67,92 @@ function isValidRole(PDO $pdo, int $role_id): bool
 }
 
 /**
- * Get all accessible barangays for a user
+ * Get all accessible barangay profiles for a user by matching their name via the addresses table.
  */
 function getUserBarangays(PDO $pdo, int $user_id): array
 {
-    // First get the user's email
-    $emailStmt = $pdo->prepare("SELECT email FROM users WHERE id = ?");
-    $emailStmt->execute([$user_id]);
-    $userEmail = $emailStmt->fetchColumn();
+    // Get the user's name from the users table. This is the authoritative identity.
+    $userStmt = $pdo->prepare("SELECT first_name, last_name FROM users WHERE id = ?");
+    $userStmt->execute([$user_id]);
+    $user = $userStmt->fetch(PDO::FETCH_ASSOC);
 
-    if (!$userEmail) {
-        error_log("No email found for user ID: " . $user_id);
+    // If the user has no name in their user profile, we cannot find matching records.
+    if (!$user || empty($user['first_name']) || empty($user['last_name'])) {
+        error_log("getUserBarangays: User ID {$user_id} has no name in the users table. Cannot find profiles.");
         return [];
     }
-
-    // Get all barangays where the user has person records
+    
+    // Find all person records that match the user's name across all barangays via the addresses table.
     $stmt = $pdo->prepare("
         SELECT DISTINCT 
-            b.id,
-            b.name,
+            b.id, 
+            b.name, 
             CASE WHEN p.is_archived = TRUE THEN 'archived' ELSE 'active' END as status
         FROM persons p
-        JOIN household_members hm ON p.id = hm.person_id
-        JOIN households h ON hm.household_id = h.id
-        JOIN barangay b ON h.barangay_id = b.id
-        WHERE p.user_id = ? 
-        OR EXISTS (
-            SELECT 1 
-            FROM users u 
-            WHERE u.email = ? 
-            AND (
-                u.id = p.user_id 
-                OR p.id IN (
-                    SELECT person_id 
-                    FROM persons 
-                    WHERE user_id = u.id
-                )
-            )
-        )
+        JOIN addresses a ON p.id = a.person_id
+        JOIN barangay b ON a.barangay_id = b.id
+        WHERE LOWER(p.first_name) = LOWER(?) AND LOWER(p.last_name) = LOWER(?)
         ORDER BY b.name
     ");
+    $stmt->execute([$user['first_name'], $user['last_name']]);
     
-    $stmt->execute([$user_id, $userEmail]);
     $barangays = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    
-    // Debug log
-    error_log("User ID: " . $user_id . ", Email: " . $userEmail . " - Found barangays: " . print_r($barangays, true));
-    
+    $nameForLog = "{$user['first_name']} {$user['last_name']}";
+    error_log("getUserBarangays: Found " . count($barangays) . " potential profile(s) for user '{$nameForLog}' (ID: {$user_id})");
     return $barangays;
 }
 
 /**
- * Update user's barangay_id when selecting a barangay
+ * Intelligently updates a user's barangay by linking their account to the correct person record via name.
  */
 function updateUserBarangay(PDO $pdo, int $user_id, int $barangay_id): bool
 {
     try {
-        // First check if the barangay is archived
-        $checkStmt = $pdo->prepare("
-            SELECT p.is_archived 
-            FROM persons p
-            JOIN household_members hm ON p.id = hm.person_id
-            JOIN households h ON hm.household_id = h.id
-            WHERE h.barangay_id = ? 
-            AND p.user_id = ?
-            LIMIT 1
-        ");
-        $checkStmt->execute([$barangay_id, $user_id]);
-        $isArchived = $checkStmt->fetchColumn();
+        // Get user's name from the `users` table, which is the source of truth for the account identity.
+        $userStmt = $pdo->prepare("SELECT first_name, last_name FROM users WHERE id = ?");
+        $userStmt->execute([$user_id]);
+        $user = $userStmt->fetch(PDO::FETCH_ASSOC);
 
-        if ($isArchived) {
-            error_log("Cannot update to archived barangay: " . $barangay_id);
+        if (!$user || !$user['first_name'] || !$user['last_name']) {
+            error_log("updateUserBarangay: Cannot find name for user_id {$user_id}. Cannot perform name-based linking.");
             return false;
         }
+        $first_name = $user['first_name'];
+        $last_name = $user['last_name'];
 
-        // Start transaction
         $pdo->beginTransaction();
 
-        // Update the user's barangay_id in users table
-        $updateUserStmt = $pdo->prepare("UPDATE users SET barangay_id = ? WHERE id = ?");
-        $updateUserStmt->execute([$barangay_id, $user_id]);
+        // Unlink this user_id from any and all person records it might be currently attached to.
+        $clearStmt = $pdo->prepare("UPDATE persons SET user_id = NULL WHERE user_id = ?");
+        $clearStmt->execute([$user_id]);
 
-        // First, find and clear the user_id from the current person record
-        $clearCurrentPersonStmt = $pdo->prepare("
-            UPDATE persons 
-            SET user_id = NULL 
-            WHERE user_id = ?
-        ");
-        $clearCurrentPersonStmt->execute([$user_id]);
-
-        // Find the person record in the selected barangay
+        // Find the specific, unlinked person record in the target barangay that matches the user's name.
         $findPersonStmt = $pdo->prepare("
-            SELECT p.id 
+            SELECT p.id
             FROM persons p
-            JOIN household_members hm ON p.id = hm.person_id
-            JOIN households h ON hm.household_id = h.id
-            WHERE h.barangay_id = ? 
+            JOIN addresses a ON p.id = a.person_id
+            WHERE a.barangay_id = ?
+            AND LOWER(p.first_name) = LOWER(?)
+            AND LOWER(p.last_name) = LOWER(?)
             AND p.user_id IS NULL
             LIMIT 1
         ");
-        $findPersonStmt->execute([$barangay_id]);
+        $findPersonStmt->execute([$barangay_id, $first_name, $last_name]);
         $personId = $findPersonStmt->fetchColumn();
 
-        if ($personId) {
-            // Update the person's user_id
-            $updatePersonStmt = $pdo->prepare("UPDATE persons SET user_id = ? WHERE id = ?");
-            $updatePersonStmt->execute([$user_id, $personId]);
-
-            // Log the person update
-            logAuditTrail(
-                $pdo,
-                $user_id,
-                "UPDATE",
-                "persons",
-                $personId,
-                "Updated user_id for person in barangay " . $barangay_id
-            );
+        if (!$personId) {
+            $pdo->rollBack();
+            error_log("updateUserBarangay: Could not find a matching, unlinked person record for user_id {$user_id} with name '{$first_name} {$last_name}' in barangay {$barangay_id}.");
+            return false;
         }
 
-        // Log the user update
-        logAuditTrail(
-            $pdo,
-            $user_id,
-            "UPDATE",
-            "users",
-            $user_id,
-            "Updated barangay_id to " . $barangay_id
-        );
+        // Link the found person record to this user account.
+        $updatePersonStmt = $pdo->prepare("UPDATE persons SET user_id = ? WHERE id = ?");
+        $updatePersonStmt->execute([$user_id, $personId]);
+
+        // Finally, update the primary barangay_id on the user's record for context.
+        $updateUserStmt = $pdo->prepare("UPDATE users SET barangay_id = ? WHERE id = ?");
+        $updateUserStmt->execute([$barangay_id, $user_id]);
 
         $pdo->commit();
         return true;
@@ -201,7 +160,7 @@ function updateUserBarangay(PDO $pdo, int $user_id, int $barangay_id): bool
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_log("Error updating user barangay: " . $e->getMessage());
+        error_log("Error in updateUserBarangay: " . $e->getMessage());
         return false;
     }
 }
@@ -285,13 +244,11 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             throw new Exception("You are already logged in as " . $_SESSION['email'] . ". Please log out first before logging in as a different user.");
         }
 
-        // Fetch user data with person information
+        // Fetch user data from the users table, which is the source of truth for the account name.
         $stmt = $pdo->prepare("
-            SELECT u.id, u.email, u.password, u.email_verified_at, u.is_active,
-                   p.first_name, p.middle_name, p.last_name
-            FROM users u
-            LEFT JOIN persons p ON u.id = p.user_id
-            WHERE u.email = ?
+            SELECT id, email, password, email_verified_at, is_active, first_name, last_name
+            FROM users
+            WHERE email = ?
         ");
         $stmt->execute([$email]);
         $user = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -301,70 +258,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         }
         if ($user['email_verified_at'] === null || $user['is_active'] != 1) {
             throw new Exception("Account not verified or inactive");
-        }
-
-        // Get the selected barangay ID from session
-        $selected_barangay_id = $_SESSION['barangay_id'] ?? null;
-        
-        if ($selected_barangay_id) {
-            // First, find ALL records that have this user_id
-            $currentRecordsQuery = "SELECT p.id, b.id as barangay_id, b.name as barangay_name
-                                  FROM persons p 
-                                  JOIN household_members hm ON p.id = hm.person_id 
-                                  JOIN households h ON hm.household_id = h.id 
-                                  JOIN barangay b ON h.barangay_id = b.id 
-                                  WHERE p.user_id = ?";
-            $currentStmt = $pdo->prepare($currentRecordsQuery);
-            $currentStmt->execute([$user['id']]);
-            $currentRecords = $currentStmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            // Set all current records to NULL
-            foreach ($currentRecords as $record) {
-                $resetQuery = "UPDATE persons SET user_id = NULL WHERE id = ?";
-                $resetStmt = $pdo->prepare($resetQuery);
-                $resetStmt->execute([$record['id']]);
-                
-                // Log the unlink
-                logAuditTrail(
-                    $pdo,
-                    $user['id'],
-                    'UPDATE',
-                    'persons',
-                    (int)$record['id'],
-                    "Unlinked user from barangay: " . $record['barangay_name']
-                );
-            }
-            
-            // Now find and update the record in the selected barangay
-            $censusQuery = "SELECT p.id, p.first_name, p.last_name, b.name as barangay_name 
-                           FROM persons p 
-                           JOIN household_members hm ON p.id = hm.person_id 
-                           JOIN households h ON hm.household_id = h.id 
-                           JOIN barangay b ON h.barangay_id = b.id 
-                           WHERE LOWER(p.first_name) = LOWER(?) 
-                           AND LOWER(p.last_name) = LOWER(?) 
-                           AND p.user_id IS NULL
-                           AND b.id = ?";
-            $censusStmt = $pdo->prepare($censusQuery);
-            $censusStmt->execute([$user['first_name'], $user['last_name'], $selected_barangay_id]);
-            $censusRecords = $censusStmt->fetchAll(PDO::FETCH_ASSOC);
-            
-            if (count($censusRecords) > 0) {
-                // Update the matching record with user_id
-                $updateQuery = "UPDATE persons SET user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
-                $updateStmt = $pdo->prepare($updateQuery);
-                $updateStmt->execute([$user['id'], $censusRecords[0]['id']]);
-                
-                // Log the update
-                logAuditTrail(
-                    $pdo,
-                    $user['id'],
-                    'UPDATE',
-                    'persons',
-                    (int)$censusRecords[0]['id'],
-                    "Linked census record in " . $censusRecords[0]['barangay_name'] . " to user account"
-                );
-            }
         }
 
         // Get user role information
@@ -380,34 +273,68 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
             } else if (!isValidRole($pdo, $userRole['role_id'])) {
                 throw new Exception("Invalid role assigned to this user account (Role ID: {$userRole['role_id']})");
             } else {
-                throw new Exception("Role found but not active or properly configured");
+                 $roleInfo = ['role_id' => $userRole['role_id']];
             }
         }
 
         session_regenerate_id(true);
 
-        // Set session variables
+        // Set initial session variables from the users table.
         $_SESSION['user_id']    = $user['id'];
         $_SESSION['email']      = $user['email'];
         $_SESSION['role_id']    = $roleInfo['role_id'];
         $_SESSION['first_name'] = $user['first_name'] ?? '';
-        $_SESSION['middle_name'] = $user['middle_name'] ?? '';
         $_SESSION['last_name'] = $user['last_name'] ?? '';
-        $_SESSION['religion'] = $user['religion'] ?? '';
-        $_SESSION['education_level'] = $user['education_level'] ?? '';
 
-        // Get and store accessible barangays
-        $barangays = getUserBarangays($pdo, $user['id']);
-        $_SESSION['accessible_barangays'] = $barangays;
-        
-        // Debug log
-        error_log("Setting accessible barangays in session: " . print_r($barangays, true));
+        // For residents and similar roles, perform intelligent redirection.
+        if (in_array($roleInfo['role_id'], [8, 9])) { // 8=Resident, 9=Health Worker
+            $barangays = getUserBarangays($pdo, $user['id']);
+            $_SESSION['accessible_barangays'] = $barangays;
+            
+            $active_barangays = array_filter($barangays, fn($b) => $b['status'] !== 'archived');
 
-        // Always redirect to barangay selection
-        if ($roleInfo['role_id'] === 8) {
-            header("Location: ../pages/select_barangay.php");
-            exit;
+            if (count($active_barangays) === 1) {
+                // Only one active profile found, so we can automatically select it.
+                $the_barangay = array_values($active_barangays)[0];
+                $selected_barangay_id = $the_barangay['id'];
+                
+                // Use the smart function to link the profile correctly.
+                if (!updateUserBarangay($pdo, $_SESSION['user_id'], $selected_barangay_id)) {
+                    $_SESSION['login_error'] = "Could not automatically link your profile. Please contact support.";
+                    header("Location: ../pages/login.php");
+                    exit;
+                }
+
+                // Now that the link is correct, re-fetch person data to get full details.
+                $personStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, religion, education_level FROM persons WHERE user_id = ?");
+                $personStmt->execute([$_SESSION['user_id']]);
+                $personData = $personStmt->fetch(PDO::FETCH_ASSOC);
+                if ($personData) {
+                    $_SESSION['first_name'] = $personData['first_name'];
+                    $_SESSION['middle_name'] = $personData['middle_name'] ?? '';
+                    $_SESSION['last_name'] = $personData['last_name'];
+                    $_SESSION['religion'] = $personData['religion'] ?? '';
+                    $_SESSION['education_level'] = $personData['education_level'] ?? '';
+                }
+
+                $_SESSION['barangay_id'] = $selected_barangay_id;
+                $_SESSION['barangay_name'] = $the_barangay['name'];
+
+                // Update last login
+                $updateStmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
+                $updateStmt->execute([$_SESSION['user_id']]);
+
+                logAuditTrail($pdo, $_SESSION['user_id'], "LOGIN", "users", $_SESSION['user_id'], "Auto-selected barangay: " . $the_barangay['name']);
+                
+                header("Location: " . getDashboardUrl($_SESSION['role_id']));
+                exit;
+            } else {
+                // 0 or >1 active barangays, redirect to selection page to resolve ambiguity.
+                header("Location: ../pages/select_barangay.php");
+                exit;
+            }
         } else {
+            // For other roles, redirect directly to their dashboard
             header("Location: " . getDashboardUrl($roleInfo['role_id']));
             exit;
         }

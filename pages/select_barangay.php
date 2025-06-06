@@ -33,6 +33,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['barangay_id'])) {
         if ($barangay['id'] == $selected_barangay_id) {
             $is_valid = true;
             $selected_status = $barangay['status'];
+            $selected_barangay_name = $barangay['name'];
             break;
         }
     }
@@ -50,16 +51,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['barangay_id'])) {
         exit;
     }
 
-    // Update the user's barangay_id
+    // Use the smart function to link the user's account to the correct person record.
     if (!updateUserBarangay($pdo, $_SESSION['user_id'], $selected_barangay_id)) {
-        $_SESSION['error'] = "Failed to update barangay selection";
+        $_SESSION['error'] = "Failed to link your profile in the selected barangay. A matching record could not be found.";
         header("Location: select_barangay.php");
         exit;
     }
 
-    // Set session variables
+    // Set session variables for the selected barangay
     $_SESSION['barangay_id'] = $selected_barangay_id;
-    $_SESSION['barangay_name'] = $barangay['name'];
+    $_SESSION['barangay_name'] = $selected_barangay_name;
+
+    // Now that the link is correct, re-fetch person data to get full details.
+    $personStmt = $pdo->prepare("SELECT first_name, middle_name, last_name, religion, education_level FROM persons WHERE user_id = ?");
+    $personStmt->execute([$_SESSION['user_id']]);
+    $personData = $personStmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($personData) {
+        $_SESSION['first_name'] = $personData['first_name'] ?? '';
+        $_SESSION['middle_name'] = $personData['middle_name'] ?? '';
+        $_SESSION['last_name'] = $personData['last_name'] ?? '';
+        $_SESSION['religion'] = $personData['religion'] ?? '';
+        $_SESSION['education_level'] = $personData['education_level'] ?? '';
+    }
 
     // Update last login
     $updateStmt = $pdo->prepare("UPDATE users SET last_login = NOW() WHERE id = ?");
@@ -72,7 +86,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['barangay_id'])) {
         "LOGIN",
         "users",
         $_SESSION['user_id'],
-        "Selected barangay: " . $barangay['name']
+        "Selected barangay: " . $selected_barangay_name
     );
 
     // Redirect to appropriate dashboard
@@ -143,7 +157,7 @@ foreach ($_SESSION['accessible_barangays'] as $barangay) {
                         <i class="fas fa-map-marker-alt"></i>
                         <h3>No Barangays Available</h3>
                         <p>Contact your administrator to get access to barangay services.</p>
-                        <a href="login.php" class="btn btn-secondary">
+                        <a href="logout.php" class="btn btn-secondary">
                             <i class="fas fa-arrow-left"></i> Back to Login
                         </a>
                     </div>
@@ -201,7 +215,7 @@ foreach ($_SESSION['accessible_barangays'] as $barangay) {
                 <?php endif; ?>
 
                 <div class="form-footer">
-                    <a href="login.php" class="back-link">
+                    <a href="logout.php" class="back-link">
                         <i class="fas fa-arrow-left"></i> Back to Login
                     </a>
                 </div>
