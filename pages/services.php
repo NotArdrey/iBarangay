@@ -1283,7 +1283,16 @@ require_once '../components/navbar.php';
                     <div id="clearanceFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="purposeClearance">Purpose of Clearance <span id="purposeClearanceRequiredAst" style="color: red;">*</span></label>
-                            <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <select id="purposeClearance" name="purposeClearance" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <option value="">Select Purpose</option>
+                                <option value="Employment">Employment</option>
+                                <option value="ID Application">ID Application</option>
+                                <option value="Loan Application">Loan Application</option>
+                                <option value="Proof of Residency">Proof of Residency</option>
+                                <option value="Travel/Visa Application">Travel/Visa Application</option>
+                                <option value="Others">Others</option>
+                            </select>
+                            <input type="text" id="purposeClearanceOther" name="purposeClearanceOther" placeholder="Please specify other purpose" style="display: none; margin-top: 10px;" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
@@ -1294,14 +1303,30 @@ require_once '../components/navbar.php';
                         </div>
                         <div class="form-row">
                             <label for="residencyPurpose">Purpose</label>
-                            <input type="text" id="residencyPurpose" name="residencyPurpose" placeholder="Enter purpose (e.g., School enrollment, Scholarship, etc.)" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <select id="residencyPurpose" name="residencyPurpose" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <option value="">Select Purpose</option>
+                                <option value="School Enrollment">School Enrollment</option>
+                                <option value="Scholarship Application">Scholarship Application</option>
+                                <option value="Bank Account Opening">Bank Account Opening</option>
+                                <option value="Proof of Address">Proof of Address</option>
+                                <option value="Others">Others</option>
+                            </select>
+                            <input type="text" id="residencyPurposeOther" name="residencyPurposeOther" placeholder="Please specify other purpose" style="display: none; margin-top: 10px;" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
 
                     <div id="indigencyFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="indigencyReason">Reason for Requesting</label>
-                            <input type="text" id="indigencyReason" name="indigencyReason" placeholder="Enter reason (e.g., Medical assistance, Educational assistance, etc.)" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <select id="indigencyReason" name="indigencyReason" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <option value="">Select Reason</option>
+                                <option value="Medical Assistance">Medical Assistance</option>
+                                <option value="Educational Assistance">Educational Assistance</option>
+                                <option value="Financial Assistance">Financial Assistance</option>
+                                <option value="Hospitalization">Hospitalization</option>
+                                <option value="Others">Others</option>
+                            </select>
+                            <input type="text" id="indigencyReasonOther" name="indigencyReasonOther" placeholder="Please specify other reason" style="display: none; margin-top: 10px;" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label>Your Photo <span style="color: red;">*</span></label>
@@ -1309,9 +1334,6 @@ require_once '../components/navbar.php';
                                 <input type="file" id="userPhoto" name="userPhoto" accept="image/jpeg,image/jpg,image/png" style="display: none;" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                 
                                 <div class="upload-options">
-                                    <button type="button" class="upload-btn" onclick="document.getElementById('userPhoto').click();" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                                        <i class="fas fa-upload"></i> Choose Photo
-                                    </button>
                                     <button type="button" class="upload-btn" onclick="openCamera();" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                                         <i class="fas fa-camera"></i> Take Photo
                                     </button>
@@ -1345,11 +1367,20 @@ require_once '../components/navbar.php';
                         </div>
                         <div class="form-row">
                             <label for="businessType">Type of Business <span style="color: red;">*</span></label>
-                            <input type="text" id="businessType" name="businessType" placeholder="Enter type of business (e.g., Retail, Restaurant, etc.)" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <select id="businessType" name="businessType" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                                <option value="">Select Type</option>
+                                <option value="Retail">Retail</option>
+                                <option value="Food and Beverage">Food & Beverage (Restaurant, Cafe, etc.)</option>
+                                <option value="Services">Services (e.g., Salon, Repair Shop)</option>
+                                <option value="Sari-sari Store">Sari-sari Store</option>
+                                <option value="Online Business">Online Business</option>
+                                <option value="Others">Others</option>
+                            </select>
+                            <input type="text" id="businessTypeOther" name="businessTypeOther" placeholder="Please specify other type of business" style="display: none; margin-top: 10px;" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessAddress">Business Location/Address <span style="color: red;">*</span></label>
-                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" <?= ($hasPendingBllotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessPurpose">Nature of Business <span style="color: red;">*</span></label>
@@ -1533,12 +1564,35 @@ require_once '../components/navbar.php';
     }
 
     document.addEventListener('DOMContentLoaded', function() {
+        function setupOtherFieldListener(selectId, otherInputId) {
+            const selectElement = document.getElementById(selectId);
+            const otherInputElement = document.getElementById(otherInputId);
+
+            if (selectElement && otherInputElement) {
+                selectElement.addEventListener('change', function() {
+                    if (this.value === 'Others') {
+                        otherInputElement.style.display = 'block';
+                        otherInputElement.required = true;
+                    } else {
+                        otherInputElement.style.display = 'none';
+                        otherInputElement.required = false;
+                        otherInputElement.value = '';
+                    }
+                });
+            }
+        }
+
+        setupOtherFieldListener('purposeClearance', 'purposeClearanceOther');
+        setupOtherFieldListener('residencyPurpose', 'residencyPurposeOther');
+        setupOtherFieldListener('indigencyReason', 'indigencyReasonOther');
+        setupOtherFieldListener('businessType', 'businessTypeOther');
+
         const documentTypeSelect = document.getElementById('documentType');
         const deliveryMethodSelect = document.getElementById('deliveryMethod');
         const feeAmountElement = document.getElementById('feeAmount');
         
         const clearanceFields = document.getElementById('clearanceFields');
-        const purposeClearanceInput = document.getElementById('purposeClearance'); // Get the standard clearance purpose input
+        const purposeClearanceInput = document.getElementById('purposeClearance'); // This is a select now
         const purposeClearanceRequiredAst = document.getElementById('purposeClearanceRequiredAst');
 
         const residencyFields = document.getElementById('residencyFields');
@@ -1629,13 +1683,16 @@ require_once '../components/navbar.php';
             if (ftjsCheckbox) ftjsCheckbox.checked = false; // Uncheck it
             if (ftjsPurposeContainer) ftjsPurposeContainer.style.display = 'none';
             if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = false;
-            if (purposeClearanceInput) purposeClearanceInput.required = false; // Make standard purpose not required initially
+            
+            const purposeClearanceSelect = document.getElementById('purposeClearance');
+            if (purposeClearanceSelect) purposeClearanceSelect.required = false;
+
             if (purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'inline';
 
 
             if (cedulaEligibilityNoticeDiv) cedulaEligibilityNoticeDiv.style.display = 'none';
             
-            const allInputs = document.querySelectorAll('#docRequestForm input[type="text"], #docRequestForm input[type="number"], #docRequestForm input[type="file"]');
+            const allInputs = document.querySelectorAll('#docRequestForm input[type="text"], #docRequestForm input[type="number"], #docRequestForm input[type="file"], #docRequestForm select');
             allInputs.forEach(input => {
                 // General reset, specific requirements are set later
                 if(input.id !== 'jobSeekerPurposeFtjs' && input.id !== 'purposeClearance') {
@@ -1647,7 +1704,7 @@ require_once '../components/navbar.php';
 
         function updateRequiredFields(type, required) {
             const fieldMap = {
-                // 'clearance': ['purposeClearance'], // purposeClearance handled by ftjsCheckbox logic now
+                // 'clearance' handled by ftjsCheckbox logic now
                 'residency': ['residencyDuration', 'residencyPurpose'],
                 'indigency': ['indigencyReason'],
                 'business': ['businessName', 'businessType', 'businessAddress', 'businessPurpose'],
@@ -1659,7 +1716,8 @@ require_once '../components/navbar.php';
                     const field = document.getElementById(fieldId);
                     if (field) field.required = false;
                 });
-                if (purposeClearanceInput) purposeClearanceInput.required = false;
+                const purposeClearanceSelect = document.getElementById('purposeClearance');
+                if (purposeClearanceSelect) purposeClearanceSelect.required = false;
                 if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = false;
 
                 const deliveryMethod = document.getElementById('deliveryMethod');
@@ -1747,13 +1805,12 @@ require_once '../components/navbar.php';
                 switch(documentCode) {
                     case 'barangay_clearance':
                         if (clearanceFields) clearanceFields.style.display = 'block';
-                        // Requirement for purposeClearanceInput is handled by ftjsCheckbox logic
-                        // Initially, if FTJS is not checked, purposeClearanceInput should be required.
-                        if (purposeClearanceInput && ftjsCheckbox && !ftjsCheckbox.checked) {
-                             purposeClearanceInput.required = true;
+                        const purposeClearanceSelect = document.getElementById('purposeClearance');
+                        if (purposeClearanceSelect && ftjsCheckbox && !ftjsCheckbox.checked) {
+                             purposeClearanceSelect.required = true;
                              if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'inline';
-                        } else if (purposeClearanceInput) {
-                             purposeClearanceInput.required = false;
+                        } else if (purposeClearanceSelect) {
+                             purposeClearanceSelect.required = false;
                              if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'none';
                         }
                         break;
@@ -1808,18 +1865,22 @@ require_once '../components/navbar.php';
                 if (this.checked && isBarangayClearanceSelected && canAvailFirstTimeJobSeekerJS) {
                     if (ftjsPurposeContainer) ftjsPurposeContainer.style.display = 'block';
                     if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = true;
-                    if (purposeClearanceInput) purposeClearanceInput.required = false; // Standard purpose not required if FTJS
+                    
+                    const purposeClearanceSelect = document.getElementById('purposeClearance');
+                    if(purposeClearanceSelect) purposeClearanceSelect.required = false;
                     if (purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'none';
+
 
                 } else {
                     if (ftjsPurposeContainer) ftjsPurposeContainer.style.display = 'none';
                     if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = false;
                     // If barangay clearance is selected and FTJS is unchecked, standard purpose is required
-                    if (purposeClearanceInput && isBarangayClearanceSelected) {
-                         purposeClearanceInput.required = true;
+                    const purposeClearanceSelect = document.getElementById('purposeClearance');
+                    if (purposeClearanceSelect && isBarangayClearanceSelected) {
+                         purposeClearanceSelect.required = true;
                          if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'inline';
-                    } else if (purposeClearanceInput) {
-                         purposeClearanceInput.required = false; // Not required if not barangay clearance
+                    } else if (purposeClearanceSelect) {
+                         purposeClearanceSelect.required = false; // Not required if not barangay clearance
                          if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'none';
                     }
                 }
@@ -1916,52 +1977,75 @@ require_once '../components/navbar.php';
                         }
                     } else {
                         // Check standard clearance purpose field
-                        const clearancePurpose = purposeClearanceInput?.value?.trim();
+                        const clearancePurposeSelect = document.getElementById('purposeClearance');
+                        const clearancePurpose = clearancePurposeSelect?.value?.trim();
+
                         if (!clearancePurpose) {
                             e.preventDefault();
-                            Swal.fire('Error', 'Please enter the purpose for Barangay Clearance.', 'error');
+                            Swal.fire('Error', 'Please select a purpose for Barangay Clearance.', 'error');
                             return;
+                        }
+
+                        if(clearancePurpose === 'Others') {
+                            const otherPurpose = document.getElementById('purposeClearanceOther')?.value?.trim();
+                            if(!otherPurpose) {
+                                e.preventDefault();
+                                Swal.fire('Error', 'Please specify the purpose for Barangay Clearance.', 'error');
+                                return;
+                            }
                         }
                     }
                 }
 
                 // Validate Cedula requirement for Barangay Clearance (only show warning, don't block)
                 if (selectedDocType.dataset.code === 'barangay_clearance' && !hasCompletedCedulaThisYearJS) {
-                    e.preventDefault();
-                    Swal.fire({
-                        title: 'Cedula Requirement',
-                        text: 'A completed Cedula for the current year is recommended for Barangay Clearance. Do you want to proceed anyway?',
-                        icon: 'warning',
-                        showCancelButton: true,
-                        confirmButtonText: 'Proceed Anyway',
-                        cancelButtonText: 'Cancel'
-                    }).then((result) => {
-                        if (result.isConfirmed) {
-                            // User confirmed, submit the form
-                            submitBtn.disabled = true;
-                            submitBtn.textContent = 'Submitting...';
-                            
-                            // Create a new form submission
-                            const formData = new FormData(form);
-                            formData.append('bypass_cedula_check', '1');
-                            
-                            fetch(form.action, {
-                                method: 'POST',
-                                body: formData
-                            }).then(response => {
-                                if (response.ok) {
-                                    window.location.href = '../pages/services.php?show_pending=1';
-                                } else {
-                                    throw new Error('Submission failed');
-                                }
-                            }).catch(error => {
-                                submitBtn.disabled = false;
-                                submitBtn.textContent = 'Submit Request';
-                                Swal.fire('Error', 'Failed to submit request. Please try again.', 'error');
-                            });
-                        }
-                    });
-                    return;
+                    const ftjsChecked = ftjsCheckbox && ftjsCheckbox.checked;
+                    if (ftjsChecked) {
+                        // For FTJS, we don't need to check for Cedula, proceed with form submission
+                    } else {
+                        e.preventDefault();
+                        Swal.fire({
+                            title: 'Cedula Requirement',
+                            text: 'A completed Cedula for the current year is recommended for Barangay Clearance. Do you want to proceed anyway?',
+                            icon: 'warning',
+                            showCancelButton: true,
+                            confirmButtonText: 'Proceed Anyway',
+                            cancelButtonText: 'Cancel'
+                        }).then((result) => {
+                            if (result.isConfirmed) {
+                                // User confirmed, submit the form
+                                submitBtn.disabled = true;
+                                submitBtn.textContent = 'Submitting...';
+                                
+                                // Create a new form submission
+                                const formData = new FormData(form);
+                                formData.append('bypass_cedula_check', '1');
+                                
+                                fetch(form.action, {
+                                    method: 'POST',
+                                    body: formData
+                                }).then(response => {
+                                    if (response.ok) {
+                                        // A successful fetch won't automatically redirect, so we do it manually.
+                                        // The server should ideally send back a redirect response or JSON.
+                                        // Assuming success, we redirect to the pending page.
+                                        window.location.href = '../pages/services.php?show_pending=1';
+                                    } else {
+                                        // If the server returns an error, we can try to parse it.
+                                        response.text().then(text => {
+                                             Swal.fire('Error', 'Submission failed: ' + text, 'error');
+                                        });
+                                        throw new Error('Submission failed');
+                                    }
+                                }).catch(error => {
+                                    submitBtn.disabled = false;
+                                    submitBtn.textContent = 'Submit Request';
+                                    console.error("Fetch error:", error);
+                                });
+                            }
+                        });
+                        return; // Stop further execution
+                    }
                 }
 
                 // Validate indigency photo requirement
@@ -1987,26 +2071,59 @@ require_once '../components/navbar.php';
                         const field = document.getElementById(fieldId);
                         if (field && !field.value.trim()) {
                             e.preventDefault();
-                            Swal.fire('Error', `Please fill in all required fields for ${selectedDocType.text}.`, 'error');
-                            return;
+                            // Check for "Others" fields
+                            const otherField = document.getElementById(fieldId + 'Other');
+                            if (field.value === 'Others' && otherField && !otherField.value.trim()) {
+                                 Swal.fire('Error', `Please specify your reason when selecting "Others".`, 'error');
+                                 return;
+                            } else if (field.value !== 'Others') {
+                                Swal.fire('Error', `Please fill in all required fields for ${selectedDocType.text}.`, 'error');
+                                return;
+                            }
                         }
                     }
                 }
 
-                // If we get here, allow the form to submit normally
-                // Don't prevent default - let the form submit naturally
+                // If we get here, the form is valid from a high-level perspective.
+                // The Cedula check below might still prevent default submission and show a popup.
+                
+                // Special Cedula check for non-FTJS Barangay Clearance
+                if (selectedDocType.dataset.code === 'barangay_clearance' && !ftjsChecked && !hasCompletedCedulaThisYearJS) {
+                    e.preventDefault(); // Stop submission to show confirmation
+                    Swal.fire({
+                        title: 'Cedula Requirement',
+                        text: 'A completed Cedula for the current year is recommended for Barangay Clearance. Do you want to proceed anyway?',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Proceed Anyway',
+                        cancelButtonText: 'Cancel'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            // User wants to proceed without Cedula. We manually submit the form.
+                            // To prevent this check from running again, we can add a hidden input.
+                            const bypassInput = document.createElement('input');
+                            bypassInput.type = 'hidden';
+                            bypassInput.name = 'bypass_cedula_check';
+                            bypassInput.value = '1';
+                            form.appendChild(bypassInput);
+                            
+                            // Disable button and submit
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = 'Submitting...';
+                            form.submit();
+                        }
+                    });
+                    return; // IMPORTANT: Stop execution here to wait for Swal confirmation
+                }
+
+                // If we get here, it means it's either not a Barangay Clearance, or it's an FTJS request,
+                // or the user has a completed Cedula, or the user already bypassed the warning.
+                // In all these cases, we can proceed with the normal form submission.
+
                 submitBtn.disabled = true;
                 submitBtn.textContent = 'Submitting...';
                 
-                // Re-enable button after timeout in case submission fails
-                setTimeout(function() {
-                    if (submitBtn.disabled) {
-                        submitBtn.disabled = false;
-                        submitBtn.textContent = 'Submit Request';
-                    }
-                }, 15000);
-                
-                // Form will submit naturally here since we didn't preventDefault
+                // No e.preventDefault() here, let the form submit naturally.
             });
         }
 

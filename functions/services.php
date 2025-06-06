@@ -123,6 +123,11 @@ function createPayMongoCheckout($lineItems, $successUrl, $cancelUrl, $barangay_i
 
 // Handle form submission for document requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    error_log("Service Request POST received: " . print_r($_POST, true));
+    if (isset($_FILES['userPhoto'])) {
+        error_log("Service Request FILES received: " . print_r($_FILES, true));
+    }
+
     try {
         // Check if user has pending blotter cases
         // ... (existing blotter check logic) ...
@@ -208,12 +213,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         $isFtjsAvailedForClearance = (isset($_POST['ftjs_availed']) && $documentType['code'] === 'barangay_clearance');
 
+        if ($isFtjsAvailedForClearance) {
+            error_log("FTJS LOG: FTJS request initiated for Barangay Clearance. Person ID: " . ($person_id ?? 'N/A'));
+        }
+
         if ($isFtjsAvailedForClearance && !$canAvailFtjsServerCheck) {
+            error_log("FTJS ERROR: User is not eligible for FTJS benefit (already availed). Person ID: " . ($person_id ?? 'N/A'));
             throw new Exception("You are not eligible to avail the First Time Job Seeker benefit, or it has already been used.");
         }
         
-        // Handle Cedula requirement for Barangay Clearance
-        if ($documentType['code'] === 'barangay_clearance') {
+        // Handle Cedula requirement for Barangay Clearance, but skip for FTJS
+        if ($documentType['code'] === 'barangay_clearance' && !$isFtjsAvailedForClearance) {
             $hasCompletedCedulaThisYearServerCheck = false;
             if ($person_id) {
                 $stmtCedulaCheck = $pdo->prepare("
@@ -228,9 +238,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
             
-            // Only block if no bypass and no cedula (make it a warning instead of hard block)
+            // Only show warning if no bypass and no cedula
             if (!$hasCompletedCedulaThisYearServerCheck && !isset($_POST['bypass_cedula_check'])) {
-                // Changed from throw Exception to just a warning log
                 error_log("Warning: Barangay Clearance requested without completed Cedula for person_id: $person_id");
                 // Allow submission to continue instead of blocking
             }
@@ -285,26 +294,46 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 case 'barangay_clearance':
                     if ($isFtjsAvailedForClearance && $canAvailFtjsServerCheck) {
                         $purpose = trim($_POST['job_seeker_purpose_ftjs'] ?? '');
+                        error_log("FTJS LOG: Processing FTJS for Barangay Clearance. Purpose received: '{$purpose}'");
                         if (empty($purpose)) {
+                            error_log("FTJS ERROR: Purpose for First Time Job Seeker is required but was empty.");
                             throw new Exception("Purpose for First Time Job Seeker is required.");
                         }
                         $currentPrice = 0.00; // Override price for FTJS
+                        error_log("FTJS LOG: Price for request overridden to 0.00 for FTJS.");
                     } else {
-                        $purpose = trim($_POST['purposeClearance'] ?? '');
+                        $purposeValue = trim($_POST['purposeClearance'] ?? '');
+                        if ($purposeValue === 'Others') {
+                            $purpose = trim($_POST['purposeClearanceOther'] ?? '');
+                        } else {
+                            $purpose = $purposeValue;
+                        }
+
                         if (empty($purpose)) {
                             throw new Exception("Purpose for Barangay Clearance is required.");
                         }
                     }
                     break;
                 case 'proof_of_residency':
+                    $residencyPurposeValue = trim($_POST['residencyPurpose'] ?? '');
+                    if ($residencyPurposeValue === 'Others') {
+                        $residencyPurposeText = trim($_POST['residencyPurposeOther'] ?? '');
+                    } else {
+                        $residencyPurposeText = $residencyPurposeValue;
+                    }
                     $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
-                               '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
-                    if (empty(trim($_POST['residencyDuration'] ?? '')) || empty(trim($_POST['residencyPurpose'] ?? ''))) {
+                               '; Purpose: ' . $residencyPurposeText;
+                    if (empty(trim($_POST['residencyDuration'] ?? '')) || empty(trim($residencyPurposeText))) {
                         throw new Exception("Duration and Purpose are required for Proof of Residency.");
                     }
                     break;
                 case 'barangay_indigency':
-                    $purpose = $_POST['indigencyReason'] ?? '';
+                    $purposeValue = $_POST['indigencyReason'] ?? '';
+                    if ($purposeValue === 'Others') {
+                        $purpose = trim($_POST['indigencyReasonOther'] ?? '');
+                    } else {
+                        $purpose = $purposeValue;
+                    }
                      if (empty(trim($purpose))) {
                         throw new Exception("Reason for Indigency is required.");
                     }
@@ -316,7 +345,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $businessName = $_POST['businessName'] ?? '';
                     $businessLocation = $_POST['businessAddress'] ?? '';
                     $businessNature = $_POST['businessPurpose'] ?? '';
-                    $businessType = $_POST['businessType'] ?? '';
+                    
+                    $businessTypeValue = $_POST['businessType'] ?? '';
+                    if ($businessTypeValue === 'Others') {
+                        $businessType = trim($_POST['businessTypeOther'] ?? '');
+                    } else {
+                        $businessType = $businessTypeValue;
+                    }
+
                     $purpose = 'Business Permit Application';
                     if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
                         throw new Exception("All business information fields are required for Business Permit Clearance.");
@@ -348,11 +384,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }));
             }
             $stmtInsert->execute([
-                $currentPrice, $purpose, $imagePath,
-                $businessName, $businessLocation, $businessNature, $businessType,
+                $person_id,
+                $user_id,
+                $documentTypeId,
+                $barangay_id,
+                $currentPrice,
+                $purpose,
+                $imagePath,
+                $businessName,
+                $businessLocation,
+                $businessNature,
+                $businessType,
                 $delivery_method,
-                ($currentPrice > 0 ? ($_POST['payment_method'] ?? 'cash') : 'cash'), // Default to cash if free
-                $user_id // requested_by_user_id
+                ($currentPrice > 0 ? ($_POST['payment_method'] ?? 'cash') : 'cash'),
+                $user_id
             ]);
             $requestId = $pdo->lastInsertId();
 
@@ -363,16 +408,15 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $stmtFtjsCheckAgain->execute([$person_id]);
                 if (!$stmtFtjsCheckAgain->fetch()) {
                     $stmtRestrict = $pdo->prepare("
-                        INSERT INTO document_request_restrictions (person_id, document_type_code, restriction_reason, created_at, updated_at)
-                        VALUES (?, 'first_time_job_seeker', ?, NOW(), NOW())
+                        INSERT INTO document_request_restrictions (person_id, document_type_code, first_requested_at, created_at, updated_at)
+                        VALUES (?, 'first_time_job_seeker', NOW(), NOW(), NOW())
                     ");
-                    // Ensure restriction_reason column exists and is varchar
-                    $restrictionReason = "Availed with Barangay Clearance Request ID: " . $requestId . " on " . date('Y-m-d');
-                    $stmtRestrict->execute([$person_id, $restrictionReason]);
+                    $stmtRestrict->execute([$person_id]);
                 }
             }
 
             $pdo->commit();
+            error_log("FTJS LOG: DB Transaction committed successfully. Request ID: " . $requestId);
 
             $_SESSION['success'] = [
                 'title' => 'Document Request Submitted',
@@ -385,6 +429,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
         } catch (Exception $e) {
             $pdo->rollBack();
+            error_log("FTJS DB ERROR: Exception during database transaction. Message: " . $e->getMessage());
             if ($imagePath && file_exists('../' . $imagePath)) {
                 unlink('../' . $imagePath);
             }
@@ -394,6 +439,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
     } catch (Exception $e) {
+        error_log("FTJS FATAL ERROR: Uncaught exception during request processing. Message: " . $e->getMessage());
         $_SESSION['error'] = "Error: " . $e->getMessage();
         header('Location: ../pages/services.php'); // Redirect back to services page
         exit;
