@@ -597,7 +597,6 @@ function generateReportForm($pdo, $caseId) {
     return ob_get_clean();
 }
 
-// --- add missing helpers for e-signature paths ---
 function getCaptainEsignature($pdo, $barangayId) {
     $stmt = $pdo->prepare("
         SELECT u.esignature_path

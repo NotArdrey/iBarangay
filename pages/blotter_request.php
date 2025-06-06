@@ -989,7 +989,7 @@ require "../components/navbar.php";
                 <!-- Participants Section -->
                 <div class="form-section">
                     <h3><i class="fas fa-users"></i> Other Participants</h3>
-                    <p class="text-light">Add other people involved in this case (witnesses, other complainants, accused, etc.)</p>
+                    <p class="text-light">Add other people involved in this case (respondents, accused persons, etc.)</p>
                     
                     <div id="participantContainer" class="participants-container">
                         <!-- Participants will be added here dynamically -->
@@ -1205,9 +1205,7 @@ require "../components/navbar.php";
                         <?php endforeach; ?>
                     </select>
                     <select name="participants[${participantCount}][role]" class="form-control" required style="margin-top: 0.5rem;">
-                        <option value="complainant">Complainant</option>
                         <option value="respondent">Respondent</option>
-                        <option value="witness">Witness</option>
                     </select>
                 </div>
                 <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">
@@ -1242,9 +1240,7 @@ require "../components/navbar.php";
                         </select>
                     </div>
                     <select name="participants[${participantCount}][role]" class="form-control" required style="margin-top: 0.5rem;">
-                        <option value="complainant">Complainant</option>
                         <option value="respondent">Respondent</option>
-                        <option value="witness">Witness</option>
                     </select>
                 </div>
                 <button type="button" class="btn btn-danger" onclick="this.parentElement.remove()">
