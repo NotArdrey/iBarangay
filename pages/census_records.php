@@ -7,6 +7,15 @@ require_once "../components/header.php";
 if (session_status() === PHP_SESSION_NONE) {
     session_start();
 }
+// Show import success/error messages
+if (isset($_SESSION['import_success'])) {
+    echo "<script>Swal.fire({icon: 'success', title: 'Import Successful', text: '" . addslashes($_SESSION['import_success']) . "'});</script>";
+    unset($_SESSION['import_success']);
+}
+if (isset($_SESSION['import_error'])) {
+    echo "<script>Swal.fire({icon: 'error', title: 'Import Failed', text: '" . addslashes($_SESSION['import_error']) . "'});</script>";
+    unset($_SESSION['import_error']);
+}
 $current_admin_id = isset($_SESSION['user_id']) ? (int)$_SESSION['user_id'] : null;
 $current_role_id = isset($_SESSION['role_id']) ? (int)$_SESSION['role_id'] : null;
 $barangay_id = isset($_SESSION['barangay_id']) ? (int)$_SESSION['barangay_id'] : null;
@@ -96,6 +105,12 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
       </a>
       <a href="archived_records.php" class="inline-flex items-center px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
         Archived Records
+      </a>
+      <a href="../functions/export_census.php" class="inline-flex items-center px-4 py-2 bg-green-600 hover:bg-green-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+        Export to Excel
+      </a>
+      <a href="#" onclick="Swal.fire({icon: 'info', title: 'Import Disabled', text: 'The import feature is currently disabled.'}); return false;" class="inline-flex items-center px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white font-medium rounded-lg text-sm transition-colors duration-200">
+        Import from Excel
       </a>
     </div>
 
@@ -429,6 +444,9 @@ error_log("Total residents: " . count($residents) . ", Child records: " . $child
       <?php endif; ?>
     });
   </script>
+  <form id="import-census-form" method="post" enctype="multipart/form-data" action="../functions/import_census.php" style="display:none">
+    <input type="file" id="import-census-input" name="csv_file" accept=".csv" onchange="document.getElementById('import-census-form').submit();">
+  </form>
 </body>
 
 </html>
