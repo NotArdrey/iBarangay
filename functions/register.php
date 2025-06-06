@@ -706,13 +706,30 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
         $person = $stmt->fetch(PDO::FETCH_ASSOC);
         
         if (!$person) {
-            $errors[] = "The provided identity verification has failed.";
+            $errors[] = "The provided identity verification has failed. A person record could not be found with the details provided.";
         } elseif (!empty($person['user_id'])) {
             $errors[] = "This identity is already linked to an existing account. Please log in or use the password recovery option.";
         } else {
-            // Store the person's information for later use
-            $personData = $person;
-            $selected_barangay_id = $person['barangay_id'];
+            // Person found and not linked. Now validate their ID number against the record.
+            $idNumberFromForm = trim($_POST['id_number']);
+
+            $idStmt = $pdo->prepare("
+                SELECT COUNT(*) 
+                FROM person_identification 
+                WHERE person_id = ? 
+                AND REPLACE(LOWER(TRIM(other_id_number)), '-', '') = REPLACE(LOWER(?), '-', '')
+            ");
+            $idStmt->execute([$person_id, $idNumberFromForm]);
+            $idCount = $idStmt->fetchColumn();
+
+            if ($idCount > 0) {
+                // ID is valid. Store the person's information for later use.
+                $personData = $person;
+                $selected_barangay_id = $person['barangay_id'];
+            } else {
+                // ID does not match.
+                $errors[] = "The Government ID number you provided does not match the ID on file for this person. Please use the correct ID or contact the barangay office for assistance.";
+            }
         }
     }
 
@@ -827,6 +844,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     password, 
                     role_id,
                     barangay_id, 
+                    first_name,
+                    last_name,
                     verification_token, 
                     verification_expiry,
                     govt_id_image,
@@ -834,7 +853,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     id_type,
                     id_number,
                     is_active
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE)");
 
                 if (!$stmt->execute([
                     $email, 
@@ -842,6 +861,8 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                     $passwordHash, 
                     $role_id,
                     $selected_barangay_id,
+                    $_POST['first_name'],
+                    $_POST['last_name'],
                     $verificationToken, 
                     $verificationExpiry,
                     $idImageData,
