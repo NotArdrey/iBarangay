@@ -233,6 +233,36 @@ try {
     $stmt      = $pdo->prepare($sql);
     $stmt->execute($params);
     $residents = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    // Fetch blotter and document request data for each resident
+    foreach ($residents as &$resident) {
+        $userId = $resident['id'];
+        $personId = $resident['person_id']; // Get person_id for more accurate queries
+        
+        // Fetch blotter records - check both complainant and respondent through participants table
+        $blotterStmt = $pdo->prepare("
+            SELECT DISTINCT bc.id, bc.case_number, bc.incident_date, bc.status, bc.description, bc.created_at, bc.location
+            FROM blotter_cases bc
+            INNER JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+            WHERE (bp.person_id = :person_id OR bc.reported_by_person_id = :person_id2)
+            ORDER BY bc.created_at DESC
+            LIMIT 10
+        ");
+        $blotterStmt->execute([':person_id' => $personId, ':person_id2' => $personId]);
+        $resident['blotter_records'] = $blotterStmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Fetch document requests
+        $docStmt = $pdo->prepare("
+            SELECT dr.id, dt.name as document_type, dr.purpose, dr.status, dr.request_date as requested_at, dr.completed_at as processed_at, dr.price
+            FROM document_requests dr
+            INNER JOIN document_types dt ON dr.document_type_id = dt.id
+            WHERE dr.person_id = :person_id OR dr.user_id = :user_id
+            ORDER BY dr.request_date DESC
+            LIMIT 10
+        ");
+        $docStmt->execute([':person_id' => $personId, ':user_id' => $userId]);
+        $resident['document_requests'] = $docStmt->fetchAll(PDO::FETCH_ASSOC);
+    }
 } catch (PDOException $e) {
     die("Error fetching residents: " . $e->getMessage());
 }
@@ -478,7 +508,11 @@ require_once __DIR__ . "/../components/header.php";
                             <td class="px-4 py-3 text-sm text-gray-900">
                                 <div class="flex items-center space-x-2">
                                     <button class="viewBtn text-blue-600 hover:text-blue-900"
-                                        data-res='<?= htmlspecialchars(json_encode(array_merge($r, ['govt_id_image' => base64_encode($r['govt_id_image'] ?? '')])), ENT_QUOTES, 'UTF-8') ?>'>
+                                        data-res='<?= htmlspecialchars(json_encode(array_merge($r, [
+                                            'govt_id_image' => base64_encode($r['govt_id_image'] ?? ''),
+                                            'blotter_records' => $r['blotter_records'] ?? [],
+                                            'document_requests' => $r['document_requests'] ?? []
+                                        ])), ENT_QUOTES, 'UTF-8') ?>'>
                                         View
                                     </button>
                                     <?php if ($role === 2): // Only show edit button for super admin ?>
@@ -635,6 +669,22 @@ require_once __DIR__ . "/../components/header.php";
                                     <p id="noIdImage" class="text-gray-500 italic">No ID image available</p>
                                 </div>
                             </div>
+
+                            <!-- Blotter Records Section -->
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h4 class="text-lg font-semibold text-gray-900 mb-4">Blotter Records</h4>
+                                <div id="viewBlotterRecords" class="space-y-3">
+                                    <p id="noBlotterRecords" class="text-gray-500 italic">No blotter records found</p>
+                                </div>
+                            </div>
+
+                            <!-- Document Requests Section -->
+                            <div class="bg-gray-50 rounded-lg p-4">
+                                <h4 class="text-lg font-semibold text-gray-900 mb-4">Document Requests</h4>
+                                <div id="viewDocumentRequests" class="space-y-3">
+                                    <p id="noDocumentRequests" class="text-gray-500 italic">No document requests found</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     <div class="bg-gray-50 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
@@ -752,9 +802,94 @@ require_once __DIR__ . "/../components/header.php";
                         idImage.classList.add('hidden');
                         noIdImage.classList.remove('hidden');
                     }
+
+                    // Handle Blotter Records
+                    const blotterContainer = document.getElementById('viewBlotterRecords');
+                    const noBlotterRecords = document.getElementById('noBlotterRecords');
+                    
+                    if (resident.blotter_records && resident.blotter_records.length > 0) {
+                        noBlotterRecords.classList.add('hidden');
+                        blotterContainer.innerHTML = '';
+                        
+                        resident.blotter_records.forEach(record => {
+                            const blotterDiv = document.createElement('div');
+                            blotterDiv.className = 'border border-gray-200 rounded-lg p-3 bg-white';
+                            blotterDiv.innerHTML = `
+                                <div class="flex justify-between items-start mb-2">
+                                    <h5 class="font-medium text-gray-900">${record.case_number || 'Case #' + record.id}</h5>
+                                    <span class="px-2 py-1 text-xs rounded-full ${getStatusColor(record.status)}">${record.status || 'Pending'}</span>
+                                </div>
+                                <p class="text-sm text-gray-600 mb-2">${record.description || 'No description available'}</p>
+                                <div class="text-xs text-gray-500">
+                                    <div>Location: ${record.location || 'N/A'}</div>
+                                    <div>Incident Date: ${record.incident_date ? new Date(record.incident_date).toLocaleDateString() : 'N/A'}</div>
+                                    <div>Filed: ${record.created_at ? new Date(record.created_at).toLocaleDateString() : 'N/A'}</div>
+                                </div>
+                            `;
+                            blotterContainer.appendChild(blotterDiv);
+                        });
+                    } else {
+                        noBlotterRecords.classList.remove('hidden');
+                        blotterContainer.innerHTML = '';
+                    }
+
+                    // Handle Document Requests
+                    const docContainer = document.getElementById('viewDocumentRequests');
+                    const noDocumentRequests = document.getElementById('noDocumentRequests');
+                    
+                    if (resident.document_requests && resident.document_requests.length > 0) {
+                        noDocumentRequests.classList.add('hidden');
+                        docContainer.innerHTML = '';
+                        
+                        resident.document_requests.forEach(request => {
+                            const docDiv = document.createElement('div');
+                            docDiv.className = 'border border-gray-200 rounded-lg p-3 bg-white';
+                            docDiv.innerHTML = `
+                                <div class="flex justify-between items-start mb-2">
+                                    <h5 class="font-medium text-gray-900">${request.document_type || 'Unknown Document'}</h5>
+                                    <span class="px-2 py-1 text-xs rounded-full ${getStatusColor(request.status)}">${request.status || 'Pending'}</span>
+                                </div>
+                                <p class="text-sm text-gray-600 mb-2"><strong>Purpose:</strong> ${request.purpose || 'Not specified'}</p>
+                                <div class="text-xs text-gray-500">
+                                    <div>Fee: ₱${request.price ? parseFloat(request.price).toFixed(2) : '0.00'}</div>
+                                    <div>Requested: ${request.requested_at ? new Date(request.requested_at).toLocaleDateString() : 'N/A'}</div>
+                                    ${request.processed_at ? `<div>Processed: ${new Date(request.processed_at).toLocaleDateString()}</div>` : ''}
+                                </div>
+                            `;
+                            docContainer.appendChild(docDiv);
+                        });
+                    } else {
+                        noDocumentRequests.classList.remove('hidden');
+                        docContainer.innerHTML = '';
+                    }
+
                     toggleModal('viewResidentModal');
                 });
             });
+
+            // Helper function for status colors
+            function getStatusColor(status) {
+                switch (status?.toLowerCase()) {
+                    case 'approved':
+                    case 'completed':
+                    case 'resolved':
+                    case 'closed':
+                        return 'bg-green-100 text-green-800';
+                    case 'pending':
+                    case 'open':
+                        return 'bg-yellow-100 text-yellow-800';
+                    case 'rejected':
+                    case 'cancelled':
+                    case 'dismissed':
+                        return 'bg-red-100 text-red-800';
+                    case 'processing':
+                    case 'transferred':
+                        return 'bg-blue-100 text-blue-800';
+                    default:
+                        return 'bg-gray-100 text-gray-800';
+                }
+            }
+
             document.getElementById('filterStatus').addEventListener('change', function() {
                 const f = this.value;
                 const url = new URL(window.location);
@@ -928,5 +1063,4 @@ require_once __DIR__ . "/../components/header.php";
         });
     </script>
 </body>
-
 </html>

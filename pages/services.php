@@ -391,16 +391,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
-            // Prepare the main insert statement - FIXED VERSION
+            // Prepare the main insert statement - UPDATED VERSION
             $stmt = $pdo->prepare("
                 INSERT INTO document_requests (
                     person_id, user_id, document_type_id, barangay_id, 
                     requested_by_user_id, status, request_date, price,
                     purpose, proof_image_path,
                     business_name, business_location, business_nature, business_type,
-                    delivery_method, payment_method
+                    delivery_method, payment_method,
+                    previous_permit_docai_used, is_renewal
                 ) VALUES (
-                    ?, ?, ?, ?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?, ?
+                    ?, ?, ?, ?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
             ");
 
@@ -410,53 +411,57 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $businessLocation = null;
             $businessNature = null;
             $businessType = null;
+            $previousPermitDocAiUsed = false;
+            $isRenewal = false;
 
             // Set document-specific values
-            if ($isFTJS) {
-                // FTJS: Use FTJS purpose, price is always 0
-                $purpose = $jobSeekerPurposeFtjs;
-                $finalPrice = 0;
-            } else {
-                switch($documentType['code']) {
-                    case 'barangay_clearance':
-                        $purpose = $_POST['purposeClearance'] ?? '';
-                        $finalPrice = $documentType['final_price'];
-                        break;
-                    case 'proof_of_residency':
-                        $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
-                                   '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
-                        $finalPrice = $documentType['final_price'];
-                        break;
-                    case 'barangay_indigency':
-                        $purpose = $_POST['indigencyReason'] ?? '';
-                        $finalPrice = $documentType['final_price'];
-                        break;
-                    case 'business_permit_clearance':
-                        $businessName = $_POST['businessName'] ?? '';
-                        $businessLocation = $_POST['businessAddress'] ?? '';
-                        $businessNature = $_POST['businessPurpose'] ?? '';
-                        $businessType = $_POST['businessType'] ?? '';
-                        $purpose = 'Business Permit Application';
-                        $finalPrice = $documentType['final_price'];
-                        
-                        // Validate required business fields
-                        if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
-                            throw new Exception("All business information fields are required for Business Permit Clearance.");
-                        }
-                        break;
-                    case 'first_time_job_seeker':
-                        $purpose = $_POST['jobSeekerPurpose'] ?? '';
-                        $finalPrice = 0;
-                        break;
-                    case 'cedula':
-                        $purpose = 'Community Tax Certificate';
-                        $finalPrice = $documentType['final_price'];
-                        break;
-                    default:
-                        $purpose = 'General purposes';
-                        $finalPrice = $documentType['final_price'];
-                        break;
-                }
+            switch($documentType['code']) {
+                case 'barangay_clearance':
+                    $purpose = $jobSeekerPurposeFtjs;
+                    $finalPrice = 0;
+                    break;
+                case 'proof_of_residency':
+                    $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
+                               '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
+                    $finalPrice = $documentType['final_price'];
+                    break;
+                case 'barangay_indigency':
+                    $purpose = $_POST['indigencyReason'] ?? '';
+                    $finalPrice = $documentType['final_price'];
+                    break;
+                case 'business_permit_clearance':
+                    $businessName = $_POST['businessName'] ?? '';
+                    $businessLocation = $_POST['businessAddress'] ?? '';
+                    $businessNature = $_POST['businessPurpose'] ?? '';
+                    $businessType = $_POST['businessType'] ?? '';
+                    $purpose = 'Business Permit Application';
+                    
+                    // Validate required business fields
+                    if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
+                        throw new Exception("All business information fields are required for Business Permit Clearance.");
+                    }
+
+                    // Logic for renewal and docai_used
+                    $previousPermitDocAiUsed = ($_POST['doc_ai_processed'] ?? 'false') === 'true';
+                    if (($_POST['renewal_attempted'] ?? 'false') === 'true' &&
+                        $previousPermitDocAiUsed &&
+                        ($_POST['owner_verified_for_renewal'] ?? 'false') === 'true') {
+                        $isRenewal = true;
+                        $purpose = 'Business Permit Renewal';
+                    }
+                    break;
+                case 'first_time_job_seeker':
+                    $purpose = $_POST['jobSeekerPurpose'] ?? '';
+                    $finalPrice = 0;
+                    break;
+                case 'cedula':
+                    $purpose = 'Community Tax Certificate';
+                    $finalPrice = $documentType['final_price'];
+                    break;
+                default:
+                    $purpose = 'General purposes';
+                    $finalPrice = $documentType['final_price'];
+                    break;
             }
 
             // Execute the insert
@@ -466,15 +471,17 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $documentTypeId,
                 $barangay_id,
                 $user_id,
-                $isFTJS ? 0 : $finalPrice, // Price is 0 for FTJS
+                $isFTJS ? 0 : $finalPrice,
                 $purpose,
                 $imagePath,
                 $businessName,
                 $businessLocation,
                 $businessNature,
                 $businessType,
-                implode(',', $_POST['delivery_method'] ?? []), // Handle multiple delivery methods
-                isset($_POST['proceed_to_payment']) ? 'online' : ($_POST['payment_method'] ?? 'cash')
+                implode(',', $_POST['delivery_method'] ?? []),
+                isset($_POST['proceed_to_payment']) ? 'online' : ($_POST['payment_method'] ?? 'cash'),
+                $previousPermitDocAiUsed,
+                $isRenewal
             ]);
 
             $requestId = $pdo->lastInsertId();
@@ -1362,6 +1369,23 @@ require_once '../components/navbar.php';
 
                     <div id="businessPermitFields" class="document-fields" style="display: none;">
                         <div class="form-row">
+                            <label for="previousPermitFile">Renew Business Permit (Upload Existing Permit)</label>
+                            <input type="file" id="previousPermitFile" name="previous_permit_file" accept=".pdf,.jpg,.jpeg,.png"
+                                   class="w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
+                                   onchange="processPreviousPermit(this)"
+                                   <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <small class="input-help">Upload your current/previous permit to start renewal. System will scan and verify owner details. Max 5MB. PDF, JPG, PNG.</small>
+                            <div id="permitProcessingSpinner" style="display:none;" class="mt-2 text-sm text-blue-600">
+                                <i class="fas fa-spinner fa-spin mr-1"></i> Processing permit... please wait.
+                            </div>
+                            <div id="permitProcessingMessage" class="mt-2 text-sm"></div>
+                            <!-- Hidden fields for renewal logic -->
+                            <input type="hidden" id="renewalAttempted" name="renewal_attempted" value="false">
+                            <input type="hidden" id="docAiProcessed" name="doc_ai_processed" value="false">
+                            <input type="hidden" id="ownerVerifiedForRenewal" name="owner_verified_for_renewal" value="false">
+                        </div>
+                        <hr class="my-4">
+                        <div class="form-row">
                             <label for="businessName">Business Name <span style="color: red;">*</span></label>
                             <input type="text" id="businessName" name="businessName" placeholder="Enter business name" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
@@ -1687,8 +1711,6 @@ require_once '../components/navbar.php';
             const purposeClearanceSelect = document.getElementById('purposeClearance');
             if (purposeClearanceSelect) purposeClearanceSelect.required = false;
 
-            if (purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'inline';
-
 
             if (cedulaEligibilityNoticeDiv) cedulaEligibilityNoticeDiv.style.display = 'none';
             
@@ -1774,6 +1796,7 @@ require_once '../components/navbar.php';
                 updateRequiredFields(false); // Reset all field requirements
 
                 // Handle FTJS checkbox visibility for Barangay Clearance
+
                 if (documentCode === 'barangay_clearance' && canAvailFirstTimeJobSeekerJS) {
                     if (ftjsCheckboxRow) ftjsCheckboxRow.style.display = 'block';
                     // If FTJS not available, general warning might be useful

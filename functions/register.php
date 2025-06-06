@@ -828,7 +828,7 @@ if ($_SERVER["REQUEST_METHOD"] == "POST") {
                 $personStmt->execute([$person_id]);
                 $personData = $personStmt->fetch(PDO::FETCH_ASSOC);
 
-                // Get the phone from the form
+                // Get the phone from the formw
                 $phone = trim($_POST['phone'] ?? '');
                 
                 // Read the ID image file into a variable
