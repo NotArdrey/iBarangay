@@ -1,4 +1,4 @@
-<?php
+    <?php
 // Error reporting configuration
 error_reporting(E_ALL);
 ini_set('display_errors', 0); // Don't display errors to browser
@@ -12,25 +12,23 @@ require_once "../components/header.php";
 $barangay_id = $_SESSION['barangay_id'] ?? 1;
 
 // Basic Statistics
-$sql = "SELECT COUNT(*) AS total_residents FROM users WHERE role_id = 8 AND barangay_id = :bid";
+$sql = "SELECT COUNT(DISTINCT p.id) 
+        FROM persons p
+        JOIN household_members hm ON p.id = hm.person_id
+        JOIN households h ON hm.household_id = h.id
+        WHERE h.barangay_id = :bid AND p.is_archived = FALSE";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalResidents = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(DISTINCT p.user_id) FROM addresses a 
-        JOIN persons p ON a.person_id = p.id 
-        JOIN users u ON p.user_id = u.id 
-        WHERE u.barangay_id = :bid";
+$sql = "SELECT COUNT(*) FROM households WHERE barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
 $stmt->execute([':bid' => $barangay_id]);
 $totalHouseholds = (int) $stmt->fetchColumn();
 
-$sql = "SELECT COUNT(*) FROM document_requests dr 
-        JOIN persons p ON dr.person_id = p.id 
-        LEFT JOIN users u ON p.user_id = u.id 
-        WHERE dr.status = 'pending' AND (u.barangay_id = :bid1 OR dr.barangay_id = :bid2)";
+$sql = "SELECT COUNT(*) FROM document_requests WHERE status = 'pending' AND barangay_id = :bid";
 $stmt = $pdo->prepare($sql);
-$stmt->execute([':bid1' => $barangay_id, ':bid2' => $barangay_id]);
+$stmt->execute([':bid' => $barangay_id]);
 $pendingRequests = (int) $stmt->fetchColumn();
 
 $sql = "SELECT COUNT(*) FROM audit_trails a JOIN users u ON a.admin_user_id = u.id WHERE u.barangay_id = :bid AND a.action_timestamp >= DATE_SUB(NOW(), INTERVAL 7 DAY)";
@@ -154,12 +152,13 @@ $stmt->execute([':bid' => $barangay_id]);
 $urgentCases = (int) $stmt->fetchColumn();
 
 // Gender distribution (existing)
-$sql = "SELECT p.gender, COUNT(*) as total
-        FROM users u
-        LEFT JOIN persons p ON p.user_id = u.id
+$sql = "SELECT p.gender, COUNT(DISTINCT p.id) as total
+        FROM persons p
+        JOIN addresses a ON p.id = a.person_id
+        WHERE a.barangay_id = :bid AND p.is_archived = FALSE AND p.gender IS NOT NULL
         GROUP BY p.gender";
 $stmt = $pdo->prepare($sql);
-$stmt->execute();
+$stmt->execute([':bid' => $barangay_id]);
 $genderData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $genderLabels = [];
@@ -178,12 +177,10 @@ if (empty($genderLabels)) {
 // Document requests (existing)
 $sql = "SELECT dt.name, COUNT(*) AS count FROM document_requests dr 
         JOIN document_types dt ON dr.document_type_id = dt.id 
-        JOIN persons p ON dr.person_id = p.id 
-        LEFT JOIN users u ON p.user_id = u.id 
-        WHERE (u.barangay_id = :bid1 OR dr.barangay_id = :bid2) 
+        WHERE dr.barangay_id = :bid 
         GROUP BY dt.name ORDER BY count DESC LIMIT 5";
 $stmt = $pdo->prepare($sql);
-$stmt->execute([':bid1' => $barangay_id, ':bid2' => $barangay_id]);
+$stmt->execute([':bid' => $barangay_id]);
 $docTypeData = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $docLabels = [];
