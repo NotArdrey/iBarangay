@@ -46,16 +46,9 @@ function createBackup($pdo, $backupType = 'manual') {
     $backupFile = $backupConfig['backup_dir'] . "barangay_backup_{$backupType}_{$timestamp}.sql";
     
     try {
-        // Get database name for reference
         $dbName = $pdo->query("SELECT DATABASE()")->fetchColumn();
-        
-        // Get list of tables
-        $tables = [];
-        $stmt = $pdo->query("SHOW TABLES");
-        while ($row = $stmt->fetch(PDO::FETCH_NUM)) {
-            $tables[] = $row[0];
-        }
-        
+        $tables = $pdo->query("SHOW TABLES")->fetchAll(PDO::FETCH_COLUMN);
+
         if (empty($tables)) {
             throw new Exception("No tables found in database");
         }
@@ -64,47 +57,72 @@ function createBackup($pdo, $backupType = 'manual') {
         $sql .= "-- Database: {$dbName}\n";
         $sql .= "-- Backup Type: {$backupType}\n";
         $sql .= "-- Created: " . date('Y-m-d H:i:s') . "\n";
-        $sql .= "-- Tables: " . count($tables) . "\n\n";
         $sql .= "SET FOREIGN_KEY_CHECKS=0;\n\n";
-        
-        // Removed sample data backup - only schema will be backed up
+
+        $totalRows = 0;
         foreach ($tables as $table) {
             // Table structure
             $stmt2 = $pdo->query("SHOW CREATE TABLE `$table`");
-            $row2 = $stmt2->fetch();
+            $row2 = $stmt2->fetch(PDO::FETCH_ASSOC);
             $sql .= "-- --------------------------------------------------------\n";
-            $sql .= "-- Table structure for `$table`\n";
+            $sql .= "-- Table structure for table `$table`\n";
             $sql .= "-- --------------------------------------------------------\n";
             $sql .= "DROP TABLE IF EXISTS `$table`;\n";
             $sql .= $row2['Create Table'] . ";\n\n";
+
+            // Table data
+            $stmt = $pdo->query("SELECT * FROM `$table`");
+            $rowCount = $stmt->rowCount();
+            if ($rowCount > 0) {
+                $totalRows += $rowCount;
+                $sql .= "--\n";
+                $sql .= "-- Dumping data for table `$table`\n";
+                $sql .= "--\n\n";
+                
+                $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                $fields = array_keys($rows[0]);
+                $sql .= "INSERT INTO `$table` (`" . implode('`, `', $fields) . "`) VALUES\n";
+                
+                $firstRow = true;
+                foreach ($rows as $row) {
+                    $sql .= $firstRow ? '' : ",\n";
+                    $sql .= "(";
+                    
+                    $firstField = true;
+                    foreach ($row as $field) {
+                        $sql .= $firstField ? '' : ', ';
+                        if ($field === null) {
+                            $sql .= "NULL";
+                        } else {
+                            $sql .= $pdo->quote($field);
+                        }
+                        $firstField = false;
+                    }
+                    $sql .= ")";
+                    $firstRow = false;
+                }
+                $sql .= ";\n\n";
+            }
         }
         
         $sql .= "SET FOREIGN_KEY_CHECKS=1;\n";
-        $sql .= "-- End of backup\n";
-        $sql .= "-- Total rows exported: 0\n"; // updated since no data is exported
+        $sql .= "-- End of backup. Total rows exported: {$totalRows}\n";
         
-        // Write to backup file
-        $bytesWritten = file_put_contents($backupFile, $sql);
-        if ($bytesWritten === false) {
+        if (file_put_contents($backupFile, $sql) === false) {
             throw new Exception("Failed to write backup file");
-        }
-        
-        // Verify backup file
-        if (!file_exists($backupFile) || filesize($backupFile) === 0) {
-            throw new Exception("Backup file verification failed");
         }
         
         $backupFileName = basename($backupFile);
         $fileSizeMB = round(filesize($backupFile) / 1024 / 1024, 2);
         
-        logBackupActivity("Backup created successfully: {$backupFileName} ({$fileSizeMB} MB, 0 rows)", 'SUCCESS');
+        logBackupActivity("Backup created successfully: {$backupFileName} ({$fileSizeMB} MB, {$totalRows} rows)", 'SUCCESS');
         
         return [
             'success' => true,
             'filename' => $backupFileName,
             'filepath' => $backupFile,
             'size' => $fileSizeMB,
-            'rows' => 0,
+            'rows' => $totalRows,
             'tables' => count($tables)
         ];
         
@@ -136,50 +154,22 @@ function restoreBackup($pdo, $backupFilePath) {
             throw new Exception("Failed to read backup file");
         }
 
+        $pdo->exec("SET FOREIGN_KEY_CHECKS=0;");
         $pdo->beginTransaction();
-
-        // Improved SQL splitting: keep CREATE TABLE blocks together
-        $statements = [];
-        $delimiter = ";\n";
-        $buffer = '';
-        $lines = explode("\n", $sql);
-        $inCreate = false;
-        foreach ($lines as $line) {
-            if (preg_match('/^\s*CREATE\s+TABLE/i', $line)) {
-                $inCreate = true;
-            }
-            $buffer .= $line . "\n";
-            if ($inCreate && preg_match('/^\s*\)\s*ENGINE=/i', $line)) {
-                $inCreate = false;
-            }
-            if (!$inCreate && substr(trim($line), -1 * strlen($delimiter)) === trim($delimiter)) {
-                $statements[] = trim($buffer);
-                $buffer = '';
-            }
-        }
-        if (trim($buffer) !== '') {
-            $statements[] = trim($buffer);
-        }
-
-        $executedQueries = 0;
-        foreach ($statements as $query) {
-            $query = trim($query);
-            if ($query && !preg_match('/^--/', $query)) {
-                $pdo->exec($query);
-                $executedQueries++;
-            }
-        }
-
+        
+        $result = $pdo->exec($sql);
+        
         $pdo->commit();
-        logBackupActivity("Database restored successfully from " . basename($backupFilePath) . " ({$executedQueries} queries executed)", 'SUCCESS');
+        $pdo->exec("SET FOREIGN_KEY_CHECKS=1;");
 
-        return [
-            'success' => true,
-            'queries_executed' => $executedQueries
-        ];
+        logBackupActivity("Database restored successfully from " . basename($backupFilePath), 'SUCCESS');
+        
+        return ['success' => true, 'queries_executed' => $result !== false];
 
     } catch (Exception $e) {
-        $pdo->rollBack();
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
         logBackupActivity("Restore failed: " . $e->getMessage(), 'ERROR');
         throw $e;
     }
@@ -631,7 +621,7 @@ if (!empty($autoBackupResults)) {
                     <i class="fas fa-upload mr-2"></i>Restore Database
                 </h2>
                 <p class="text-gray-600 mb-4">Restore database from a backup file.</p>
-                <form method="post">
+                <form method="post" id="restore-form">
                     <select name="restore_file" class="w-full p-2 border rounded mb-4" required>
                         <option value="">Select backup file...</option>
                         <?php foreach ($backupFiles as $file): ?>
@@ -749,21 +739,31 @@ if (!empty($autoBackupResults)) {
         }, 300000);
 
         // Use SweetAlert for restore confirmation
-        document.querySelectorAll('button[name="restore"]').forEach(button => {
-            button.addEventListener('click', function(e) {
-                e.preventDefault(); // Prevent immediate form submission
-                swal({
-                    title: "Are you sure?",
-                    text: "This will completely replace your current database with the backup data. All current data will be lost.",
-                    icon: "warning",
-                    buttons: true,
-                    dangerMode: true,
-                }).then((willRestore) => {
-                    if (willRestore) {
-                        // Submit the form after confirmation
-                        this.form.submit();
-                    }
-                });
+        document.getElementById('restore-form').addEventListener('submit', function (e) {
+            e.preventDefault(); // Prevent the form from submitting immediately
+            
+            const restoreFile = this.elements['restore_file'].value;
+            if (!restoreFile) {
+                swal("No File Selected", "Please select a backup file to restore.", "warning");
+                return;
+            }
+
+            swal({
+                title: "Are you sure?",
+                text: "This will completely replace your current database with the backup data. All current data will be lost.",
+                icon: "warning",
+                buttons: ["Cancel", "Restore Now"],
+                dangerMode: true,
+            }).then((willRestore) => {
+                if (willRestore) {
+                    // If confirmed, create a hidden input to signify the restore action and submit the form
+                    const hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'hidden';
+                    hiddenInput.name = 'restore';
+                    hiddenInput.value = 'true';
+                    this.appendChild(hiddenInput);
+                    this.submit();
+                }
             });
         });
 

@@ -403,14 +403,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST'
         // Debug log
         error_log("Setting accessible barangays in session: " . print_r($barangays, true));
 
-        // Always redirect to barangay selection
-        if ($roleInfo['role_id'] === 8) {
-            header("Location: ../pages/select_barangay.php");
-            exit;
-        } else {
-            header("Location: " . getDashboardUrl($roleInfo['role_id']));
-            exit;
-        }
+        // Redirect all users to their dashboard
+        header("Location: " . getDashboardUrl($roleInfo['role_id']));
+        exit;
     } catch (Exception $e) {
         $_SESSION['login_error'] = $e->getMessage();
         header("Location: ../pages/login.php");
