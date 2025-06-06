@@ -33,7 +33,7 @@ function logAuditTrail(
     int $recordId,
     string $desc = ''
 ): void {
-    
+    // Fix: Always set user_id (required, NOT NULL) and admin_user_id
     $pdo->prepare(
         "INSERT INTO audit_trails
              (user_id, admin_user_id, action, table_name, record_id, description)

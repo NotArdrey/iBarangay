@@ -1,3 +1,4 @@
+
 <?php
 session_start();
 require "../config/dbconn.php";
@@ -146,9 +147,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $pdo->prepare("
                         UPDATE blotter_cases 
                         SET is_cfa_eligible = TRUE, 
-                            status = 'cfa_eligible', 
+                            status = 'pending', 
                             cfa_reason = ?, 
-                            scheduling_status = 'cfa_pending_issuance'
+                            scheduling_status = 'pending_schedule'
                         WHERE id = ?
                     ")->execute([$cfaReasonForUnavailable, $caseId]);
                     

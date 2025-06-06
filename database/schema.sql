@@ -1677,7 +1677,7 @@ ADD COLUMN proposed_by_role_id INT NOT NULL AFTER proposed_by_user_id,
 ADD COLUMN notification_sent BOOLEAN DEFAULT FALSE AFTER status,
 ADD COLUMN notification_sent_at DATETIME NULL AFTER notification_sent,
 ADD FOREIGN KEY (proposed_by_role_id) REFERENCES roles(id) ON DELETE CASCADE;
-
+ALTER TABLE events ADD COLUMN target_roles TEXT;
 -- Add new table for schedule notifications
 CREATE TABLE schedule_notifications (
     id INT AUTO_INCREMENT PRIMARY KEY,
@@ -1787,7 +1787,7 @@ ADD COLUMN is_archived BOOLEAN DEFAULT FALSE AFTER additional_notes,
 ADD COLUMN archived_at TIMESTAMP NULL DEFAULT NULL AFTER is_archived;
 
 ALTER TABLE document_requests 
-ADD COLUMN delivery_method ENUM('hardcopy', 'softcopy') DEFAULT 'hardcopy' AFTER business_type,
+ADD COLUMN delivery_method SET('hardcopy', 'softcopy') DEFAULT 'hardcopy' AFTER business_type,
 ADD COLUMN payment_method ENUM('cash', 'online') DEFAULT 'cash' AFTER delivery_method,
 ADD COLUMN payment_status ENUM('pending', 'paid', 'failed') DEFAULT 'pending' AFTER payment_method,
 ADD COLUMN payment_reference VARCHAR(100) NULL AFTER payment_status,

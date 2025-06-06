@@ -101,127 +101,171 @@ foreach ($_SESSION['accessible_barangays'] as $barangay) {
     <title>Select Barangay - iBarangay</title>
     <link rel="stylesheet" href="../styles/login.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <style>
-      .barangay-card {
-        background: var(--light-gray);
-        border-radius: var(--border-radius);
-        width: 100%;
-        max-width: 100%;
-        min-height: 54px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1rem;
-        font-weight: 600;
-        color: var(--text-dark);
-        border: 2px solid #e2e8f0;
-        transition: all var(--transition-speed) ease;
-        cursor: pointer;
-        position: relative;
-        box-shadow: 0 2px 8px rgba(59,130,246,0.06);
-        margin-bottom: 0;
-        padding: 1.1rem 0.5rem 1.1rem 0.5rem;
-      }
-      .barangay-card:hover:not(.archived) {
-        border: 2px solid var(--primary-blue);
-        background: #eaf2ff;
-        box-shadow: 0 4px 16px rgba(59,130,246,0.13);
-      }
-      .barangay-card.archived {
-        opacity: 0.7;
-        cursor: not-allowed;
-      }
-      .archived-badge {
-        position: absolute;
-        top: 8px;
-        right: 16px;
-        background: #ffe066;
-        color: #222;
-        font-size: 0.93rem;
-        font-weight: 600;
-        border-radius: 999px;
-        padding: 4px 16px;
-        box-shadow: 0 1px 4px rgba(0,0,0,0.04);
-        letter-spacing: 0.5px;
-        border: 1.5px solid #ffd600;
-        z-index: 2;
-        opacity: 1;
-      }
-      .barangay-list-scroll {
-        max-height: 320px;
-        overflow-y: auto;
-        width: 100%;
-        margin-bottom: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1.1rem;
-        align-items: center;
-      }
-    </style>
 </head>
 
 <body>
-    <div class="login-container">
-        <div class="header">
-            <img src="../photo/logo.png" alt="Government Logo">
-            <h1>iBarangay</h1>
+    <div class="login-wrapper">
+        <div class="branding-side">
+            <div class="branding-content">
+                <img src="../photo/logo.png" alt="iBarangay Logo">
+                <h1>iBarangay</h1>
+                <p>Select your barangay to access your personalized dashboard and services tailored to your community.</p>
+            </div>
         </div>
-        <div class="select-content">
-            <div style="font-size:1.25rem;font-weight:600;text-align:center;margin-bottom:0.25rem;color:var(--text-dark);">Select Barangay</div>
-            <div style="color:#6c757d;text-align:center;margin-bottom:1.5rem;font-size:1rem;">Choose a barangay to continue</div>
-            <?php if ($allArchived): ?>
-                <div class="notice-banner" style="margin-bottom:1.5rem;">
-                    <i class="fas fa-exclamation-triangle me-2" style="margin-right:8px;"></i>
-                    <strong>Notice:</strong> All your records are currently archived. You can still access the system but with limited functionality.
+
+        <div class="form-side">
+            <div class="login-container">
+                <div class="header">
+                    <h1>Select Barangay</h1>
+                    <p>Choose your barangay to continue to your dashboard</p>
                 </div>
-            <?php endif; ?>
-            <?php if (empty($_SESSION['accessible_barangays'])): ?>
-                <div class="notice-banner" style="background:#ffeaea; color:#a94442; border:1px solid #f5c6cb;">
-                    <i class="fas fa-exclamation-circle me-2" style="margin-right:8px;"></i>
-                    No barangays found for your account. Please contact the barangay office for assistance.
-                </div>
-            <?php else: ?>
-                <form method="POST" id="barangayForm" style="width:100%;">
-                    <div class="barangay-list-scroll">
-                        <?php foreach ($_SESSION['accessible_barangays'] as $barangay): ?>
-                        <div class="input-group" style="padding:0;width:100%;margin-bottom:0;">
-                            <div class="barangay-card<?php echo ($barangay['status'] === 'archived') ? ' archived' : ''; ?>" data-barangay-id="<?php echo $barangay['id']; ?>">
-                                <?php if ($barangay['status'] === 'archived'): ?>
-                                <span class="archived-badge">Archived</span>
-                                <?php endif; ?>
-                                <span><?php echo htmlspecialchars($barangay['name']); ?></span>
+
+                <?php if (isset($_SESSION['error'])): ?>
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        <?php echo htmlspecialchars($_SESSION['error']); unset($_SESSION['error']); ?>
+                    </div>
+                <?php endif; ?>
+
+                <?php if ($allArchived): ?>
+                    <div class="warning-message">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <strong>Notice:</strong> All your barangay records are archived. You can still access the system with limited functionality.
+                    </div>
+                <?php endif; ?>
+
+                <?php if (empty($_SESSION['accessible_barangays'])): ?>
+                    <div class="error-message">
+                        <i class="fas fa-exclamation-circle"></i>
+                        No barangays found for your account. Please contact the barangay office for assistance.
+                    </div>
+                    <div class="empty-state">
+                        <i class="fas fa-map-marker-alt"></i>
+                        <h3>No Barangays Available</h3>
+                        <p>Contact your administrator to get access to barangay services.</p>
+                        <a href="login.php" class="btn btn-secondary">
+                            <i class="fas fa-arrow-left"></i> Back to Login
+                        </a>
+                    </div>
+                <?php else: ?>
+                    <form method="POST" id="barangayForm">
+                        <div class="barangay-selection-container">
+                            <div class="selection-header">
+                                <h3><i class="fas fa-map-marker-alt"></i> Available Barangays</h3>
+                                <span class="barangay-count"><?php echo count($_SESSION['accessible_barangays']); ?> barangay<?php echo count($_SESSION['accessible_barangays']) > 1 ? 's' : ''; ?></span>
+                            </div>
+                            
+                            <div class="barangay-list-scroll">
+                                <?php foreach ($_SESSION['accessible_barangays'] as $index => $barangay): ?>
+                                <div class="barangay-card<?php echo ($barangay['status'] === 'archived') ? ' archived' : ''; ?>" 
+                                     data-barangay-id="<?php echo $barangay['id']; ?>"
+                                     data-barangay-name="<?php echo htmlspecialchars($barangay['name']); ?>"
+                                     tabindex="<?php echo ($barangay['status'] === 'archived') ? '-1' : '0'; ?>"
+                                     role="button"
+                                     aria-label="<?php echo ($barangay['status'] === 'archived') ? 'Archived barangay: ' : 'Select '; ?><?php echo htmlspecialchars($barangay['name']); ?> barangay">
+                                    
+                                    <div class="barangay-card-content">
+                                        <div class="barangay-icon">
+                                            <i class="fas fa-building"></i>
+                                        </div>
+                                        <div class="barangay-info">
+                                            <h4><?php echo htmlspecialchars($barangay['name']); ?></h4>
+                                            <span class="barangay-status <?php echo $barangay['status']; ?>">
+                                                <i class="fas fa-<?php echo ($barangay['status'] === 'archived') ? 'archive' : 'check-circle'; ?>"></i>
+                                                <?php echo ucfirst($barangay['status']); ?>
+                                            </span>
+                                        </div>
+                                        <div class="barangay-action">
+                                            <?php if ($barangay['status'] === 'archived'): ?>
+                                                <span class="archived-badge">
+                                                    <i class="fas fa-lock"></i>
+                                                </span>
+                                            <?php else: ?>
+                                                <i class="fas fa-arrow-right"></i>
+                                            <?php endif; ?>
+                                        </div>
+                                    </div>
+                                    
+                                    <?php if ($barangay['status'] !== 'archived'): ?>
+                                        <div class="hover-overlay">
+                                            <i class="fas fa-mouse-pointer"></i>
+                                            <span>Click to select</span>
+                                        </div>
+                                    <?php endif; ?>
+                                </div>
+                                <?php endforeach; ?>
                             </div>
                         </div>
-                        <?php endforeach; ?>
-                    </div>
-                    <input type="hidden" name="barangay_id" id="selectedBarangayId">
-                </form>
-            <?php endif; ?>
-            <a href="login.php" class="alt-link" style="display:block;text-align:center;margin:1.5rem 0 0.5rem 0;">Back to Login</a>
-        </div>
-        <!-- Footer -->
-        <div class="footer">
-            <div class="footer-info">
-                <p>&copy; 2025 iBarangay. All Rights Reserved.</p>
-            </div>
-            <div class="security-note">
-                <svg viewBox="0 0 24 24">
-                    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z" />
-                </svg>
-                <span>Secure Government Portal</span>
+                        <input type="hidden" name="barangay_id" id="selectedBarangayId">
+                    </form>
+                <?php endif; ?>
+
+                <div class="form-footer">
+                    <a href="login.php" class="back-link">
+                        <i class="fas fa-arrow-left"></i> Back to Login
+                    </a>
+                </div>
             </div>
         </div>
     </div>
+
     <script>
-        document.querySelectorAll('.barangay-card').forEach(card => {
-            card.addEventListener('click', function() {
-                document.querySelectorAll('.barangay-card').forEach(c => c.style.border = '2px solid #e2e8f0');
-                this.style.border = '2px solid var(--primary-blue)';
-                document.getElementById('selectedBarangayId').value = this.dataset.barangayId;
-                document.getElementById('barangayForm').submit();
+        document.addEventListener('DOMContentLoaded', function() {
+            const barangayCards = document.querySelectorAll('.barangay-card:not(.archived)');
+            const form = document.getElementById('barangayForm');
+            const selectedInput = document.getElementById('selectedBarangayId');
+
+            barangayCards.forEach(card => {
+                card.addEventListener('click', function() {
+                    if (this.classList.contains('loading')) return;
+                    
+                    // Remove previous selection
+                    barangayCards.forEach(c => {
+                        c.classList.remove('selected');
+                        c.setAttribute('aria-pressed', 'false');
+                    });
+                    
+                    // Add selection to current card
+                    this.classList.add('selected');
+                    this.setAttribute('aria-pressed', 'true');
+                    
+                    // Set form data
+                    selectedInput.value = this.dataset.barangayId;
+                    
+                    // Add loading state
+                    this.classList.add('loading');
+                    
+                    // Submit form after brief delay for visual feedback
+                    setTimeout(() => {
+                        form.submit();
+                    }, 500);
+                });
+
+                // Add keyboard support
+                card.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        this.click();
+                    }
+                });
+
+                // Set initial ARIA attributes
+                card.setAttribute('aria-pressed', 'false');
             });
+
+            // Add loading animation
+            const style = document.createElement('style');
+            style.textContent = `
+                .barangay-card.loading .barangay-icon {
+                    animation: pulse 1s infinite;
+                }
+                @keyframes pulse {
+                    0%, 100% { opacity: 1; }
+                    50% { opacity: 0.5; }
+                }
+            `;
+            document.head.appendChild(style);
         });
     </script>
 </body>
-
 </html>

@@ -251,6 +251,7 @@ function generateSummonsForm($pdo, $caseId) {
         <style>
             @page { margin: 25mm 20mm; size: A4; }
             body { font-family: 'Times New Roman', serif; font-size: 12pt; margin: 0; color: #000; }
+            /* Remove absolute positioning for form-number to avoid overlap */
             .form-number { font-size: 11pt; margin-bottom: 2mm; }
             .header-table { width: 100%; border-collapse: collapse; margin-bottom: 2mm; }
             .header-table td { vertical-align: middle; }
@@ -265,11 +266,20 @@ function generateSummonsForm($pdo, $caseId) {
             .parties-table { width: 100%; margin-bottom: 2mm; }
             .parties-table td { vertical-align: top; }
             .label { font-size: 11pt; }
-            .summons-title { text-align: center; font-weight: bold; text-decoration: underline; margin: 2mm 0; }
+            .sumbong-title { text-align: center; font-weight: bold; text-decoration: underline; margin: 2mm 0; }
             .lines { border-bottom: 1px solid #000; height: 12px; margin: 1.5mm 0; }
             .signature-section { margin-top: 8mm; }
             .signature-line { border-bottom: 1px solid #000; width: 60mm; display: inline-block; margin-bottom: 2mm; }
             .footer-motto { text-align: center; margin-top: 10mm; font-style: italic; font-size: 12pt; font-weight: bold; }
+            /* Improved styling for complaint text to match document formatting */
+            .complaint-box { 
+                border-bottom: 1px solid #000;
+                min-height: 65px;
+                margin: 4mm 0;
+                padding: 2mm 0;
+                line-height: 1.5;
+                text-align: justify;
+            }
         </style>
     </head>
     <body>
@@ -314,41 +324,46 @@ function generateSummonsForm($pdo, $caseId) {
             <div style="width:10%;display:inline-block;"></div>
             <div style="width:45%;display:inline-block;vertical-align:top;">
                 Usaping Barangay Blg. <span class="underline" style="min-width:80px;"><?= htmlspecialchars($case['case_number'] ?? '') ?></span><br>
-                Ukol sa <span class="underline" style="min-width:120px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
+                Para sa <span class="underline" style="min-width:120px;"><?= htmlspecialchars($case['categories'] ?? '') ?></span>
             </div>
         </div>
-        <div class="summons-title">PATAWAG</div>
+        <div class="sumbong-title">SUMBONG</div>
         <div style="margin-bottom:2mm;">
-            Kay/Kina:
-            <span class="underline"
-                  style="min-width:180px; display:inline-block; vertical-align:middle; margin-right:4px;">
-                <?php foreach ($respondents as $r): ?>
-                    <?= htmlspecialchars($r['full_name'] ?? 'Unknown') ?><br>
-                <?php endforeach; ?>
-                <?php if (empty($respondents)): ?>&nbsp;<?php endif; ?>
+            AKO/KAMI, sa pamamagitan nito, ay naghahain ng sumbong laban sa (mga) ipinagsusumbong na binabanggit sa itaas dahil sa paglabag sa aking/aming mga karapatan at kapakanan sa sumusunod na paraan:
+        </div>
+        
+        <!-- Auto-fill case description with proper formatting -->
+        <div class="lines" style="position: relative;">
+            <span style="position: absolute; top: -12px; left: 0;">
+                <?= htmlspecialchars($case['description'] ?? '') ?>
             </span>
-            <span class="label" style="vertical-align:middle;">(Mga) Ipinagsusumbong</span>
         </div>
-        <div style="margin-bottom:2mm;">
-            Sa pamamagitan nito, kayo'y tinatawag upang personal na humarap sa akin, kasama ang inyong mga testigo,
-            sa ika-<span class="underline" style="min-width:30px;"><?= $hDay ?></span> araw ng 
-            <span class="underline" style="min-width:80px;"><?= $hMonth ?></span>, <?= $hYear ?>,
-            sa ganap na ika-<span class="underline" style="min-width:40px;"><?= $hTime ?></span> ng umaga/hapon,
-            upang sagutin ang isang sumbong na idinulog sa akin, na ang kopya'y kalakip nito, para pagmagitanan/pagpakasunduin kayo sa inyong alitan ng (mga) maysumbong.
+        <div class="lines"></div>
+        <div class="lines"></div>
+        <div class="lines"></div>
+        <div style="margin:2mm 0;">
+            DAHIL DITO, AKO/KAMI ay namamanhik na ipagkaloob sa akin/amin ang sumusunod na (mga) kalunasan nang naa alinsunod sa batas at/o pagkamakatuwiran:
         </div>
-        <div style="margin-bottom:2mm;">
-            Sa pamamagitan nito, kayo'y binabalaan na ang inyong pagtanggi o sadyang di-pagharap bilang pagtaliwas sa patawag na ito ay magbibigay ng karapatan sa (mga) maysumbong upang tuwiran kayong ipagsakdal sa hukuman/tanggapan ng pamahalaan, na doon ay mahahadlangan kayong magharap ng kontra-demanda bunga ng nabanggit na sumbong.
-        </div>
-        <div style="margin-bottom:2mm;">
-            TUPARIN ITO, at kung hindi'y parurusahan kayo sa salang paglapastangan sa hukuman.
-        </div>
+        <?php for($i=0;$i<4;$i++): ?><div class="lines"></div><?php endfor; ?>
         <div class="signature-section">
             <table style="width:100%; margin-top:6mm;">
                 <tr>
                     <td style="width:60%">
-                        Ngayon ika-<span class="underline" style="min-width:30px;"><?= $day ?></span> araw ng <span class="underline" style="min-width:80px;"><?= $month ?></span>, <?= $year ?>.
+                        Ginawa ngayong ika- <span class="underline" style="min-width:30px;"><?= $day ?></span> araw ng <span class="underline" style="min-width:80px;"><?= $month ?></span>, <?= $year ?>.
                     </td>
                     <td style="width:40%; text-align:center;">
+                        <div class="signature-line"></div><br>
+                        (Mga) Maysumbong
+                    </td>
+                </tr>
+                <tr>
+                    <td colspan="2" style="height:10mm"></td>
+                </tr>
+                <tr>
+                    <td>
+                        Tinanggap at itinala ngayong ika- <span class="underline" style="min-width:30px;"><?= $day ?></span> araw ng <span class="underline" style="min-width:80px;"><?= $month ?></span>, <?= $year ?>.
+                    </td>
+                    <td style="text-align:center;">
                         <?php if ($sigData): ?>
                             <img src="<?= $sigData ?>" alt="E-signature"
                                  style="height:50px;max-width:180px;display:block;margin-left:auto;margin-right:auto;margin-bottom:2mm;">
@@ -413,16 +428,13 @@ function generateReportForm($pdo, $caseId) {
         }
     }
 
-    // Get participants
+    // Complainant and Respondent details
     $pStmt = $pdo->prepare("
-        SELECT 
-            bp.role,
-            COALESCE(CONCAT(p.first_name, ' ', p.last_name), CONCAT(ep.first_name, ' ', ep.last_name)) AS full_name,
-            COALESCE(CONCAT(a.house_no, ' ', a.street, ', ', b.name), ep.address) AS address
+        SELECT bp.role,
+            COALESCE(CONCAT(p.first_name, ' ', p.last_name), 
+            CONCAT(ep.first_name, ' ', ep.last_name)) AS full_name
         FROM blotter_participants bp
         LEFT JOIN persons p ON bp.person_id = p.id
-        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
-        LEFT JOIN barangay b ON a.barangay_id = b.id
         LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
         WHERE bp.blotter_case_id = ?
     ");
@@ -431,13 +443,13 @@ function generateReportForm($pdo, $caseId) {
     
     $complainants = array_filter($participants, fn($p) => $p['role'] === 'complainant');
     $respondents = array_filter($participants, fn($p) => $p['role'] === 'respondent');
-    
+
     // Auto-fill current date
     $currentDate = new DateTime();
     $day = $currentDate->format('j');
     $month = $currentDate->format('F');
     $year = $currentDate->format('Y');
-    
+
     ob_start();
     ?>
     <!DOCTYPE html>
@@ -463,10 +475,27 @@ function generateReportForm($pdo, $caseId) {
             .parties-table td { vertical-align: top; }
             .label { font-size: 11pt; }
             .sumbong-title { text-align: center; font-weight: bold; text-decoration: underline; margin: 2mm 0; }
+            .divider { border-top: 1.5px solid #000; margin: 2mm 0 2mm 0; }
+            .case-table { width: 100%; margin-bottom: 2mm; }
+            .case-table td { font-size: 12pt; }
+            .underline { border-bottom: 1px solid #000; min-width: 120px; display: inline-block; }
+            .parties-table { width: 100%; margin-bottom: 2mm; }
+            .parties-table td { vertical-align: top; }
+            .label { font-size: 11pt; }
+            .sumbong-title { text-align: center; font-weight: bold; text-decoration: underline; margin: 2mm 0; }
             .lines { border-bottom: 1px solid #000; height: 12px; margin: 1.5mm 0; }
             .signature-section { margin-top: 8mm; }
             .signature-line { border-bottom: 1px solid #000; width: 60mm; display: inline-block; margin-bottom: 2mm; }
             .footer-motto { text-align: center; margin-top: 10mm; font-style: italic; font-size: 12pt; font-weight: bold; }
+            /* Improved styling for complaint text to match document formatting */
+            .complaint-box { 
+                border-bottom: 1px solid #000;
+                min-height: 65px;
+                margin: 4mm 0;
+                padding: 2mm 0;
+                line-height: 1.5;
+                text-align: justify;
+            }
         </style>
     </head>
     <body>
@@ -515,11 +544,20 @@ function generateReportForm($pdo, $caseId) {
             </div>
         </div>
         <div class="sumbong-title">SUMBONG</div>
-        <div style="margin-bottom:2mm;">
+        <div style="margin-bottom:10mm;">
             AKO/KAMI, sa pamamagitan nito, ay naghahain ng sumbong laban sa (mga) ipinagsusumbong na binabanggit sa itaas dahil sa paglabag sa aking/aming mga karapatan at kapakanan sa sumusunod na paraan:
         </div>
-        <?php for($i=0;$i<6;$i++): ?><div class="lines"></div><?php endfor; ?>
-        <div style="margin:2mm 0;">
+        
+        <!-- Auto-fill case description with proper formatting -->
+        <div class="lines" style="position: relative;">
+            <span style="position: absolute; top: -12px; left: 0;">
+                <?= htmlspecialchars($case['description'] ?? '') ?>
+            </span>
+        </div>
+        <div class="lines"></div>
+        <div class="lines"></div>
+        <div class="lines"></div>
+        <div style="margin:5mm 0;">
             DAHIL DITO, AKO/KAMI ay namamanhik na ipagkaloob sa akin/amin ang sumusunod na (mga) kalunasan nang naa alinsunod sa batas at/o pagkamakatuwiran:
         </div>
         <?php for($i=0;$i<4;$i++): ?><div class="lines"></div><?php endfor; ?>
@@ -551,6 +589,8 @@ function generateReportForm($pdo, $caseId) {
                     </td>
                 </tr>
             </table>
+        </div>
+        <div class="footer-motto">"ASENSO at PROGRESO"</div>
     </body>
     </html>
     <?php
@@ -974,7 +1014,6 @@ if (!empty($_GET['action'])) {
                 try {
                     $pdf->render();
                 } catch (Exception $e) {
-                    // GD not available → remove images and re-render
                     $htmlNoImg = preg_replace('/<img[^>]+>/', '', $html);
                     $pdf->loadHtml($htmlNoImg, 'UTF-8');
                     $pdf->render();
@@ -1533,8 +1572,7 @@ if (!empty($_GET['action'])) {
                       $data['hearing_time'],
                       $data['hearing_location'] ?? 'Barangay Hall',
                       $actualPresidingOfficerName, 
-                      $actualPresidingOfficerPosition, 
-                      $proposalStatus,
+                      $actualPresidingOfficerPosition,                      $proposalStatus,
                       $captainConfirmed,
                       $captainConfirmedAt,
                       $chiefConfirmed,
@@ -1546,7 +1584,7 @@ if (!empty($_GET['action'])) {
                   $stmtHearingNum = $pdo->prepare("SELECT MAX(hearing_number) FROM case_hearings WHERE blotter_case_id = ?");
                   $stmtHearingNum->execute([$id]);
                   $maxHearingNumber = $stmtHearingNum->fetchColumn();
-                  $nextHearingNumber = ($maxHearingNumber === null ? 0 : (int)$maxHearingNumber) + 1;
+                  $nextHearingNumber = ($maxHearingNumber === null ?  0 : (int)$maxHearingNumber) + 1;
 
                   // Get details of the current admin scheduling this hearing
                   $userStmt = $pdo->prepare("SELECT first_name, last_name FROM users WHERE id = ?");
@@ -1575,8 +1613,8 @@ if (!empty($_GET['action'])) {
                       $data['hearing_time'],
                       $actualPresidingOfficerName,
                       $actualPresidingOfficerPosition,
-                      $current_admin_id, // created_by_user_id
-                      $proposalId        // schedule_proposal_id
+                      $current_admin_id,
+                      $proposalId       
                   ]);
                   $newHearingId = $pdo->lastInsertId();
                   
@@ -1614,7 +1652,7 @@ if (!empty($_GET['action'])) {
                 JOIN blotter_cases bc ON sp.blotter_case_id = bc.id
                 WHERE sp.blotter_case_id = ? 
                   AND bc.barangay_id = ?
-                  AND ( (sp.status = 'pending_captain_approval' AND ? = ".ROLE_CAPTAIN.") OR 
+                  AND ( (sp.status = 'pending_captain_approval' AND ? = ".ROLE_CAPTAIN.") OR
                         (sp.status = 'pending_chief_approval' AND ? = ".ROLE_CHIEF.") )
                 ORDER BY sp.id DESC LIMIT 1
             ");
@@ -2076,6 +2114,119 @@ if (!empty($_GET['action'])) {
                     error_log("General error in issue_cfa: " . $e->getMessage());
                     echo json_encode(['success' => false, 'message' => 'An unexpected error occurred: ' . $e->getMessage()]);
                 }
+                exit;
+
+            case 'generate_hearing_report_pdf':
+                // Output PDF for a specific hearing
+                header('Content-Type: application/pdf');
+                $hearingId = intval($_GET['hearing_id'] ?? 0);
+                if (!$hearingId) {
+                    echo "Invalid hearing ID";
+                    exit;
+                }
+                // Fetch hearing details
+                $stmt = $pdo->prepare("
+                    SELECT ch.*, bc.case_number, bc.location, bc.description, bc.barangay_id,
+                           CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
+                    FROM case_hearings ch
+                    JOIN blotter_cases bc ON ch.blotter_case_id = bc.id
+                    LEFT JOIN users u ON ch.created_by_user_id = u.id
+                    WHERE ch.id = ?
+                    LIMIT 1
+                ");
+                $stmt->execute([$hearingId]);
+                $hearing = $stmt->fetch(PDO::FETCH_ASSOC);
+                if (!$hearing) {
+                    echo "Hearing not found";
+                    exit;
+                }
+                // Fetch participants
+                $pStmt = $pdo->prepare("
+                    SELECT bp.role, COALESCE(CONCAT(p.first_name, ' ', p.last_name), CONCAT(ep.first_name, ' ', ep.last_name)) AS full_name
+                    FROM blotter_participants bp
+                    LEFT JOIN persons p ON bp.person_id = p.id
+                    LEFT JOIN external_participants ep ON bp.external_participant_id = ep.id
+                    WHERE bp.blotter_case_id = ?
+                ");
+                $pStmt->execute([$hearing['blotter_case_id']]);
+                $participants = $pStmt->fetchAll(PDO::FETCH_ASSOC);
+                $complainants = array_filter($participants, fn($p) => $p['role'] === 'complainant');
+                $respondents = array_filter($participants, fn($p) => $p['role'] === 'respondent');
+                // Barangay name
+                $barangayName = '';
+                if (!empty($hearing['barangay_id'])) {
+                    $bStmt = $pdo->prepare("SELECT name FROM barangay WHERE id = ?");
+                    $bStmt->execute([$hearing['barangay_id']]);
+                    $barangayName = $bStmt->fetchColumn() ?: '';
+                }
+                // Prepare HTML for PDF
+                ob_start();
+                ?>
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <style>
+                        body { font-family: 'DejaVu Sans', sans-serif; font-size: 12pt; }
+                        .header { text-align: center; margin-bottom: 20px; }
+                        .section { margin-bottom: 10px; }
+                        .label { font-weight: bold; }
+                        .table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+                        .table th, .table td { border: 1px solid #333; padding: 6px; }
+                        .table th { background: #eee; }
+                    </style>
+                </head>
+                <body>
+                    <div class="header">
+                        <h2>Hearing Report</h2>
+                        <div><?= htmlspecialchars($barangayName) ?></div>
+                        <div>Case #: <?= htmlspecialchars($hearing['case_number']) ?></div>
+                    </div>
+                    <div class="section">
+                        <span class="label">Date & Time:</span>
+                        <?= $hearing['hearing_date'] ? date('M d, Y h:i A', strtotime($hearing['hearing_date'])) : 'N/A' ?>
+                    </div>
+                    <div class="section">
+                        <span class="label">Presiding Officer:</span>
+                        <?= htmlspecialchars($hearing['presiding_officer_name']) ?> (<?= htmlspecialchars($hearing['presiding_officer_position']) ?>)
+                    </div>
+                    <div class="section">
+                        <span class="label">Complainant(s):</span>
+                        <?= implode(', ', array_map(fn($c) => htmlspecialchars($c['full_name']), $complainants)) ?>
+                    </div>
+                    <div class="section">
+                        <span class="label">Respondent(s):</span>
+                        <?= implode(', ', array_map(fn($r) => htmlspecialchars($r['full_name']), $respondents)) ?>
+                    </div>
+                    <div class="section">
+                        <span class="label">Outcome:</span>
+                        <?= htmlspecialchars(ucfirst($hearing['hearing_outcome'])) ?>
+                    </div>
+                    <div class="section">
+                        <span class="label">Resolution/Minutes:</span><br>
+                        <div style="border:1px solid #ccc; padding:8px; min-height:60px;">
+                            <?= nl2br(htmlspecialchars($hearing['resolution_details'])) ?>
+                        </div>
+                    </div>
+                    <?php if ($hearing['hearing_outcome'] === 'postponed' && $hearing['next_hearing_date']): ?>
+                    <div class="section">
+                        <span class="label">Next Hearing:</span>
+                        <?= date('M d, Y h:i A', strtotime($hearing['next_hearing_date'])) ?>
+                    </div>
+                    <?php endif; ?>
+                    <div class="section">
+                        <span class="label">Recorded by:</span>
+                        <?= htmlspecialchars($hearing['created_by_name']) ?>
+                    </div>
+                </body>
+                </html>
+                <?php
+                $html = ob_get_clean();
+                $pdf = new Dompdf();
+                $pdf->loadHtml($html, 'UTF-8');
+                $pdf->setPaper('A4', 'portrait');
+                $pdf->render();
+                echo $pdf->output();
                 exit;
 
             // Make sure this new case is added BEFORE the default case if it exists, or at the end of the switch.
@@ -2718,9 +2869,7 @@ require_once "../components/header.php";
           </td>
           <td class="px-4 py-3 text-sm text-gray-600">
             <?= ($case['hearing_count'] ?? 0) ?>/3
-            <?php if (!empty($case['is_cfa_eligible'])): ?>
-              <span class="text-red-600 font-medium">(CFA Eligible)</span>
-            <?php endif; ?>
+
           </td>
           <td class="px-4 py-3 text-sm text-gray-600">
             <!-- Schedule pending notifications and approval buttons -->
@@ -2914,6 +3063,7 @@ require_once "../components/header.php";
   <script>
 // Define handler functions globally first
 async function handleEditCase(caseId) {
+ 
   try {
     // Show loading state
     Swal.fire({
@@ -2966,23 +3116,50 @@ async function handleEditCase(caseId) {
     // Populate participants
     const participantContainer = document.getElementById('editParticipantContainer');
     participantContainer.innerHTML = '';
-    
+
+    // Build a map of person_id to user_id for all residents for quick lookup
+    const residentMap = {};
+    <?php foreach ($residents as $r): ?>
+      residentMap[<?= json_encode($r['user_id']) ?>] = <?= json_encode($r['name']) ?>;
+    <?php endforeach; ?>
+
+    // Helper: get user_id for a given person_id (from PHP $residents)
+    function getUserIdForPersonId(personId) {
+      // This is a workaround since we don't have user_id in the API response for participants
+      // We'll use a PHP-generated JS object for mapping
+      const map = {};
+      <?php
+        // Build a JS object: person_id => user_id
+        $personToUser = [];
+        foreach ($residents as $r) {
+          // Get person_id for this user_id
+          $stmt = $pdo->prepare("SELECT id FROM persons WHERE user_id = ?");
+          $stmt->execute([$r['user_id']]);
+          $pid = $stmt->fetchColumn();
+          if ($pid) $personToUser[$pid] = $r['user_id'];
+        }
+      ?>
+      Object.assign(map, <?= json_encode($personToUser) ?>);
+      return map[personId] || '';
+    }
+
     participants.forEach((participant, index) => {
       if (participant.participant_type === 'registered') {
         // Add a registered participant row
+        const userId = getUserIdForPersonId(participant.person_id);
         const template = `
           <div class="participant flex gap-2 bg-blue-50 p-2 rounded mb-2">
             <input type="hidden" name="participants[${index}][type]" value="registered">
             <select name="participants[${index}][user_id]" class="flex-1 p-2 border rounded" required>
               <option value="">Select Resident</option>
               <?php foreach ($residents as $r): ?>
-                <option value="<?= $r['user_id'] ?>" ${participant.person_id == <?= $r['user_id'] ?> ? 'selected' : ''}><?= htmlspecialchars($r['name']) ?></option>
+                <option value="<?= $r['user_id'] ?>"><?= htmlspecialchars($r['name']) ?></option>
               <?php endforeach; ?>
             </select>
             <select name="participants[${index}][role]" class="flex-1 p-2 border rounded">
-              <option value="complainant" ${participant.role === 'complainant' ? 'selected' : ''}>Complainant</option>
-              <option value="respondent" ${participant.role === 'respondent' ? 'selected' : ''}>Respondent</option>
-              <option value="witness" ${participant.role === 'witness' ? 'selected' : ''}>Witness</option>
+              <option value="complainant">Complainant</option>
+              <option value="respondent">Respondent</option>
+              <option value="witness">Witness</option>
             </select>
             <button type="button" class="remove-participant px-2 bg-red-500 text-white rounded">×</button>
           </div>`;
@@ -2992,16 +3169,16 @@ async function handleEditCase(caseId) {
         const node = wrapper.firstElementChild;
         node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
         participantContainer.appendChild(node);
-        
+
         // Set the selected value for the resident dropdown
         const userSelect = node.querySelector(`select[name="participants[${index}][user_id]"]`);
-        if (userSelect) {
-          for (let i = 0; i < userSelect.options.length; i++) {
-            if (userSelect.options[i].value == participant.person_id) {
-              userSelect.options[i].selected = true;
-              break;
-            }
-          }
+        if (userSelect && userId) {
+          userSelect.value = userId;
+        }
+        // Set the role
+        const roleSelect = node.querySelector(`select[name="participants[${index}][role]"]`);
+        if (roleSelect) {
+          roleSelect.value = participant.role || '';
         }
       } else {
         // External participant
@@ -3009,7 +3186,7 @@ async function handleEditCase(caseId) {
           <div class="participant flex gap-2 bg-green-50 p-2 rounded mb-2">
             <input type="hidden" name="participants[${index}][type]" value="unregistered">
             <div class="flex-1 grid grid-cols-2 gap-2">
-              <input type="text" name="participants[${index}][first_name]" placeholder="First Name" required value="${participant.first_name || ''}" class="p-2 border rounded">
+                           <input type="text" name="participants[${index}][first_name]" placeholder="First Name" required value="${participant.first_name || ''}" class="p-2 border rounded">
               <input type="text" name="participants[${index}][last_name]" placeholder="Last Name" required value="${participant.last_name || ''}" class="p-2 border rounded">
               <input type="text" name="participants[${index}][contact_number]" placeholder="Contact" value="${participant.contact_number || ''}" class="p-2 border rounded">
               <input type="text" name="participants[${index}][address]" placeholder="Address" value="${participant.address || ''}" class="p-2 border rounded">
@@ -3034,6 +3211,12 @@ async function handleEditCase(caseId) {
         const node = wrapper.firstElementChild;
         node.querySelector('.remove-participant').addEventListener('click', () => node.remove());
         participantContainer.appendChild(node);
+
+        // Set the role
+        const roleSelect = node.querySelector(`select[name="participants[${index}][role]"]`);
+        if (roleSelect) {
+          roleSelect.value = participant.role || '';
+        }
       }
     });
     
@@ -3185,7 +3368,7 @@ async function handleScheduleHearing(caseId) {
         const data = await res.json();
         Swal.close();
         if (data.success) Swal.fire({ icon:'success', title:'Scheduled', timer:1500 }).then(()=>location.reload());
-        else Swal.fire('Error', data.message,'error');
+        else Swal.fire('Error', data.message || 'Failed to schedule hearing', 'error');
     }
 }
 
@@ -3580,7 +3763,7 @@ document.addEventListener('DOMContentLoaded', function() {
             const caseId = this.getAttribute('data-id');
             // ... (rest of your existing view details logic) ...
             // This is where you call the function that populates and shows the viewBlotterModal
-            // For example, if you have a function like showCaseDetailsInModal(caseId):
+            // For example, if you have a function showCaseDetailsInModal(caseId):
             // await showCaseDetailsInModal(caseId); 
             // Or if the logic is inline:
             Swal.fire({ title: 'Loading Details...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
