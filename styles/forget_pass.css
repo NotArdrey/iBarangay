@@ -1,51 +1,215 @@
+/* This is a new file for forget_pass.css */
+@import url('https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap');
+
+:root {
+  --primary-color: #4F46E5;
+  --primary-color-hover: #4338CA;
+  --text-dark: #111827;
+  --text-light: #6B7280;
+  --bg-light: #F9FAFB;
+  --border-color: #D1D5DB;
+  --border-radius: 12px;
+  --card-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+  --transition-speed: 0.3s;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
 body {
-    font-family: Arial, sans-serif;
-    background-color: #f0f0f0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
+  font-family: 'Poppins', 'Segoe UI', system-ui, sans-serif;
+  background-color: var(--bg-light);
+  color: var(--text-dark);
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  padding: 1rem;
 }
 
-.forget-password-container {
-    background-color: #fff;
-    padding: 20px;
-    border-radius: 5px;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-    width: 300px;
+.password-reset-wrapper {
+  display: flex;
+  width: 100%;
+  max-width: 1100px;
+  min-height: 700px;
+  background-color: #fff;
+  border-radius: var(--border-radius);
+  box-shadow: var(--card-shadow);
+  overflow: hidden;
 }
 
-.forget-password-container h2 {
-    margin-bottom: 20px;
+.branding-side {
+  width: 50%;
+  background: url('../photo/bg1.jpg') no-repeat center center;
+  background-size: cover;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  padding: 3rem;
+  color: white;
+  text-align: center;
 }
 
-.forget-password-container input[type="email"],
-.forget-password-container input[type="submit"] {
+.branding-side::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, rgba(79, 70, 229, 0.85), rgba(99, 102, 241, 0.85));
+  z-index: 1;
+}
+
+.branding-content {
+  position: relative;
+  z-index: 2;
+}
+
+.branding-content img {
+  width: 100px;
+  margin-bottom: 1.5rem;
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.3));
+}
+
+.branding-content h1 {
+  font-size: 2.5rem;
+  font-weight: 700;
+  margin-bottom: 1rem;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+
+.branding-content p {
+  font-size: 1rem;
+  max-width: 350px;
+  line-height: 1.6;
+  opacity: 0.9;
+}
+
+.form-side {
+  width: 50%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 3rem;
+}
+
+.form-container {
+  width: 100%;
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.header {
+  text-align: center;
+  margin-bottom: 2.5rem;
+}
+
+.header h1 {
+  font-size: 2rem;
+  font-weight: 600;
+  color: var(--text-dark);
+}
+
+.header p {
+  color: var(--text-light);
+  margin-top: 0.5rem;
+}
+
+.input-group {
+  margin-bottom: 1.5rem;
+}
+
+label {
+  display: block;
+  color: var(--text-dark);
+  font-size: 0.875rem;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+}
+
+input {
+  width: 100%;
+  padding: 1rem;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  font-size: 1rem;
+  transition: all var(--transition-speed) ease;
+  background-color: #fff;
+  color: var(--text-dark);
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--primary-color);
+  box-shadow: 0 0 0 4px rgba(79, 70, 229, 0.2);
+}
+
+.action-btn {
+  width: 100%;
+  padding: 1rem;
+  background: var(--primary-color);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all var(--transition-speed) ease;
+}
+
+.action-btn:hover {
+  background: var(--primary-color-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 7px 10px rgba(0,0,0,0.1);
+}
+
+.back-link {
+  text-align: center;
+  margin-top: 2rem;
+}
+
+.alt-link {
+  color: var(--primary-color);
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.alt-link:hover {
+  color: var(--primary-color-hover);
+  text-decoration: underline;
+}
+
+@media (max-width: 1024px) {
+  .branding-side {
+    display: none;
+  }
+  .form-side {
     width: 100%;
-    padding: 10px;
-    margin-bottom: 10px;
-    border-radius: 3px;
-    box-sizing: border-box;
+    padding: 2rem;
+  }
+  .password-reset-wrapper {
+    flex-direction: column;
+    max-width: 480px;
+    min-height: auto;
+  }
 }
 
-.forget-password-container input[type="email"] {
-    border: 1px solid #ccc;
-}
-
-.forget-password-container input[type="submit"] {
-    border: none;
-    background-color: #007BFF;
-    color: #fff;
-    font-size: 16px;
-    cursor: pointer;
-}
-
-.forget-password-container input[type="submit"]:hover {
-    background-color: #0056b3;
-}
-
-.message {
-    margin-top: 15px;
-    text-align: center;
-    color: #333;
+@media (max-width: 480px) {
+  body {
+    padding: 0;
+  }
+  .password-reset-wrapper {
+    border-radius: 0;
+    height: 100vh;
+  }
+  .form-side {
+    justify-content: flex-start;
+    padding-top: 4rem;
+  }
 }
