@@ -1,0 +1,9 @@
+{
+    "auto_backup_enabled": true,
+    "daily_backup_enabled": true,
+    "weekly_backup_enabled": true,
+    "monthly_backup_enabled": true,
+    "daily_retention_days": 7,
+    "weekly_retention_weeks": 4,
+    "monthly_retention_months": 12
+}
