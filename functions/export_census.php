@@ -73,6 +73,33 @@ $stmt = $pdo->prepare("
         pi.osca_id,
         pi.gsis_id,
         pi.sss_id,
+        ci.attending_school,
+        ci.school_type,
+        ci.school_name,
+        ci.grade_level,
+        ci.is_malnourished,
+        ci.immunization_complete,
+        ci.is_pantawid_beneficiary,
+        ci.has_timbang_operation,
+        ci.has_feeding_program,
+        ci.has_supplementary_feeding,
+        ci.in_caring_institution,
+        ci.is_under_foster_care,
+        ci.is_directly_entrusted,
+        ci.is_legally_adopted,
+        ci.garantisadong_pambata,
+        ci.under_six_years,
+        ci.grade_school,
+        (
+            SELECT GROUP_CONCAT(DISTINCT condition_type)
+            FROM child_health_conditions
+            WHERE person_id = p.id
+        ) as health_conditions,
+        (
+            SELECT GROUP_CONCAT(DISTINCT disability_type)
+            FROM child_disabilities
+            WHERE person_id = p.id
+        ) as disabilities,
         (
             SELECT GROUP_CONCAT(DISTINCT asset_type_id)
             FROM person_assets
@@ -266,7 +293,26 @@ $headers = [
     'Other Health Details',
     'Housing Problems',
     'Other Housing Details',
-    'Family Composition'
+    'Family Composition',
+    'Attending School',
+    'School Type',
+    'School Name',
+    'Grade Level',
+    'Is Malnourished',
+    'Immunization Complete',
+    'Is Pantawid Beneficiary',
+    'Has Timbang Operation',
+    'Has Feeding Program',
+    'Has Supplementary Feeding',
+    'In Caring Institution',
+    'Under Foster Care',
+    'Directly Entrusted',
+    'Legally Adopted',
+    'Garantisadong Pambata',
+    'Under Six Years',
+    'Grade School',
+    'Health Conditions',
+    'Disabilities'
 ];
 fputcsv($output, $headers);
 
@@ -332,7 +378,26 @@ foreach ($residents as $resident) {
         $resident['other_health_details'],
         $resident['housing_problems'],
         $resident['other_housing_details'],
-        $resident['family_composition']
+        $resident['family_composition'],
+        $resident['attending_school'] ? 'Yes' : 'No',
+        $resident['school_type'],
+        $resident['school_name'],
+        $resident['grade_level'],
+        $resident['is_malnourished'] ? 'Yes' : 'No',
+        $resident['immunization_complete'] ? 'Yes' : 'No',
+        $resident['is_pantawid_beneficiary'] ? 'Yes' : 'No',
+        $resident['has_timbang_operation'] ? 'Yes' : 'No',
+        $resident['has_feeding_program'] ? 'Yes' : 'No',
+        $resident['has_supplementary_feeding'] ? 'Yes' : 'No',
+        $resident['in_caring_institution'] ? 'Yes' : 'No',
+        $resident['is_under_foster_care'] ? 'Yes' : 'No',
+        $resident['is_directly_entrusted'] ? 'Yes' : 'No',
+        $resident['is_legally_adopted'] ? 'Yes' : 'No',
+        $resident['garantisadong_pambata'] ? 'Yes' : 'No',
+        $resident['under_six_years'] ? 'Yes' : 'No',
+        $resident['grade_school'] ? 'Yes' : 'No',
+        $resident['health_conditions'],
+        $resident['disabilities']
     ];
     
     fputcsv($output, $row);
