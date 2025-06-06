@@ -81,19 +81,7 @@ extract(captain_loadData($pdo, $bid));
             </div>
         </div>
 
-        <!-- Document Requests Management Section -->
-        <div class="bg-white rounded-lg shadow-sm mb-8">
-            <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">
-                <h2 class="text-xl font-semibold text-gray-800 flex items-center">
-                    <i class="fas fa-file-alt text-blue-600 mr-2"></i>Document Requests Reports
-                </h2>
-                <button onclick="openFinancialReportModal()" 
-                        class="bg-green-500 hover:bg-green-600 text-white px-4 py-2 rounded">
-                    <i class="fas fa-chart-line mr-2"></i>Generate Financial Report
-                </button>
-            </div>
-        </div>
-
+      
         <!-- User Management Section -->
         <div class="mt-8 bg-white rounded-lg shadow-sm">
             <div class="px-6 py-4 border-b border-gray-200 flex justify-between items-center">

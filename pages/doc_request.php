@@ -358,7 +358,7 @@ if (isset($_GET['action'])) {
                 WHERE dr.barangay_id = :bid
                   AND LOWER(dr.status) = 'pending'
                   AND (u.is_active IS NULL OR u.is_active = TRUE)
-                ORDER BY dr.request_date ASC
+                ORDER BY dr.request_date DESC
             ");
             $stmtPending->execute([':bid'=>$bid]);
             $pending = $stmtPending->fetchAll(PDO::FETCH_ASSOC);
@@ -804,7 +804,7 @@ $stmt = $pdo->prepare("
     WHERE dr.barangay_id = :bid
       AND LOWER(dr.status) IN ('pending', 'for_payment')
       AND (u.is_active IS NULL OR u.is_active = TRUE)
-    ORDER BY dr.request_date ASC
+    ORDER BY dr.request_date DESC
 ");
 $stmt->execute([':bid' => $bid]);
 $docRequests = $stmt->fetchAll();
@@ -1019,16 +1019,28 @@ $completedRequests = $stmtHist->fetchAll();
                     <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="<?= $req['document_request_id'] ?>">
                       View
                     </button>
-                    <?php if (strtolower($req['delivery_method']) === 'hardcopy'): ?>
+                    <?php
+                      $docCode = strtolower($req['document_code']);
+                      if ($docCode === 'cedula' || $docCode === 'community_tax_certificate') {
+                    ?>
+                    <button class="completeDocRequestBtn text-green-600 hover:text-green-900" data-id="<?= $req['document_request_id'] ?>">
+                      Complete
+                    </button>
+                    <?php
+                      } else {
+                        if (strtolower($req['delivery_method']) === 'hardcopy') {
+                    ?>
                     <button class="printDocRequestBtn text-green-600 hover:text-green-900" data-id="<?= $req['document_request_id'] ?>">
                       Print
                     </button>
-                    <?php endif; ?>
-                    <?php if (strtolower($req['delivery_method']) === 'softcopy'): ?>
+                    <?php } ?>
+                    <?php if (strtolower($req['delivery_method']) === 'softcopy') { ?>
                     <button class="sendDocEmailBtn text-purple-600 hover:text-purple-900" data-id="<?= $req['document_request_id'] ?>">
                       Send Email
                     </button>
-                    <?php endif; ?>
+                    <?php }
+                      } // end else not cedula
+                    ?>
                     <button class="deleteDocRequestBtn text-red-600 hover:text-red-900" data-id="<?= $req['document_request_id'] ?>">
                       Delete
                     </button>
@@ -1484,40 +1496,69 @@ $completedRequests = $stmtHist->fetchAll();
       document.querySelectorAll('.deleteDocRequestBtn').forEach(btn => {
         btn.addEventListener('click', function() {
           let requestId = this.getAttribute('data-id');
-          Swal.fire({
-            title: 'Delete Request',
-            input: 'textarea',
-            inputLabel: 'Reason for deletion (optional)',
-            inputPlaceholder: 'Enter reason for deleting this request...',
-            showCancelButton: true,
-            confirmButtonColor: '#DC2626',
-            cancelButtonColor: '#6B7280',
-            confirmButtonText: 'Yes, delete',
-            cancelButtonText: 'Cancel',
-            inputValidator: (value) => {
-              // Optional validation - you can make this required if needed
-            }
-          }).then((result) => {
-            if (result.isConfirmed) {
-              const formData = new FormData();
-              formData.append('remarks', result.value || '');
-              
-              fetch(`?action=delete&id=${requestId}`, {
-                method: 'POST',
-                body: formData
-              })
-              .then(response => response.json())
-              .then(data => {
-                if (data.success) {
-                  Swal.fire('Deleted!', data.message, 'success').then(() => {
-                    location.reload();
-                  });
-                } else {
-                  Swal.fire('Error!', data.message, 'error');
+          // Fetch residency and case status before showing delete dialog
+          fetch(`doc_request.php?action=view_doc_request&id=${requestId}`)
+            .then(response => response.json())
+            .then(data => {
+              if (data.success) {
+                const req = data.request;
+                // Calculate residency in months
+                let residencyMonths = 0;
+                if (req.birth_date) {
+                  const now = new Date();
+                  const birthDate = new Date(req.birth_date);
+                  residencyMonths = (now.getFullYear() - birthDate.getFullYear()) * 12 + (now.getMonth() - birthDate.getMonth());
                 }
-              });
-            }
-          });
+                // Assume req.case_status is available, otherwise set to 'none'
+                const caseStatus = req.case_status ? req.case_status.toLowerCase() : 'none';
+                // If residency < 6 months and case is not closed/dismissed, show warning and prevent delete
+                if (residencyMonths < 6 && !(caseStatus === 'closed' || caseStatus === 'dismissed')) {
+                  Swal.fire({
+                    icon: 'warning',
+                    title: 'Cannot Delete Request',
+                    text: 'This request cannot be deleted because the residency is less than 6 months and the case is not closed or dismissed.',
+                  });
+                  return;
+                }
+                // Otherwise, proceed with delete dialog
+                Swal.fire({
+                  title: 'Delete Request',
+                  input: 'textarea',
+                  inputLabel: 'Reason for deletion (optional)',
+                  inputPlaceholder: 'Enter reason for deleting this request...',
+                  showCancelButton: true,
+                  confirmButtonColor: '#DC2626',
+                  cancelButtonColor: '#6B7280',
+                  confirmButtonText: 'Yes, delete',
+                  cancelButtonText: 'Cancel',
+                  inputValidator: (value) => {
+                    // Optional validation - you can make this required if needed
+                  }
+                }).then((result) => {
+                  if (result.isConfirmed) {
+                    const formData = new FormData();
+                    formData.append('remarks', result.value || '');
+                    
+                    fetch(`?action=delete&id=${requestId}`, {
+                      method: 'POST',
+                      body: formData
+                    })
+                    .then(response => response.json())
+                    .then(data => {
+                      if (data.success) {
+                        Swal.fire('Deleted!', data.message, 'success').then(() => {
+                          location.reload();
+                        });
+                      } else {
+                        Swal.fire('Error!', data.message, 'error');
+                      }
+                    });
+                  }
+                });
+              } else {
+                Swal.fire('Error!', data.message, 'error');
+              }
+            });
         });
       });
 
@@ -1590,30 +1631,44 @@ $completedRequests = $stmtHist->fetchAll();
           
           const actionsCell = document.createElement('td');
           actionsCell.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium';
-          
-          // Use delivery_method to determine which buttons to display
           const deliveryMethod = (req.delivery_method || '').toLowerCase();
-          
-          actionsCell.innerHTML = `
+          const docCode = (req.document_code || '').toLowerCase();
+
+          let actionsHtml = `
             <div class="flex space-x-2">
               <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="${req.document_request_id}">
                 View
               </button>
-              ${deliveryMethod === 'hardcopy' ? `
+          `;
+          if (docCode === 'cedula' || docCode === 'community_tax_certificate') {
+            actionsHtml += `
+              <button class="completeDocRequestBtn text-green-600 hover:text-green-900" data-id="${req.document_request_id}">
+                Complete
+              </button>
+            `;
+          } else {
+            if (deliveryMethod === 'hardcopy') {
+              actionsHtml += `
               <button class="printDocRequestBtn text-green-600 hover:text-green-900" data-id="${req.document_request_id}">
                 Print
               </button>
-              ` : ''}
-              ${deliveryMethod === 'softcopy' ? `
+              `;
+            }
+            if (deliveryMethod === 'softcopy') {
+              actionsHtml += `
               <button class="sendDocEmailBtn text-purple-600 hover:text-purple-900" data-id="${req.document_request_id}">
                 Send Email
               </button>
-              ` : ''}
+              `;
+            }
+          }
+          actionsHtml += `
               <button class="deleteDocRequestBtn text-red-600 hover:text-red-900" data-id="${req.document_request_id}">
                 Delete
               </button>
             </div>
           `;
+          actionsCell.innerHTML = actionsHtml;
           
           row.appendChild(dateCell);
           row.appendChild(documentCell);

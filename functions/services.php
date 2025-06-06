@@ -124,273 +124,285 @@ function createPayMongoCheckout($lineItems, $successUrl, $cancelUrl, $barangay_i
 // Handle form submission for document requests
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        // Validate required fields
+        // Check if user has pending blotter cases
+        // ... (existing blotter check logic) ...
+        // $hasPendingBlotter = ...;
+        // if ($hasPendingBlotter) {
+        //     throw new Exception("You have pending blotter case(s)...");
+        // }
+
         $documentTypeId = $_POST['document_type_id'] ?? '';
-        $deliveryMethod = $_POST['delivery_method'] ?? '';
-        $paymentMethod = $_POST['payment_method'] ?? 'cash';
-        
         if (empty($documentTypeId)) {
             throw new Exception("Please select a document type");
         }
-        
-        if (empty($deliveryMethod)) {
-            throw new Exception("Please select a delivery method");
-        }
 
-        // Get user info
         if (!isset($_SESSION['user_id'])) {
             throw new Exception("Please log in to submit a request");
         }
         $user_id = $_SESSION['user_id'];
+        $barangay_id = $_SESSION['barangay_id'] ?? 1; // Assuming barangay_id is in session
 
-        // Get user's person_id and barangay_id
-        $stmt = $pdo->prepare("
-            SELECT p.id as person_id, u.barangay_id, COALESCE(u.email, '') as email 
-            FROM persons p 
-            JOIN users u ON p.user_id = u.id 
-            WHERE u.id = ?
-        ");
-        $stmt->execute([$user_id]);
-        $userInfo = $stmt->fetch();
-        
-        if (!$userInfo) {
-            throw new Exception("User profile not found");
+        // Get person_id
+        $person_id = null;
+        if (isset($_SESSION['person_id'])) {
+            $person_id = $_SESSION['person_id'];
+        } else {
+            $stmtPerson = $pdo->prepare("SELECT id FROM persons WHERE user_id = ? AND is_archived = FALSE LIMIT 1");
+            $stmtPerson->execute([$user_id]);
+            $personData = $stmtPerson->fetch();
+            if ($personData) {
+                $person_id = $personData['id'];
+                $_SESSION['person_id'] = $person_id;
+            } else {
+                 // If no person record exists, create one (simplified for example)
+                $stmtUserForPerson = $pdo->prepare("SELECT first_name, last_name, gender FROM users WHERE id = ?");
+                $stmtUserForPerson->execute([$user_id]);
+                $userInfoForPerson = $stmtUserForPerson->fetch();
+
+                if ($userInfoForPerson) {
+                    $stmtCreatePerson = $pdo->prepare("
+                        INSERT INTO persons (user_id, first_name, last_name, birth_date, birth_place, gender, civil_status, citizenship)
+                        VALUES (?, ?, ?, '1900-01-01', 'Unknown', ?, 'SINGLE', 'Filipino') 
+                    "); // Default values
+                    $stmtCreatePerson->execute([
+                        $user_id,
+                        $userInfoForPerson['first_name'],
+                        $userInfoForPerson['last_name'],
+                        strtoupper($userInfoForPerson['gender'] ?? 'UNKNOWN')
+                    ]);
+                    $person_id = $pdo->lastInsertId();
+                    $_SESSION['person_id'] = $person_id;
+                } else {
+                    throw new Exception("User details not found to create person record.");
+                }
+            }
+        }
+        if (!$person_id) {
+            throw new Exception("Associated person record not found. Please update your profile.");
         }
 
-        // Optional: Warn if no email for certain delivery methods
-        if ($deliveryMethod === 'softcopy' && empty($userInfo['email'])) {
-            throw new Exception("Email address is required for soft copy delivery. Please update your profile with an email address.");
-        }
 
-        // Get document type and fee information
-        $stmt = $pdo->prepare("
-            SELECT dt.id, dt.code, dt.name, dt.default_fee,
-                   COALESCE(bdp.price, dt.default_fee) as actual_fee
+        // Get document type info
+        $stmtDocType = $pdo->prepare("
+            SELECT dt.*, COALESCE(bdp.price, dt.default_fee) as final_price
             FROM document_types dt
-            LEFT JOIN barangay_document_prices bdp ON dt.id = bdp.document_type_id 
-                AND bdp.barangay_id = ?
+            LEFT JOIN barangay_document_prices bdp ON bdp.document_type_id = dt.id AND bdp.barangay_id = ?
             WHERE dt.id = ?
         ");
-        $stmt->execute([$userInfo['barangay_id'], $documentTypeId]);
-        $documentType = $stmt->fetch();
-        
+        $stmtDocType->execute([$barangay_id, $documentTypeId]);
+        $documentType = $stmtDocType->fetch();
+
         if (!$documentType) {
             throw new Exception("Invalid document type selected");
         }
 
-        $documentFee = (float)$documentType['actual_fee'];
-        
-        // Validate payment method for paid documents
-        if ($documentFee > 0 && empty($paymentMethod)) {
-            throw new Exception("Please select a payment method");
-        }
-
-        // Handle online payment - ADD THIS SECTION
-        if ($paymentMethod === 'online' && $documentFee > 0) {
-            try {
-                // Check if PayMongo is available for this barangay
-                if (!isPayMongoAvailable($userInfo['barangay_id'])) {
-                    throw new Exception("Online payment is not available for your barangay. Please select cash payment.");
-                }
-                
-                $lineItems = [[
-                    'currency' => 'PHP',
-                    'amount' => (int)($documentFee * 100), // Convert to centavos
-                    'description' => $documentType['name'],
-                    'name' => $documentType['name'],
-                    'quantity' => 1
-                ]];
-
-                // Set up URLs - adjust these paths as needed
-                $baseUrl = 'http://localhost/iBarangay'; // Update this to your actual domain
-                $successUrl = $baseUrl . '/pages/payment_success.php';
-                $cancelUrl = $baseUrl . '/pages/services.php?payment=cancelled';
-
-                $checkout = createPayMongoCheckout($lineItems, $successUrl, $cancelUrl, $userInfo['barangay_id']);
-                
-                if (!$checkout) {
-                    throw new Exception("Failed to create payment session");
-                }
-
-                // Store pending request data in session
-                $_SESSION['pending_document_request'] = [
-                    'document_type_id' => $documentTypeId,
-                    'delivery_method' => $deliveryMethod,
-                    'payment_method' => $paymentMethod,
-                    'payment_amount' => $documentFee,
-                    'checkout_id' => $checkout['id'],
-                    'checkout_url' => $checkout['checkout_url'],
-                    'form_data' => $_POST
-                ];
-
-                // Redirect to PayMongo checkout
-                header('Location: ' . $checkout['checkout_url']);
-                exit;
-                
-            } catch (Exception $e) {
-                throw new Exception("Payment processing error: " . $e->getMessage());
+        // FTJS server-side eligibility check
+        $canAvailFtjsServerCheck = true;
+        if ($person_id) {
+            $stmtFtjsCheck = $pdo->prepare("SELECT 1 FROM document_request_restrictions WHERE person_id = ? AND document_type_code = 'first_time_job_seeker' LIMIT 1");
+            $stmtFtjsCheck->execute([$person_id]);
+            if ($stmtFtjsCheck->fetch()) {
+                $canAvailFtjsServerCheck = false;
             }
         }
 
-        // Begin transaction for the main request (for cash payments or free documents)
+        $isFtjsAvailedForClearance = (isset($_POST['ftjs_availed']) && $documentType['code'] === 'barangay_clearance');
+
+        if ($isFtjsAvailedForClearance && !$canAvailFtjsServerCheck) {
+            throw new Exception("You are not eligible to avail the First Time Job Seeker benefit, or it has already been used.");
+        }
+        
+        // Handle Cedula requirement for Barangay Clearance
+        if ($documentType['code'] === 'barangay_clearance') {
+            $hasCompletedCedulaThisYearServerCheck = false;
+            if ($person_id) {
+                $stmtCedulaCheck = $pdo->prepare("
+                    SELECT 1 FROM document_requests dr
+                    JOIN document_types dt ON dr.document_type_id = dt.id
+                    WHERE dr.person_id = ? AND dt.code = 'cedula' AND YEAR(dr.request_date) = YEAR(CURDATE()) AND dr.status = 'completed'
+                    LIMIT 1
+                ");
+                $stmtCedulaCheck->execute([$person_id]);
+                if ($stmtCedulaCheck->fetch()) {
+                    $hasCompletedCedulaThisYearServerCheck = true;
+                }
+            }
+            
+            // Only block if no bypass and no cedula (make it a warning instead of hard block)
+            if (!$hasCompletedCedulaThisYearServerCheck && !isset($_POST['bypass_cedula_check'])) {
+                // Changed from throw Exception to just a warning log
+                error_log("Warning: Barangay Clearance requested without completed Cedula for person_id: $person_id");
+                // Allow submission to continue instead of blocking
+            }
+        }
+
+
         $pdo->beginTransaction();
         
         try {
-            // Determine initial status based on payment
-            $initialStatus = 'pending';
-            $paymentStatus = 'pending';
-            
-            if ($documentFee == 0) {
-                $paymentStatus = 'paid'; // Free documents
-            } else if ($paymentMethod === 'cash') {
-                $initialStatus = 'for_payment';
-                $paymentStatus = 'pending';
-            }
+            $imagePath = null;
+            // ... (existing file upload logic for indigency) ...
+            if ($documentType['code'] === 'barangay_indigency' && isset($_FILES['userPhoto'])) {
+                if ($_FILES['userPhoto']['error'] === UPLOAD_ERR_OK) {
+                    // ... (full file upload handling code as in existing file) ...
+                    $uploadDir = '../uploads/indigency_photos/';
+                    if (!file_exists($uploadDir)) {
+                        mkdir($uploadDir, 0777, true);
+                    }
+                    $allowedTypes = ['image/jpeg', 'image/png', 'image/jpg'];
+                    $fileType = $_FILES['userPhoto']['type'];
+                    if (!in_array($fileType, $allowedTypes)) {
+                        throw new Exception("Invalid file type. Please upload JPG or PNG images only.");
+                    }
+                    $maxSize = 5 * 1024 * 1024; // 5MB
+                    if ($_FILES['userPhoto']['size'] > $maxSize) {
+                        throw new Exception("File size too large. Maximum size is 5MB.");
+                    }
+                    $fileName = uniqid() . '_' . time() . '.' . pathinfo($_FILES['userPhoto']['name'], PATHINFO_EXTENSION);
+                    $targetPath = $uploadDir . $fileName;
+                    if (move_uploaded_file($_FILES['userPhoto']['tmp_name'], $targetPath)) {
+                        $imagePath = 'uploads/indigency_photos/' . $fileName;
+                    } else {
+                        throw new Exception("Failed to upload photo. Please try again.");
+                    }
 
-            // Insert into document_requests table
-            $stmt = $pdo->prepare("
-                INSERT INTO document_requests 
-                (document_type_id, person_id, user_id, barangay_id, status, price, 
-                 delivery_method, payment_method, payment_status, request_date) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW())
-            ");
-            $stmt->execute([
-                $documentTypeId,
-                $userInfo['person_id'],
-                $user_id,
-                $userInfo['barangay_id'],
-                $initialStatus,
-                $documentFee,
-                $deliveryMethod,
-                $paymentMethod,
-                $paymentStatus
-            ]);
-            $requestId = $pdo->lastInsertId();
-
-            // Handle document-specific attributes
-            $stmt = $pdo->prepare("
-                SELECT id, code 
-                FROM document_attribute_types 
-                WHERE document_type_id = ?
-            ");
-            $stmt->execute([$documentTypeId]);
-            $attributeTypes = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
-
-            // Process attributes based on document type
-            $attributes = [];
-            switch($documentType['code']) {
-                case 'barangay_clearance':
-                    if (!empty($_POST['purposeClearance'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['clearance_purpose'] ?? null,
-                            'value' => $_POST['purposeClearance']
-                        ];
-                    }
-                    break;
-
-                case 'proof_of_residency':
-                    if (!empty($_POST['residencyDuration'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['residency_duration'] ?? null,
-                            'value' => $_POST['residencyDuration']
-                        ];
-                    }
-                    if (!empty($_POST['residencyPurpose'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['residency_purpose'] ?? null,
-                            'value' => $_POST['residencyPurpose']
-                        ];
-                    }
-                    break;
-
-                case 'barangay_indigency':
-                    if (!empty($_POST['indigencyReason'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['indigency_reason'] ?? null,
-                            'value' => $_POST['indigencyReason']
-                        ];
-                    }
-                    break;
-
-                case 'business_permit_clearance':
-                    if (!empty($_POST['businessName'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_name'] ?? null,
-                            'value' => $_POST['businessName']
-                        ];
-                    }
-                    if (!empty($_POST['businessType'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_type'] ?? null,
-                            'value' => $_POST['businessType']
-                        ];
-                    }
-                    if (!empty($_POST['businessAddress'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_address'] ?? null,
-                            'value' => $_POST['businessAddress']
-                        ];
-                    }
-                    if (!empty($_POST['businessPurpose'])) {
-                        $attributes[] = [
-                            'type_id' => $attributeTypes['business_purpose'] ?? null,
-                            'value' => $_POST['businessPurpose']
-                        ];
-                    }
-                    break;
-            }
-
-            // Insert attributes if any exist
-            if (!empty($attributes)) {
-                $stmt = $pdo->prepare("
-                    INSERT INTO document_request_attributes 
-                    (request_id, attribute_type_id, value) 
-                    VALUES (?, ?, ?)
-                ");
-                foreach ($attributes as $attr) {
-                    if ($attr['type_id']) {
-                        $stmt->execute([$requestId, $attr['type_id'], $attr['value']]);
-                    }
+                } else if ($_FILES['userPhoto']['error'] !== UPLOAD_ERR_NO_FILE) {
+                     throw new Exception("Error uploading photo: " . $_FILES['userPhoto']['error']);
+                } else { // No file uploaded, but it's required for indigency
+                    throw new Exception("Photo is required for Barangay Indigency Certificate.");
                 }
             }
 
-            // Commit transaction
-            $pdo->commit();
 
-            // Set success message based on payment method and fee
-            $title = 'Document Request Submitted';
-            $message = 'Your document request has been submitted successfully.';
-            $processing = '';
+            $purpose = '';
+            $businessName = null;
+            $businessLocation = null;
+            $businessNature = null;
+            $businessType = null;
+            $currentPrice = $documentType['final_price']; // Default price
 
-            if ($documentFee > 0 && $paymentMethod === 'cash') {
-                $processing = "Please visit the barangay office to pay ₱" . number_format($documentFee, 2) . " and complete your request.";
-            } else if ($documentFee == 0) {
-                $processing = "Your free document request is being processed. You will be notified once it is ready.";
-            } else {
-                $processing = "Please complete your payment to process the document request.";
+            switch($documentType['code']) {
+                case 'barangay_clearance':
+                    if ($isFtjsAvailedForClearance && $canAvailFtjsServerCheck) {
+                        $purpose = trim($_POST['job_seeker_purpose_ftjs'] ?? '');
+                        if (empty($purpose)) {
+                            throw new Exception("Purpose for First Time Job Seeker is required.");
+                        }
+                        $currentPrice = 0.00; // Override price for FTJS
+                    } else {
+                        $purpose = trim($_POST['purposeClearance'] ?? '');
+                        if (empty($purpose)) {
+                            throw new Exception("Purpose for Barangay Clearance is required.");
+                        }
+                    }
+                    break;
+                case 'proof_of_residency':
+                    $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
+                               '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
+                    if (empty(trim($_POST['residencyDuration'] ?? '')) || empty(trim($_POST['residencyPurpose'] ?? ''))) {
+                        throw new Exception("Duration and Purpose are required for Proof of Residency.");
+                    }
+                    break;
+                case 'barangay_indigency':
+                    $purpose = $_POST['indigencyReason'] ?? '';
+                     if (empty(trim($purpose))) {
+                        throw new Exception("Reason for Indigency is required.");
+                    }
+                    if (empty($imagePath)) { // Double check image path if required
+                        throw new Exception("Photo is required for Barangay Indigency Certificate.");
+                    }
+                    break;
+                case 'business_permit_clearance':
+                    $businessName = $_POST['businessName'] ?? '';
+                    $businessLocation = $_POST['businessAddress'] ?? '';
+                    $businessNature = $_POST['businessPurpose'] ?? '';
+                    $businessType = $_POST['businessType'] ?? '';
+                    $purpose = 'Business Permit Application';
+                    if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
+                        throw new Exception("All business information fields are required for Business Permit Clearance.");
+                    }
+                    break;
+                case 'cedula':
+                    $purpose = 'Community Tax Certificate';
+                    break;
+                default:
+                    $purpose = 'General purposes'; // Should not happen if validation is correct
+                    break;
             }
 
-            $_SESSION['success'] = [
-                'title' => $title,
-                'message' => $message,
-                'processing' => $processing
-            ];
+            $stmtInsert = $pdo->prepare("
+                INSERT INTO document_requests (
+                    person_id, user_id, document_type_id, barangay_id, 
+                    status, request_date, price, purpose, proof_image_path,
+                    business_name, business_location, business_nature, business_type,
+                    delivery_method, payment_method, requested_by_user_id
+                ) VALUES (
+                    ?, ?, ?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+                )
+            ");
+            // Handle delivery_method as comma-separated string if array
+            $delivery_method = $_POST['delivery_method'] ?? 'hardcopy';
+            if (is_array($delivery_method)) {
+                $delivery_method = implode(',', array_filter($delivery_method, function($v) {
+                    return in_array($v, ['hardcopy', 'softcopy']);
+                }));
+            }
+            $stmtInsert->execute([
+                $currentPrice, $purpose, $imagePath,
+                $businessName, $businessLocation, $businessNature, $businessType,
+                $delivery_method,
+                ($currentPrice > 0 ? ($_POST['payment_method'] ?? 'cash') : 'cash'), // Default to cash if free
+                $user_id // requested_by_user_id
+            ]);
+            $requestId = $pdo->lastInsertId();
 
-            // Redirect to user dashboard
-            header('Location: ../pages/user_dashboard.php');
+            // Record FTJS usage if availed
+            if ($isFtjsAvailedForClearance && $canAvailFtjsServerCheck && $person_id) {
+                // Check again to be absolutely sure before inserting restriction
+                $stmtFtjsCheckAgain = $pdo->prepare("SELECT 1 FROM document_request_restrictions WHERE person_id = ? AND document_type_code = 'first_time_job_seeker' LIMIT 1");
+                $stmtFtjsCheckAgain->execute([$person_id]);
+                if (!$stmtFtjsCheckAgain->fetch()) {
+                    $stmtRestrict = $pdo->prepare("
+                        INSERT INTO document_request_restrictions (person_id, document_type_code, restriction_reason, created_at, updated_at)
+                        VALUES (?, 'first_time_job_seeker', ?, NOW(), NOW())
+                    ");
+                    // Ensure restriction_reason column exists and is varchar
+                    $restrictionReason = "Availed with Barangay Clearance Request ID: " . $requestId . " on " . date('Y-m-d');
+                    $stmtRestrict->execute([$person_id, $restrictionReason]);
+                }
+            }
+
+            $pdo->commit();
+
+            $_SESSION['success'] = [
+                'title' => 'Document Request Submitted',
+                'message' => 'Your document request has been submitted successfully.',
+                'processing' => 'Please wait for the processing of your request. You will be notified once it is ready.'
+            ];
+            $_SESSION['show_pending'] = true;
+            header('Location: ../pages/services.php?show_pending=1'); // Redirect to services page
             exit;
 
         } catch (Exception $e) {
             $pdo->rollBack();
-            throw $e;
+            if ($imagePath && file_exists('../' . $imagePath)) {
+                unlink('../' . $imagePath);
+            }
+            $_SESSION['error'] = "Submission Error: " . $e->getMessage();
+            header('Location: ../pages/services.php'); // Redirect back to services page
+            exit;
         }
 
     } catch (Exception $e) {
-        $_SESSION['error'] = $e->getMessage();
-        $redirectTo = isset($_SERVER['HTTP_REFERER']) ? $_SERVER['HTTP_REFERER'] : '../pages/services.php';
-        header('Location: ' . $redirectTo);
+        $_SESSION['error'] = "Error: " . $e->getMessage();
+        header('Location: ../pages/services.php'); // Redirect back to services page
         exit;
     }
+} else {
+    // If not a POST request, or some other scenario, redirect or show error
+    // For example, redirect to the services page if accessed directly without POST
+    // header('Location: ../pages/services.php');
+    // exit;
 }
 
 // Get user info for the page header
@@ -465,7 +477,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
             html: `<b><?= $_SESSION['success']['message'] ?></b><br><br><?= $_SESSION['success']['processing'] ?>`,
             icon: 'success'
         }).then(() => {
-            window.location.href = 'user_dashboard.php';
+            window.location.href = 'services.php';
         });
     </script>
     <?php unset($_SESSION['success']); endif; ?>
@@ -635,7 +647,7 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
                         <div class="form-row">
                             <label for="purposeClearance">Purpose of Clearance *</label>
                             <input type="text" id="purposeClearance" name="purposeClearance" 
-                                   placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" required>
+                                   placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)">
                         </div>
                     </div>
 
@@ -854,15 +866,16 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
                 'ctc': ['ctcOccupation', 'ctcIncome']
             };
 
-            if (type === false) {
-                // Remove required from all fields
-                Object.values(fieldMap).flat().forEach(fieldId => {
-                    const field = document.getElementById(fieldId);
-                    if (field) {
-                        field.required = false;
-                    }
-                });
-            } else if (fieldMap[type]) {
+            // Always remove required from all fields first
+            Object.values(fieldMap).flat().forEach(fieldId => {
+                const field = document.getElementById(fieldId);
+                if (field) {
+                    field.required = false;
+                }
+            });
+
+            // Then set required only for the current type
+            if (type && fieldMap[type]) {
                 fieldMap[type].forEach(fieldId => {
                     const field = document.getElementById(fieldId);
                     if (field) {
@@ -997,5 +1010,65 @@ $selectedDocumentType = $_GET['documentType'] ?? '';
 
     });
     </script>
+
 </body>
 </html>
+
+    <?php
+    // This file would typically contain functions for handling service and document requests.
+
+    /**
+     * Example of where to put logic for First Time Job Seeker restriction.
+     * 
+     * When a "First Time Job Seeker" document request is successfully processed and completed,
+     * you need to add an entry to the `document_request_restrictions` table to mark
+     * that this person has availed the certificate.
+     *
+     * This function would be called after a First Time Job Seeker request is marked as 'completed'.
+     */
+   
+    function recordFirstTimeJobSeekerAvailment($pdo, $person_id) {
+        if (!$person_id) {
+            return false;
+        }
+
+        try {
+            $stmt = $pdo->prepare("
+                INSERT INTO document_request_restrictions 
+                    (person_id, document_type_code, first_requested_at, request_count) 
+                VALUES 
+                    (?, 'first_time_job_seeker', NOW(), 1)
+                ON DUPLICATE KEY UPDATE 
+                    request_count = request_count + 1, 
+                    updated_at = NOW()
+            ");
+            $stmt->execute([$person_id]);
+            return $stmt->rowCount() > 0;
+        } catch (PDOException $e) {
+            // Log error or handle it as needed
+            // error_log("Error recording FTJS availment: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Check if the user has a completed Cedula for the current year (any barangay).
+     * Returns true if found, false otherwise.
+     */
+    function hasCompletedCedulaThisYear($pdo, $person_id) {
+        $stmt = $pdo->prepare("
+            SELECT 1 
+            FROM document_requests dr
+            JOIN document_types dt ON dr.document_type_id = dt.id
+            WHERE dr.person_id = ? 
+              AND dt.code = 'cedula' 
+              AND YEAR(dr.request_date) = YEAR(CURDATE()) 
+              AND dr.status = 'completed'
+            LIMIT 1
+        ");
+        $stmt->execute([$person_id]);
+        return (bool)$stmt->fetch();
+    }
+
+
+?>

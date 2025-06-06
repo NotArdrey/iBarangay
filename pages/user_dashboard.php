@@ -29,10 +29,10 @@ if ($user_id) {
     $stmt = null;
 }
 
-// NOW INCLUDE NAVBAR AFTER VARIABLES ARE SET
+
 require "../components/navbar.php";
 
-// Show archive notice if set
+
 if (isset($_SESSION['archive_notice'])) {
     echo '<div class="alert alert-warning alert-dismissible fade show" role="alert">
         <i class="fas fa-exclamation-triangle me-2"></i>
@@ -48,13 +48,14 @@ $emergency_contacts = [
     'bfp_contact' => null
 ];
 
-// Use the correct column names from your database schema
-$sqlLocal = "SELECT contact_number FROM barangay_settings WHERE barangay_id = ?";
+
+
+$sqlLocal = "SELECT local_barangay_contact FROM barangay_settings WHERE barangay_id = ?";
 $stmtLocal = $conn->prepare($sqlLocal);
 $stmtLocal->execute([$barangay_id]);
 $rowLocal = $stmtLocal->fetch(PDO::FETCH_ASSOC);
-$emergency_contacts['local_barangay_contact'] = $rowLocal && !empty($rowLocal['contact_number'])
-    ? $rowLocal['contact_number']
+$emergency_contacts['local_barangay_contact'] = $rowLocal && !empty($rowLocal['local_barangay_contact'])
+    ? $rowLocal['local_barangay_contact']
     : 'No Available Number';
 
 $sqlGlobal = "SELECT pnp_contact, bfp_contact FROM barangay_settings WHERE barangay_id = 0";

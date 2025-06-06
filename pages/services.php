@@ -7,8 +7,9 @@ $hasPendingRequest = false;
 $pendingRequests = [];
 $hasPendingBlotter = false;
 $pendingBlotterCases = [];
-$hasInsufficientResidency = false; // Force this to always be false
+$hasInsufficientResidency = false;
 $residencyDetails = [];
+$canRequestDocuments = true; // New flag
 if (!isset($_SESSION['barangay_id']) && isset($_SESSION['user_id'])) {
     $stmt = $pdo->prepare("SELECT barangay_id FROM users WHERE id = ?");
     $stmt->execute([$_SESSION['user_id']]);
@@ -18,6 +19,87 @@ if (!isset($_SESSION['barangay_id']) && isset($_SESSION['user_id'])) {
     }
 }
 $barangay_id = $_SESSION['barangay_id'] ?? 1;
+
+// Fetch person_id for the logged-in user
+$person_id = null;
+if (isset($_SESSION['user_id'])) {
+    if (isset($_SESSION['person_id'])) {
+        $person_id = $_SESSION['person_id'];
+    } else {
+        $stmtPerson = $pdo->prepare("SELECT id FROM persons WHERE user_id = ? AND is_archived = FALSE LIMIT 1");
+        $stmtPerson->execute([$_SESSION['user_id']]);
+        $person = $stmtPerson->fetch();
+        if ($person) {
+            $_SESSION['person_id'] = $person['id'];
+            $person_id = $person['id'];
+        }
+    }
+}
+
+
+// Check if First Time Job Seeker certificate can be availed
+$canAvailFirstTimeJobSeeker = true;
+if ($person_id) {
+    $stmtFtjs = $pdo->prepare("SELECT 1 FROM document_request_restrictions WHERE person_id = ? AND document_type_code = 'first_time_job_seeker' LIMIT 1");
+    $stmtFtjs->execute([$person_id]);
+    if ($stmtFtjs->fetch()) {
+        $canAvailFirstTimeJobSeeker = false;
+    }
+} else {
+    // If no person_id, user likely can't request documents anyway, or this is a guest view.
+    // Default to true, but JS should ideally prevent submission if no person_id for FTJS.
+    // Or, more robustly, hide FTJS if no person_id. For now, this matches existing.
+}
+
+// Check if Cedula can be availed for the current year (for requesting a new Cedula)
+$canAvailCedula = true;
+if ($person_id) {
+    $stmtCedulaAvail = $pdo->prepare("
+        SELECT 1 
+        FROM document_requests dr
+        JOIN document_types dt ON dr.document_type_id = dt.id
+        WHERE dr.person_id = ? 
+          AND dt.code = 'cedula' 
+          AND YEAR(dr.request_date) = YEAR(CURDATE()) 
+          AND dr.status = 'completed' 
+        LIMIT 1
+    ");
+    $stmtCedulaAvail->execute([$person_id]);
+    if ($stmtCedulaAvail->fetch()) {
+        $canAvailCedula = false; // Cannot request a new one if already completed this year
+    }
+}
+
+// Check if user has a completed Cedula for current year (any barangay) - for Barangay Clearance eligibility
+$hasCompletedCedulaThisYear = false;
+if ($person_id) {
+    $stmtCedulaCheck = $pdo->prepare("
+        SELECT 1 
+        FROM document_requests dr
+        JOIN document_types dt ON dr.document_type_id = dt.id
+        WHERE dr.person_id = ? 
+          AND dt.code = 'cedula' 
+          AND YEAR(dr.request_date) = YEAR(CURDATE()) 
+          AND dr.status = 'completed'
+        LIMIT 1
+    ");
+    $stmtCedulaCheck->execute([$person_id]);
+    if ($stmtCedulaCheck->fetch()) {
+        $hasCompletedCedulaThisYear = true;
+    }
+}
+
+// Prepare Barangay Clearance eligibility message based on Cedula status
+$barangayClearanceEligibilityMessage = '';
+$barangayClearanceEligible = false;
+if ($hasCompletedCedulaThisYear) {
+    $barangayClearanceEligibilityMessage = "You have a completed Cedula for the current year. You are eligible to request a Barangay Clearance.";
+    $barangayClearanceEligible = true;
+} else {
+    $barangayClearanceEligibilityMessage = "A completed Cedula for the current year is required to request a Barangay Clearance. Please obtain your Cedula first.";
+    $barangayClearanceEligible = false;
+}
+
 
 $paymongoAvailable = isPayMongoAvailable($barangay_id);
 
@@ -60,44 +142,76 @@ if (isset($_SESSION['user_id'])) {
     $pendingBlotterCases = $stmt->fetchAll(PDO::FETCH_ASSOC);
     $hasPendingBlotter = count($pendingBlotterCases) > 0;
 
-    // Still fetch residency data but don't use it for validation
-    $stmt = $pdo->prepare("
-        SELECT 
-            p.id,
-            p.first_name,
-            p.last_name,
-            p.years_of_residency,
-            a.years_in_san_rafael,
-            a.residency_type,
-            a.created_at as address_record_created,
-            CASE 
-                WHEN p.years_of_residency >= 1 THEN 'sufficient_years'
-                WHEN a.years_in_san_rafael >= 1 THEN 'sufficient_address_years'
-                WHEN TIMESTAMPDIFF(MONTH, a.created_at, NOW()) >= 6 THEN 'sufficient_record_age'
-                ELSE 'sufficient_record_age' /* Changed to always pass validation */
-            END as residency_status,
-            CASE 
-                WHEN p.years_of_residency >= 1 THEN p.years_of_residency
-                WHEN a.years_in_san_rafael >= 1 THEN a.years_in_san_rafael
-                ELSE TIMESTAMPDIFF(MONTH, a.created_at, NOW())
-            END as computed_months
-        FROM persons p
-        LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
-        WHERE p.user_id = ? AND a.barangay_id = ?
-    ");
-    $stmt->execute([$_SESSION['user_id'], $barangay_id]);
-    $residencyDetails = $stmt->fetch(PDO::FETCH_ASSOC);
-    
-    if ($residencyDetails) {
-        $hasInsufficientResidency = false; // Always set to false to bypass validation
-    } else {
-        // No person/address record found - but we'll still allow submissions
-        $hasInsufficientResidency = false;
-        $residencyDetails = [
-            'residency_status' => 'sufficient_record_age', // Changed to pass validation
-            'computed_months' => 6 // Set to minimum required months
-        ];
+    // Residency check: must have at least 6 months residency
+    if (isset($_SESSION['user_id'])) {
+        // Still fetch residency data but don't use it for validation
+        $stmt = $pdo->prepare("
+            SELECT 
+                p.id,
+                p.first_name,
+                p.last_name,
+                p.years_of_residency,
+                a.years_in_san_rafael,
+                a.residency_type,
+                a.created_at as address_record_created,
+                CASE 
+                    WHEN p.years_of_residency >= 1 THEN 'sufficient_years'
+                    WHEN a.years_in_san_rafael >= 1 THEN 'sufficient_address_years'
+                    WHEN TIMESTAMPDIFF(MONTH, a.created_at, NOW()) >= 6 THEN 'sufficient_record_age'
+                    ELSE 'insufficient'
+                END as residency_status,
+                CASE 
+                    WHEN p.years_of_residency >= 1 THEN p.years_of_residency * 12
+                    WHEN a.years_in_san_rafael >= 1 THEN a.years_in_san_rafael * 12
+                    ELSE TIMESTAMPDIFF(MONTH, a.created_at, NOW())
+                END as computed_months
+            FROM persons p
+            LEFT JOIN addresses a ON p.id = a.person_id AND a.is_primary = TRUE
+            WHERE p.user_id = ? AND a.barangay_id = ?
+        ");
+        $stmt->execute([$_SESSION['user_id'], $barangay_id]);
+        $residencyDetails = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if ($residencyDetails) {
+            $months = (int)$residencyDetails['computed_months'];
+            if ($months < 6) {
+                $hasInsufficientResidency = true;
+                $canRequestDocuments = false;
+            }
+        } else {
+            $hasInsufficientResidency = true;
+            $canRequestDocuments = false;
+        }
     }
+
+    // Blotter check: allow only if all cases are closed or dismissed
+    $hasActiveBlotter = false;
+    $activeBlotterCases = [];
+    if (isset($_SESSION['user_id'])) {
+        $stmt = $pdo->prepare("
+            SELECT bc.id, bc.case_number, bc.status, b.name as barangay_name, bc.description,
+                   bc.incident_date, bp.role
+            FROM blotter_cases bc
+            JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+            JOIN persons p ON bp.person_id = p.id
+            JOIN barangay b ON bc.barangay_id = b.id
+            WHERE p.user_id = ?
+        ");
+        $stmt->execute([$_SESSION['user_id']]);
+        $allBlotterCases = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        foreach ($allBlotterCases as $case) {
+            if (!in_array(strtolower($case['status']), ['closed', 'dismissed'])) {
+                $hasActiveBlotter = true;
+                $activeBlotterCases[] = $case;
+            }
+        }
+        if ($hasActiveBlotter) {
+            $canRequestDocuments = false;
+        }
+    }
+
+    // Still show the form and pending requests section, but indicate restrictions
 }
 
 // Handle form submission for document requests - UPDATED VERSION
@@ -125,10 +239,12 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
         */
 
-        // Check if user has pending requests
+        // Check if user has pending requests - REMOVED THIS CHECK
+        /*
         if ($hasPendingRequest && !isset($_POST['override_pending'])) {
             throw new Exception("You have pending document requests. Please wait for them to be processed before submitting new requests.");
         }
+        */
 
         // Validate required fields
         $documentTypeId = $_POST['document_type_id'] ?? '';
@@ -171,6 +287,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             ]);
             $person_id = $pdo->lastInsertId();
         }
+
+        // --- FTJS LOGIC START ---
+        $ftjsAvailed = isset($_POST['ftjs_availed']) && $_POST['ftjs_availed'] === 'on';
+        $jobSeekerPurposeFtjs = trim($_POST['job_seeker_purpose_ftjs'] ?? '');
+
+        // If FTJS is checked and document type is barangay_clearance, treat as first_time_job_seeker
+        $isBarangayClearance = false;
+        $isFTJS = false;
+        $originalDocumentTypeId = $documentTypeId;
+        $ftjsDocumentTypeId = null;
+
+        if ($ftjsAvailed) {
+            // Get the document_type_id for 'first_time_job_seeker'
+            $stmt = $pdo->prepare("SELECT id FROM document_types WHERE code = 'first_time_job_seeker' LIMIT 1");
+            $stmt->execute();
+            $ftjsType = $stmt->fetch();
+            if (!$ftjsType) {
+                throw new Exception("First Time Job Seeker document type not found.");
+            }
+            $ftjsDocumentTypeId = $ftjsType['id'];
+
+            // Only allow FTJS if selected document is barangay_clearance
+            $stmt = $pdo->prepare("SELECT code FROM document_types WHERE id = ?");
+            $stmt->execute([$documentTypeId]);
+            $selectedDoc = $stmt->fetch();
+            if ($selectedDoc && $selectedDoc['code'] === 'barangay_clearance') {
+                $isBarangayClearance = true;
+                $isFTJS = true;
+                $documentTypeId = $ftjsDocumentTypeId;
+            }
+        }
+        // --- FTJS LOGIC END ---
 
         // Get document type info for determining price and validation
         $stmt = $pdo->prepare("
@@ -264,44 +412,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $businessType = null;
 
             // Set document-specific values
-            switch($documentType['code']) {
-                case 'barangay_clearance':
-                    $purpose = $_POST['purposeClearance'] ?? '';
-                    break;
-
-                case 'proof_of_residency':
-                    $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
-                               '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
-                    break;
-
-                case 'barangay_indigency':
-                    $purpose = $_POST['indigencyReason'] ?? '';
-                    break;
-
-                case 'business_permit_clearance':
-                    $businessName = $_POST['businessName'] ?? '';
-                    $businessLocation = $_POST['businessAddress'] ?? '';
-                    $businessNature = $_POST['businessPurpose'] ?? '';
-                    $businessType = $_POST['businessType'] ?? '';
-                    $purpose = 'Business Permit Application';
-                    
-                    // Validate required business fields
-                    if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
-                        throw new Exception("All business information fields are required for Business Permit Clearance.");
-                    }
-                    break;
-
-                case 'first_time_job_seeker':
-                    $purpose = $_POST['jobSeekerPurpose'] ?? '';
-                    break;
-
-                case 'cedula':
-                    $purpose = 'Community Tax Certificate';
-                    break;
-
-                default:
-                    $purpose = 'General purposes';
-                    break;
+            if ($isFTJS) {
+                // FTJS: Use FTJS purpose, price is always 0
+                $purpose = $jobSeekerPurposeFtjs;
+                $finalPrice = 0;
+            } else {
+                switch($documentType['code']) {
+                    case 'barangay_clearance':
+                        $purpose = $_POST['purposeClearance'] ?? '';
+                        $finalPrice = $documentType['final_price'];
+                        break;
+                    case 'proof_of_residency':
+                        $purpose = 'Duration: ' . ($_POST['residencyDuration'] ?? '') . 
+                                   '; Purpose: ' . ($_POST['residencyPurpose'] ?? '');
+                        $finalPrice = $documentType['final_price'];
+                        break;
+                    case 'barangay_indigency':
+                        $purpose = $_POST['indigencyReason'] ?? '';
+                        $finalPrice = $documentType['final_price'];
+                        break;
+                    case 'business_permit_clearance':
+                        $businessName = $_POST['businessName'] ?? '';
+                        $businessLocation = $_POST['businessAddress'] ?? '';
+                        $businessNature = $_POST['businessPurpose'] ?? '';
+                        $businessType = $_POST['businessType'] ?? '';
+                        $purpose = 'Business Permit Application';
+                        $finalPrice = $documentType['final_price'];
+                        
+                        // Validate required business fields
+                        if (empty($businessName) || empty($businessLocation) || empty($businessNature) || empty($businessType)) {
+                            throw new Exception("All business information fields are required for Business Permit Clearance.");
+                        }
+                        break;
+                    case 'first_time_job_seeker':
+                        $purpose = $_POST['jobSeekerPurpose'] ?? '';
+                        $finalPrice = 0;
+                        break;
+                    case 'cedula':
+                        $purpose = 'Community Tax Certificate';
+                        $finalPrice = $documentType['final_price'];
+                        break;
+                    default:
+                        $purpose = 'General purposes';
+                        $finalPrice = $documentType['final_price'];
+                        break;
+                }
             }
 
             // Execute the insert
@@ -311,14 +466,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $documentTypeId,
                 $barangay_id,
                 $user_id,
-                $documentType['final_price'],
+                $isFTJS ? 0 : $finalPrice, // Price is 0 for FTJS
                 $purpose,
                 $imagePath,
                 $businessName,
                 $businessLocation,
                 $businessNature,
                 $businessType,
-                $_POST['delivery_method'],
+                implode(',', $_POST['delivery_method'] ?? []), // Handle multiple delivery methods
                 isset($_POST['proceed_to_payment']) ? 'online' : ($_POST['payment_method'] ?? 'cash')
             ]);
 
@@ -896,6 +1051,24 @@ require_once '../components/navbar.php';
     .camera-popup .swal2-html-container {
         margin: 1rem 0 !important;
     }
+
+    /* Style for Cedula eligibility message */
+    .cedula-eligibility-notice {
+        padding: 0.75rem 1.25rem;
+        margin-bottom: 1rem;
+        border: 1px solid transparent;
+        border-radius: 0.25rem;
+    }
+    .cedula-eligible {
+        color: #155724;
+        background-color: #d4edda;
+        border-color: #c3e6cb;
+    }
+    .cedula-ineligible {
+        color: #721c24;
+        background-color: #f8d7da;
+        border-color: #f5c6cb;
+    }
     </style>
 </head>
 <body>
@@ -920,35 +1093,42 @@ require_once '../components/navbar.php';
     <?php unset($_SESSION['error']); endif; ?>
 
     <main>
-        <?php if ($showPending && count($pendingRequests) > 0): ?>
-        <section class="pending-requests-section">
+        <?php if (!$canRequestDocuments): ?>
+        <section class="wizard-section">
             <div class="wizard-container">
-                <div class="pending-requests-header">
-                    <h3><i class="fas fa-clock"></i> Your Pending Document Requests</h3>
-                    <a href="<?= $_SERVER['PHP_SELF'] ?>" class="new-request-btn">
-                        <i class="fas fa-plus"></i> New Request
-                    </a>
-                </div>
-                
-                <?php foreach ($pendingRequests as $request): ?>
-                <div class="request-card">
-                    <div class="request-header">
-                        <div class="request-title"><?= htmlspecialchars($request['document_name']) ?></div>
-                        <span class="request-status status-<?= $request['status'] ?>">
-                            <?= ucfirst(str_replace('_', ' ', $request['status'])) ?>
-                        </span>
+                <h2 class="form-header">Document Request</h2>
+                <?php if ($hasInsufficientResidency): ?>
+                    <div class="residency-warning">
+                        <h4><i class="fas fa-home"></i> Residency Requirement Not Met</h4>
+                        <p>
+                            You must be a resident of the barangay for at least <strong>6 months</strong> to request documents.<br>
+                            <?php if ($residencyDetails): ?>
+                                Current residency period: <strong><?= (int)$residencyDetails['computed_months'] ?> month(s)</strong>
+                            <?php else: ?>
+                                No residency record found.
+                            <?php endif; ?>
+                        </p>
+                        <p>
+                            Please contact the barangay office to update your residency information if you believe this is incorrect.
+                        </p>
                     </div>
-                    <div class="request-details">
-                        Request ID: #<?= str_pad($request['id'], 6, '0', STR_PAD_LEFT) ?>
-                        <?php if ($request['price'] > 0): ?>
-                            <br>Fee: ₱<?= number_format($request['price'], 2) ?>
-                        <?php endif; ?>
+                <?php endif; ?>
+                <?php if ($hasActiveBlotter): ?>
+                    <div class="blotter-warning">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p><strong>Document Request Restricted</strong></p>
+                        <p>You currently have active blotter case(s) (not closed or dismissed):</p>
+                        <ul>
+                            <?php foreach ($activeBlotterCases as $case): ?>
+                            <li>Case #<?= htmlspecialchars($case['case_number']) ?> in <?= htmlspecialchars($case['barangay_name']) ?>
+                                <br>
+                                <small>Status: <?= ucfirst($case['status']) ?> | Role: <?= ucfirst($case['role']) ?></small>
+                            </li>
+                            <?php endforeach; ?>
+                        </ul>
+                        <p>Document requests are not allowed until your case(s) are closed or dismissed.</p>
                     </div>
-                    <div class="request-date">
-                        Submitted on: <?= date('F d, Y - h:i A', strtotime($request['created_at'])) ?>
-                    </div>
-                </div>
-                <?php endforeach; ?>
+                <?php endif; ?>
             </div>
         </section>
         <?php else: ?>
@@ -998,20 +1178,19 @@ require_once '../components/navbar.php';
                 </div>
                 <?php endif; */ ?>
                 
-                <form method="POST" action="../functions/services.php"" enctype="multipart/form-data"  id="docRequestForm">
+                <form method="POST" action="../functions/services.php" enctype="multipart/form-data" id="docRequestForm">
                     <div class="form-row">
                         <label for="documentType">Document Type</label>
                         <select id="documentType" name="document_type_id" required <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                             <option value="">Select Document</option>
                             <?php
-                            // Always show all 6 supported documents in the correct order
+                            // Always show all 5 supported documents in the correct order (FTJS is now a checkbox)
                             $requiredDocs = [
                                 'barangay_clearance',
                                 'barangay_indigency',
                                 'business_permit_clearance',
                                 'cedula',
-                                'proof_of_residency',
-                                'first_time_job_seeker'
+                                'proof_of_residency'
                             ];
                             // Build a map for quick lookup
                             $docMap = [];
@@ -1032,6 +1211,26 @@ require_once '../components/navbar.php';
                         </select>
                     </div>
 
+                    <!-- Cedula Eligibility Notice for Barangay Clearance -->
+                    <div id="cedulaEligibilityNotice" class="cedula-eligibility-notice" style="display: none;">
+                        <?= htmlspecialchars($barangayClearanceEligibilityMessage) ?>
+                    </div>
+
+                    <!-- FTJS Checkbox Row - Initially Hidden, shown for Barangay Clearance if eligible -->
+                    <div class="form-row" id="ftjsCheckboxRow" style="display: none;">
+                        <div style="display: flex; align-items: center;">
+                            <input type="checkbox" id="ftjsCheckbox" name="ftjs_availed" style="width: auto; margin-right: 10px;">
+                            <label for="ftjsCheckbox" style="margin-bottom: 0; font-weight: normal;">Avail as First Time Job Seeker (RA 11261) - Free Barangay Clearance</label>
+                        </div>
+                        <small class="input-help">Checking this will make the Barangay Clearance free. This benefit can only be availed once.</small>
+                    </div>
+
+                    <!-- FTJS Purpose - Initially Hidden, shown if FTJS checkbox is checked -->
+                    <div class="form-row" id="ftjsPurposeContainer" style="display: none;">
+                        <label for="jobSeekerPurposeFtjs">Purpose for First Time Job Seeker <span style="color: red;">*</span></label>
+                        <input type="text" id="jobSeekerPurposeFtjs" name="job_seeker_purpose_ftjs" placeholder="Enter where you will use this certificate (e.g., Company name, Job application)" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                    </div>
+
                     <!-- Document price/fee label -->
                     <div class="form-row">
                         <label>Document Fee:</label>
@@ -1039,14 +1238,13 @@ require_once '../components/navbar.php';
                     </div>
 
                     <!-- Delivery Method Selection -->
-                    <div class="form-row">
-                        <label for="deliveryMethod">Delivery Method *</label>
-                        <select id="deliveryMethod" name="delivery_method" required <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
-                            <option value="">Select Delivery Method</option>
-                            <option value="hardcopy">Hard Copy (Physical Document with Official Seal)</option>
-                            <option value="softcopy">Soft Copy (Digital Document without Seal)</option>
-                        </select>
-                        <small class="input-help">Hard copy requires pickup at barangay office. Soft copy will be emailed.</small>
+                    <div class="form-row" id="deliveryMethodRow">
+                        <label for="deliveryMethod">Delivery Method <span style="color: red">*</span></label>
+                        <div>
+                            <label><input type="checkbox" name="delivery_method[]" value="hardcopy" id="deliveryHardcopy"> Hardcopy</label>
+                            <label style="margin-left:1rem;"><input type="checkbox" name="delivery_method[]" value="softcopy" id="deliverySoftcopy"> Softcopy</label>
+                        </div>
+                        <span class="input-help">You may select one or both delivery options.</span>
                     </div>
 
                     <!-- Payment Method Selection -->
@@ -1073,19 +1271,18 @@ require_once '../components/navbar.php';
                         <p id="paymentInfoText">Select payment method to see details</p>
                     </div>
 
-                    <!-- First Time Job Seeker Warning (hidden by default) -->
+                    <!-- First Time Job Seeker Warning (General - can be kept or removed if checkbox help text is enough) -->
                     <div id="firstTimeJobSeekerWarning" class="first-time-job-seeker-warning" style="display: none;">
                         <i class="fas fa-info-circle"></i>
                         <div>
-                            <strong>Important:</strong> First Time Job Seeker certificates can only be requested once per person. 
-                            This is to comply with government regulations regarding first-time employment certifications.
+                            <strong>Important:</strong> First Time Job Seeker status (for free Barangay Clearance) can only be availed once.
                         </div>
                     </div>
 
-                    <!-- Document-specific fields for the 6 document types -->
+                    <!-- Document-specific fields -->
                     <div id="clearanceFields" class="document-fields" style="display: none;">
                         <div class="form-row">
-                            <label for="purposeClearance">Purpose of Clearance</label>
+                            <label for="purposeClearance">Purpose of Clearance <span id="purposeClearanceRequiredAst" style="color: red;">*</span></label>
                             <input type="text" id="purposeClearance" name="purposeClearance" placeholder="Enter purpose (e.g., Employment, Business Permit, etc.)" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
@@ -1152,7 +1349,7 @@ require_once '../components/navbar.php';
                         </div>
                         <div class="form-row">
                             <label for="businessAddress">Business Location/Address <span style="color: red;">*</span></label>
-                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="businessAddress" name="businessAddress" placeholder="Enter complete business address" <?= ($hasPendingBllotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessPurpose">Nature of Business <span style="color: red;">*</span></label>
@@ -1161,16 +1358,18 @@ require_once '../components/navbar.php';
                         </div>
                     </div>
 
+                    <?php /* Remove this as FTJS is now a checkbox for Barangay Clearance
                     <div id="firstTimeJobSeekerFields" class="document-fields" style="display: none;">
                         <div class="form-row">
                             <label for="jobSeekerPurpose">Purpose/Institution</label>
                             <input type="text" id="jobSeekerPurpose" name="jobSeekerPurpose" placeholder="Enter where you will use this certificate (e.g., Company name, Job application, etc.)" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                     </div>
+                    */ ?>
 
-                    <?php if ($hasPendingRequest): ?>
+                    <?php /* if ($hasPendingRequest): ?> // This was already commented out
                     <input type="hidden" name="override_pending" value="1">
-                    <?php endif; ?>
+                    <?php endif; */ ?>
 
                     <button type="submit" class="btn cta-button" id="submitBtn" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         <?php if (!$isWithinTimeGate): ?>
@@ -1192,7 +1391,10 @@ require_once '../components/navbar.php';
     <script>
     var barangayPrices = <?= json_encode($barangayPrices, JSON_NUMERIC_CHECK) ?>;
     var paymongoAvailable = <?= $paymongoAvailable ? 'true' : 'false' ?>;
-    console.log("PayMongo available:", paymongoAvailable); // Debug output in browser console
+
+    var canAvailFirstTimeJobSeekerJS = <?= json_encode($canAvailFirstTimeJobSeeker) ?>;
+    var hasCompletedCedulaThisYearJS = <?= json_encode($hasCompletedCedulaThisYear) ?>;
+    var barangayClearanceEligibleJS = <?= json_encode($barangayClearanceEligible) ?>;
 
     var hasInsufficientResidencyJS = false; // Always set to false to bypass validation
     var hasPendingBlotterJS = <?= json_encode($hasPendingBlotter) ?>;
@@ -1332,14 +1534,29 @@ require_once '../components/navbar.php';
 
     document.addEventListener('DOMContentLoaded', function() {
         const documentTypeSelect = document.getElementById('documentType');
+        const deliveryMethodSelect = document.getElementById('deliveryMethod');
         const feeAmountElement = document.getElementById('feeAmount');
+        
         const clearanceFields = document.getElementById('clearanceFields');
+        const purposeClearanceInput = document.getElementById('purposeClearance'); // Get the standard clearance purpose input
+        const purposeClearanceRequiredAst = document.getElementById('purposeClearanceRequiredAst');
+
         const residencyFields = document.getElementById('residencyFields');
         const indigencyFields = document.getElementById('indigencyFields');
         const cedulaFields = document.getElementById('cedulaFields');
         const businessPermitFields = document.getElementById('businessPermitFields');
-        const firstTimeJobSeekerFields = document.getElementById('firstTimeJobSeekerFields');
-        const firstTimeJobSeekerWarning = document.getElementById('firstTimeJobSeekerWarning');
+        // const firstTimeJobSeekerFields = document.getElementById('firstTimeJobSeekerFields'); // This is removed
+
+        const firstTimeJobSeekerWarning = document.getElementById('firstTimeJobSeekerWarning'); 
+        
+        // FTJS elements for Barangay Clearance
+        const ftjsCheckboxRow = document.getElementById('ftjsCheckboxRow');
+        const ftjsCheckbox = document.getElementById('ftjsCheckbox');
+        const ftjsPurposeContainer = document.getElementById('ftjsPurposeContainer');
+        const jobSeekerPurposeFtjsInput = document.getElementById('jobSeekerPurposeFtjs');
+        
+        const cedulaEligibilityNoticeDiv = document.getElementById('cedulaEligibilityNotice');
+        
         const form = document.getElementById('docRequestForm');
         const submitBtn = document.getElementById('submitBtn');
         const userPhotoInput = document.getElementById('userPhoto');
@@ -1403,83 +1620,211 @@ require_once '../components/navbar.php';
                 field.style.display = 'none';
             });
             
-            // Hide first time job seeker warning
-            if (firstTimeJobSeekerWarning) {
+            if (firstTimeJobSeekerWarning) { 
                 firstTimeJobSeekerWarning.style.display = 'none';
             }
+
+            // Hide FTJS checkbox and purpose field for Barangay Clearance
+            if (ftjsCheckboxRow) ftjsCheckboxRow.style.display = 'none';
+            if (ftjsCheckbox) ftjsCheckbox.checked = false; // Uncheck it
+            if (ftjsPurposeContainer) ftjsPurposeContainer.style.display = 'none';
+            if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = false;
+            if (purposeClearanceInput) purposeClearanceInput.required = false; // Make standard purpose not required initially
+            if (purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'inline';
+
+
+            if (cedulaEligibilityNoticeDiv) cedulaEligibilityNoticeDiv.style.display = 'none';
             
-            // Remove required attribute from ALL form inputs
             const allInputs = document.querySelectorAll('#docRequestForm input[type="text"], #docRequestForm input[type="number"], #docRequestForm input[type="file"]');
             allInputs.forEach(input => {
-                input.required = false;
+                // General reset, specific requirements are set later
+                if(input.id !== 'jobSeekerPurposeFtjs' && input.id !== 'purposeClearance') {
+                    input.required = false;
+                }
             });
-            
-            // Reset photo upload
             removePhoto();
         }
 
         function updateRequiredFields(type, required) {
             const fieldMap = {
-                'clearance': ['purposeClearance'],
+                // 'clearance': ['purposeClearance'], // purposeClearance handled by ftjsCheckbox logic now
                 'residency': ['residencyDuration', 'residencyPurpose'],
                 'indigency': ['indigencyReason'],
                 'business': ['businessName', 'businessType', 'businessAddress', 'businessPurpose'],
-                'first_time_job_seeker': ['jobSeekerPurpose']
+                // 'first_time_job_seeker': ['jobSeekerPurpose'] // This is removed
             };
 
-            if (type === false) {
-                // Remove required from all fields
+            if (type === false) { // Called by hideAllDocumentFields
                 Object.values(fieldMap).flat().forEach(fieldId => {
                     const field = document.getElementById(fieldId);
-                    if (field) {
-                        field.required = false;
-                    }
+                    if (field) field.required = false;
                 });
-                // Also remove required from delivery and payment
+                if (purposeClearanceInput) purposeClearanceInput.required = false;
+                if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = false;
+
                 const deliveryMethod = document.getElementById('deliveryMethod');
                 const paymentMethod = document.getElementById('paymentMethod');
                 if (deliveryMethod) deliveryMethod.required = false;
                 if (paymentMethod) paymentMethod.required = false;
+
             } else if (fieldMap[type]) {
                 fieldMap[type].forEach(fieldId => {
                     const field = document.getElementById(fieldId);
-                    if (field) {
-                        field.required = required;
-                    }
+                    if (field) field.required = required;
                 });
+            }
+        }
+
+        function updateFeeDisplay() {
+            var selected = documentTypeSelect.options[documentTypeSelect.selectedIndex];
+            var code = selected ? selected.dataset.code : '';
+            var fee = 0;
+
+            if (code && barangayPrices[code] !== undefined) {
+                fee = parseFloat(barangayPrices[code]) || 0;
+            }
+
+            // If FTJS is checked for Barangay Clearance and user is eligible, fee is 0
+            if (ftjsCheckbox && ftjsCheckbox.checked && code === 'barangay_clearance' && canAvailFirstTimeJobSeekerJS) {
+                fee = 0;
+            }
+
+            if (feeAmountElement) {
+                feeAmountElement.textContent = fee > 0 ? `₱${fee.toFixed(2)}` : 'Free';
+            }
+            
+            var paymentMethodRow = document.getElementById('paymentMethodRow');
+            var paymentMethodSelect = document.getElementById('paymentMethod'); // Renamed for clarity
+            if (paymentMethodRow && paymentMethodSelect) {
+                if (fee > 0) {
+                    paymentMethodRow.style.display = 'block';
+                    paymentMethodSelect.required = true;
+                } else {
+                    paymentMethodRow.style.display = 'none';
+                    paymentMethodSelect.required = false;
+                    paymentMethodSelect.value = 'cash'; // Default for free documents
+                }
             }
         }
 
         if (documentTypeSelect) {
             documentTypeSelect.addEventListener('change', function() {
-            const selectedOption = this.options[this.selectedIndex];
-            const documentCode = selectedOption.dataset.code || '';
-            
-            // Fix fee calculation
-            let fee = 0;
-            if (documentCode && barangayPrices[documentCode] !== undefined) {
-                fee = parseFloat(barangayPrices[documentCode]) || 0;
-            }
-            
-            if (feeAmountElement) {
-                feeAmountElement.textContent = fee > 0 ? `₱${fee.toFixed(2)}` : 'Free';
-            }
-            
-            // Show/hide payment method based on fee
-            const paymentMethodRow = document.getElementById('paymentMethodRow');
-            const paymentMethod = document.getElementById('paymentMethod');
-            
-            if (fee > 0) {
-                if (paymentMethodRow) paymentMethodRow.style.display = 'block';
-                if (paymentMethod) paymentMethod.required = true;
-            } else {
-                if (paymentMethodRow) paymentMethodRow.style.display = 'none';
-                if (paymentMethod) {
-                    paymentMethod.required = false;
-                    paymentMethod.value = 'cash'; // Default for free documents
+                const selectedOption = this.options[this.selectedIndex];
+                const documentCode = selectedOption.dataset.code || '';
+                
+                hideAllDocumentFields(); 
+                updateRequiredFields(false); // Reset all field requirements
+
+                // Handle FTJS checkbox visibility for Barangay Clearance
+                if (documentCode === 'barangay_clearance' && canAvailFirstTimeJobSeekerJS) {
+                    if (ftjsCheckboxRow) ftjsCheckboxRow.style.display = 'block';
+                    // If FTJS not available, general warning might be useful
+                    if (firstTimeJobSeekerWarning && !canAvailFirstTimeJobSeekerJS) {
+                        // firstTimeJobSeekerWarning.style.display = 'block'; // Optional: show general warning if FTJS not available
+                    }
+                } else {
+                    if (ftjsCheckboxRow) ftjsCheckboxRow.style.display = 'none';
+                    if (ftjsCheckbox) ftjsCheckbox.checked = false; // Ensure it's unchecked
+                    if (ftjsPurposeContainer) ftjsPurposeContainer.style.display = 'none';
+                    if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = false;
                 }
-            }
-        });
+                // Trigger change on ftjsCheckbox to correctly set initial purpose field requirements for clearance
+                if (ftjsCheckbox) ftjsCheckbox.dispatchEvent(new Event('change'));
+
+
+                if (cedulaEligibilityNoticeDiv) {
+                    if (documentCode === 'barangay_clearance') {
+                        cedulaEligibilityNoticeDiv.style.display = 'block';
+                        cedulaEligibilityNoticeDiv.textContent = barangayClearanceEligibleJS ? 
+                            "You have a completed Cedula for the current year. You are eligible to request a Barangay Clearance." :
+                            "A completed Cedula for the current year is required to request a Barangay Clearance. Please obtain your Cedula first.";
+                        cedulaEligibilityNoticeDiv.className = barangayClearanceEligibleJS ?
+                            'cedula-eligibility-notice cedula-eligible' : 
+                            'cedula-eligibility-notice cedula-ineligible';
+                    }
+                }
+                
+                switch(documentCode) {
+                    case 'barangay_clearance':
+                        if (clearanceFields) clearanceFields.style.display = 'block';
+                        // Requirement for purposeClearanceInput is handled by ftjsCheckbox logic
+                        // Initially, if FTJS is not checked, purposeClearanceInput should be required.
+                        if (purposeClearanceInput && ftjsCheckbox && !ftjsCheckbox.checked) {
+                             purposeClearanceInput.required = true;
+                             if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'inline';
+                        } else if (purposeClearanceInput) {
+                             purposeClearanceInput.required = false;
+                             if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'none';
+                        }
+                        break;
+                    case 'proof_of_residency':
+                        if (residencyFields) residencyFields.style.display = 'block';
+                        updateRequiredFields('residency', true);
+                        break;
+                    case 'barangay_indigency':
+                        if (indigencyFields) indigencyFields.style.display = 'block';
+                        updateRequiredFields('indigency', true);
+                        if (userPhotoInput) userPhotoInput.required = true;
+                        break;
+                    case 'business_permit_clearance':
+                        if (businessPermitFields) businessPermitFields.style.display = 'block';
+                        updateRequiredFields('business', true);
+                        break;
+                    case 'cedula':
+                        if (cedulaFields) cedulaFields.style.display = 'block';
+                        break;
+                    default:
+                        // No specific fields for other types or if none selected
+                        break;
+                }
+                
+                if (deliveryMethodSelect) {
+                    if (documentCode === 'cedula' || documentCode === 'community_tax_certificate') {
+                        Array.from(deliveryMethodSelect.options).forEach(opt => {
+                            if (opt.value.toLowerCase() === 'softcopy') {
+                                opt.disabled = true;
+                                opt.style.display = 'none';
+                            }
+                            if (opt.value.toLowerCase() === 'hardcopy') {
+                                opt.disabled = false;
+                                opt.style.display = '';
+                            }
+                        });
+                        deliveryMethodSelect.value = 'hardcopy';
+                    } else {
+                        Array.from(deliveryMethodSelect.options).forEach(opt => {
+                            opt.disabled = false;
+                            opt.style.display = '';
+                        });
+                    }
+                }
+                updateFeeDisplay();
+            });
+        }
+
+        if (ftjsCheckbox) {
+            ftjsCheckbox.addEventListener('change', function() {
+                const isBarangayClearanceSelected = documentTypeSelect.options[documentTypeSelect.selectedIndex]?.dataset.code === 'barangay_clearance';
+                if (this.checked && isBarangayClearanceSelected && canAvailFirstTimeJobSeekerJS) {
+                    if (ftjsPurposeContainer) ftjsPurposeContainer.style.display = 'block';
+                    if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = true;
+                    if (purposeClearanceInput) purposeClearanceInput.required = false; // Standard purpose not required if FTJS
+                    if (purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'none';
+
+                } else {
+                    if (ftjsPurposeContainer) ftjsPurposeContainer.style.display = 'none';
+                    if (jobSeekerPurposeFtjsInput) jobSeekerPurposeFtjsInput.required = false;
+                    // If barangay clearance is selected and FTJS is unchecked, standard purpose is required
+                    if (purposeClearanceInput && isBarangayClearanceSelected) {
+                         purposeClearanceInput.required = true;
+                         if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'inline';
+                    } else if (purposeClearanceInput) {
+                         purposeClearanceInput.required = false; // Not required if not barangay clearance
+                         if(purposeClearanceRequiredAst) purposeClearanceRequiredAst.style.display = 'none';
+                    }
+                }
+                updateFeeDisplay();
+            });
         }
 
         // Handle payment method change
@@ -1521,74 +1866,152 @@ require_once '../components/navbar.php';
         // Form submission handler
         if (form && submitBtn) {
             form.addEventListener('submit', function(e) {
-    if (!form.checkValidity()) {
-        form.reportValidity();
-        return; // Don't prevent default if form is invalid
-    }
+                // First check basic validation requirements
+                if (hasPendingBlotterJS || !isWithinTimeGateJS) {
+                    e.preventDefault();
+                    Swal.fire('Error', 'Form submission is currently restricted.', 'error');
+                    return;
+                }
 
-    e.preventDefault(); // Only prevent default after validation passes
+                const selectedDocType = documentTypeSelect.options[documentTypeSelect.selectedIndex];
+                if (!selectedDocType || !selectedDocType.value) {
+                    e.preventDefault();
+                    Swal.fire('Error', 'Please select a document type.', 'error');
+                    return;
+                }
 
-    const selectedDocType = documentTypeSelect.options[documentTypeSelect.selectedIndex];
-    const deliveryMethod = document.getElementById('deliveryMethod')?.value;
-    const paymentMethod = document.getElementById('paymentMethod')?.value;
-    const fee = barangayPrices[selectedDocType.dataset.code] || 0;
-
-    // Validate delivery method
-    if (!deliveryMethod) {
-        Swal.fire('Error', 'Please select a delivery method.', 'error');
-        return;
-    }
-
-    // Only validate payment method for paid documents
-    if (fee > 0 && !paymentMethod) {
-        Swal.fire('Error', 'Please select a payment method.', 'error');
-        return;
-    }
-
-    // Continue with submission logic...
-    submitForm();
-});
-        }
-
-        function submitForm() {
-            submitBtn.disabled = true;
-            submitBtn.textContent = 'Submitting...';
-            form.submit();
-            
-            setTimeout(function() {
-                if (submitBtn.disabled) {
+                const selectedDelivery = getSelectedDeliveryMethods();
+                if (selectedDelivery.length === 0) {
+                    e.preventDefault();
+                    Swal.fire('Delivery Method Required', 'Please select at least one delivery method.', 'warning');
                     submitBtn.disabled = false;
                     submitBtn.textContent = 'Submit Request';
+                    return false;
                 }
-            }, 15000);
-        }
 
-        // Auto-select document type if provided in URL
-        const urlParams = new URLSearchParams(window.location.search);
-        const docTypeParam = urlParams.get('documentType');
-        if (docTypeParam && documentTypeSelect) {
-            for (let i = 0; i < documentTypeSelect.options.length; i++) {
-                if (documentTypeSelect.options[i].dataset.code === docTypeParam) {
-                    documentTypeSelect.selectedIndex = i;
-                    documentTypeSelect.dispatchEvent(new Event('change'));
-                    break;
+                // Check payment method for paid documents
+                const fee = barangayPrices[selectedDocType.dataset.code] || 0;
+                const ftjsChecked = ftjsCheckbox && ftjsCheckbox.checked;
+                const finalFee = (selectedDocType.dataset.code === 'barangay_clearance' && ftjsChecked) ? 0 : fee;
+                
+                if (finalFee > 0) {
+                    const paymentMethod = document.getElementById('paymentMethod')?.value;
+                    if (!paymentMethod) {
+                        e.preventDefault();
+                        Swal.fire('Error', 'Please select a payment method.', 'error');
+                        return;
+                    }
                 }
-            }
-        }
-        
 
-        // Initial check for submit button state
-        if (hasPendingBlotterJS || !isWithinTimeGateJS) {
-            if (submitBtn) {
+                // Validate document-specific required fields
+                if (selectedDocType.dataset.code === 'barangay_clearance') {
+                    const ftjsChecked = ftjsCheckbox && ftjsCheckbox.checked;
+                    if (ftjsChecked) {
+                        // Check FTJS purpose field
+                        const ftjsPurpose = jobSeekerPurposeFtjsInput?.value?.trim();
+                        if (!ftjsPurpose) {
+                            e.preventDefault();
+                            Swal.fire('Error', 'Please enter the purpose for First Time Job Seeker certificate.', 'error');
+                            return;
+                        }
+                    } else {
+                        // Check standard clearance purpose field
+                        const clearancePurpose = purposeClearanceInput?.value?.trim();
+                        if (!clearancePurpose) {
+                            e.preventDefault();
+                            Swal.fire('Error', 'Please enter the purpose for Barangay Clearance.', 'error');
+                            return;
+                        }
+                    }
+                }
+
+                // Validate Cedula requirement for Barangay Clearance (only show warning, don't block)
+                if (selectedDocType.dataset.code === 'barangay_clearance' && !hasCompletedCedulaThisYearJS) {
+                    e.preventDefault();
+                    Swal.fire({
+                        title: 'Cedula Requirement',
+                        text: 'A completed Cedula for the current year is recommended for Barangay Clearance. Do you want to proceed anyway?',
+                        icon: 'warning',
+                        showCancelButton: true,
+                        confirmButtonText: 'Proceed Anyway',
+                        cancelButtonText: 'Cancel'
+                    }).then((result) => {
+                        if (result.isConfirmed) {
+                            // User confirmed, submit the form
+                            submitBtn.disabled = true;
+                            submitBtn.textContent = 'Submitting...';
+                            
+                            // Create a new form submission
+                            const formData = new FormData(form);
+                            formData.append('bypass_cedula_check', '1');
+                            
+                            fetch(form.action, {
+                                method: 'POST',
+                                body: formData
+                            }).then(response => {
+                                if (response.ok) {
+                                    window.location.href = '../pages/services.php?show_pending=1';
+                                } else {
+                                    throw new Error('Submission failed');
+                                }
+                            }).catch(error => {
+                                submitBtn.disabled = false;
+                                submitBtn.textContent = 'Submit Request';
+                                Swal.fire('Error', 'Failed to submit request. Please try again.', 'error');
+                            });
+                        }
+                    });
+                    return;
+                }
+
+                // Validate indigency photo requirement
+                if (selectedDocType.dataset.code === 'barangay_indigency') {
+                    const photoInput = document.getElementById('userPhoto');
+                    if (!photoInput || !photoInput.files || photoInput.files.length === 0) {
+                        e.preventDefault();
+                        Swal.fire('Error', 'Photo is required for Barangay Indigency Certificate.', 'error');
+                        return;
+                    }
+                }
+
+                // Additional validation for other required fields based on document type
+                const requiredFieldsMap = {
+                    'proof_of_residency': ['residencyDuration', 'residencyPurpose'],
+                    'barangay_indigency': ['indigencyReason'],
+                    'business_permit_clearance': ['businessName', 'businessType', 'businessAddress', 'businessPurpose']
+                };
+
+                const docCode = selectedDocType.dataset.code;
+                if (requiredFieldsMap[docCode]) {
+                    for (const fieldId of requiredFieldsMap[docCode]) {
+                        const field = document.getElementById(fieldId);
+                        if (field && !field.value.trim()) {
+                            e.preventDefault();
+                            Swal.fire('Error', `Please fill in all required fields for ${selectedDocType.text}.`, 'error');
+                            return;
+                        }
+                    }
+                }
+
+                // If we get here, allow the form to submit normally
+                // Don't prevent default - let the form submit naturally
                 submitBtn.disabled = true;
-                if (!isWithinTimeGateJS) {
-                    submitBtn.textContent = 'Outside Operating Hours (8AM-5PM)';
-                } else if (hasPendingBlotterJS) {
-                    submitBtn.textContent = 'Restricted - Pending Blotter Case';
-                }
-            }
+                submitBtn.textContent = 'Submitting...';
+                
+                // Re-enable button after timeout in case submission fails
+                setTimeout(function() {
+                    if (submitBtn.disabled) {
+                        submitBtn.disabled = false;
+                        submitBtn.textContent = 'Submit Request';
+                    }
+                }, 15000);
+                
+                // Form will submit naturally here since we didn't preventDefault
+            });
         }
-    });
+
+   
+});
     </script>
     
     <footer class="footer">
