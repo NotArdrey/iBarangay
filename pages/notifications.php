@@ -250,39 +250,64 @@ $unread_count = getUnreadNotificationCount($user_id);
                 </div>
             <?php else: ?>
                 <?php foreach ($notifications as $notification): ?>
-                    <div class="notification-item <?php echo !$notification['is_read'] ? 'unread' : ''; ?>">
-                        <div class="notification-content">
-                            <div class="notification-header-row">
-                                <div class="notification-title">
-                                    <?php echo htmlspecialchars($notification['title']); ?>
-                                    <span class="notification-type type-<?php echo strtolower($notification['priority']); ?>">
-                                        <?php echo ucfirst($notification['priority']); ?>
-                                    </span>
-                                </div>
-                                <div class="notification-meta">
-                                    <span><i class="far fa-clock"></i> <?php echo date('M d, Y h:i A', strtotime($notification['created_at'])); ?></span>
-                                    <?php if ($notification['action_url']): ?>
-                                        <a href="<?php echo htmlspecialchars($notification['action_url']); ?>" style="color: var(--primary-color);">
-                                            <i class="fas fa-external-link-alt"></i> View Details
-                                        </a>
-                                    <?php endif; ?>
-                                </div>
+                <div class="notification-item <?= $notification['is_read'] ? '' : 'unread' ?>">
+                    <div class="notification-content">
+                        <div class="notification-header-row">
+                            <div class="notification-title">
+                                <?php
+                                $icon = 'fas fa-bell';
+                                switch($notification['type']) {
+                                    case 'urgent': $icon = 'fas fa-exclamation-triangle'; break;
+                                    case 'high': $icon = 'fas fa-exclamation-circle'; break;
+                                    case 'medium': $icon = 'fas fa-info-circle'; break;
+                                    case 'low': $icon = 'fas fa-check-circle'; break;
+                                }
+                                ?>
+                                <i class="<?= $icon ?>"></i>
+                                <?= htmlspecialchars($notification['title']) ?>
                             </div>
-                            <div class="notification-message">
-                                <?php echo htmlspecialchars($notification['message']); ?>
+                            <div class="notification-meta">
+                                <span class="notification-type type-<?= $notification['type'] ?>">
+                                    <?= ucfirst($notification['type']) ?>
+                                </span>
+                                <span><?= date('M j, Y g:i A', strtotime($notification['created_at'])) ?></span>
                             </div>
                         </div>
+                        <div class="notification-message">
+                            <?= htmlspecialchars($notification['message']) ?>
+                        </div>
+                    </div>
+                    <div class="notification-actions">
                         <?php if (!$notification['is_read']): ?>
-                            <div class="notification-actions">
-                                <form method="POST" style="margin: 0;">
-                                    <input type="hidden" name="notification_id" value="<?php echo $notification['id']; ?>">
-                                    <button type="submit" name="mark_read" class="mark-read-btn" title="Mark as read">
-                                        <i class="fas fa-check"></i>
-                                    </button>
-                                </form>
-                            </div>
+                        <form method="POST" style="margin: 0;">
+                            <input type="hidden" name="notification_id" value="<?= $notification['id'] ?>">
+                            <button type="submit" name="mark_read" class="mark-read-btn">
+                                <i class="fas fa-check"></i> Mark as Read
+                            </button>
+                        </form>
+                        <?php endif; ?>
+                        
+                        <?php if ($notification['related_type'] && $notification['related_id']): ?>
+                            <?php
+                            $link = '#';
+                            switch($notification['related_type']) {
+                                case 'document_request':
+                                    $link = 'doc_request.php';
+                                    break;
+                                case 'event':
+                                    $link = 'events.php';
+                                    break;
+                                case 'blotter_case':
+                                    $link = 'blotter.php';
+                                    break;
+                            }
+                            ?>
+                            <a href="<?= $link ?>" class="mark-read-btn" style="text-decoration: none;">
+                                <i class="fas fa-external-link-alt"></i> View
+                            </a>
                         <?php endif; ?>
                     </div>
+                </div>
                 <?php endforeach; ?>
             <?php endif; ?>
         </div>
@@ -292,4 +317,4 @@ $unread_count = getUnreadNotificationCount($user_id);
         // Add any JavaScript functionality here if needed
     </script>
 </body>
-</html> 
+</html>

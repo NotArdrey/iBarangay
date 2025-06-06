@@ -2,7 +2,7 @@
 /* pages/events.php – fully working version with loading animation
    ─────────────────────────────────────────────────────────────── */
 require __DIR__ . '/../vendor/autoload.php';
-
+require_once "../functions/notification_helper.php";
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;
 
@@ -10,14 +10,19 @@ if (session_status() === PHP_SESSION_NONE) session_start();
 
 /* dependencies */
 require __DIR__ . '/../config/dbconn.php';
-require __DIR__ . '/../functions/notification_helper.php';
+
 
 $user_id = $_SESSION['user_id']     ?? null;
 $bid     = $_SESSION['barangay_id'] ?? null;
+$role_id = $_SESSION['role_id'] ?? null;
+
 if (!$user_id || !$bid) {
     header('Location: ../pages/login.php');
     exit;
 }
+
+// Check if user can manage events (admins only)
+$canManageEvents = $role_id >= 2 && $role_id <= 7;
 
 /* helpers */
 function logAuditTrail(
@@ -43,29 +48,72 @@ function logAuditTrail(
     ]);
 }
 
-function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type): void
+function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type): bool
 {
-    // Get all users in the barangay
-    $stmt = $pdo->prepare("SELECT id, email FROM users WHERE barangay_id = ?");
-    $stmt->execute([$barangayId]);
-    $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
-    if (!$users) return;
-
-    // Prepare email content
-    $notification_title = $type === 'new' ? "New Event: {$event['title']}" : "Event Postponed: {$event['title']}";
-    $notification_message = $type === 'new' 
-        ? "A new event has been scheduled:\n\n" 
-        : "The following event has been postponed:\n\n";
-    $notification_message .= "Title: {$event['title']}\n";
-    $notification_message .= "Description: {$event['description']}\n";
-    $notification_message .= "Start: " . date('M d, Y h:i A', strtotime($event['start_datetime'])) . "\n";
-    $notification_message .= "End: " . date('M d, Y h:i A', strtotime($event['end_datetime'])) . "\n";
-    $notification_message .= "Location: {$event['location']}\n";
-    if ($event['organizer']) $notification_message .= "Organizer: {$event['organizer']}\n";
-
-    // Send email notifications
-    $mail = new PHPMailer(true);
     try {
+        // Include the email template functions
+        require_once __DIR__ . '/../functions/email_template.php';
+        
+        // Get target roles from event data
+        $targetRoles = !empty($event['target_roles']) ? explode(',', $event['target_roles']) : [];
+        
+        // Clean up roles (remove any whitespace)
+        $targetRoles = array_map('trim', $targetRoles);
+        $targetRoles = array_filter($targetRoles); // Remove empty values
+        
+        if (empty($targetRoles)) {
+            // Default to all roles if none specified
+            $targetRoles = [
+                'barangay_captain', 'barangay_secretary', 'barangay_treasurer', 
+                'barangay_councilor', 'barangay_chairperson', 'resident', 'health_worker'
+            ];
+        }
+        
+        error_log('Target roles: ' . implode(', ', $targetRoles));
+        
+        // Build WHERE clause for roles
+        $rolePlaceholders = str_repeat('?,', count($targetRoles) - 1) . '?';
+        
+        // Get users with specified roles in the barangay
+        $query = "SELECT DISTINCT u.id, u.email, u.role 
+                  FROM users u 
+                  WHERE u.barangay_id = ? 
+                  AND u.role IN ($rolePlaceholders)
+                  AND u.email IS NOT NULL 
+                  AND u.email != ''";
+        
+        $stmt = $pdo->prepare($query);
+        
+        // Create parameters array: barangay_id first, then all roles
+        $params = array_merge([$barangayId], $targetRoles);
+        
+        error_log('Query: ' . $query);
+        error_log('Parameters: ' . json_encode($params));
+        
+        $stmt->execute($params);
+        $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        error_log('Found ' . count($users) . ' users to notify');
+        
+        if (!$users) {
+            error_log('No users found for email notification');
+            return true; // Not a critical error
+        }
+
+        // Prepare event details for template
+        $eventDetails = "
+            <strong>Title:</strong> " . htmlspecialchars($event['title']) . "<br>
+            <strong>Description:</strong> " . nl2br(htmlspecialchars($event['description'])) . "<br>
+            <strong>Start:</strong> " . date('M d, Y h:i A', strtotime($event['start_datetime'])) . "<br>
+            <strong>End:</strong> " . date('M d, Y h:i A', strtotime($event['end_datetime'])) . "<br>
+            <strong>Location:</strong> " . htmlspecialchars($event['location']) . "<br>";
+        
+        if (!empty($event['organizer'])) {
+            $eventDetails .= "<strong>Organizer:</strong> " . htmlspecialchars($event['organizer']) . "<br>";
+        }
+
+        // Send email notifications
+        $mail = new PHPMailer(true);
         $mail->isSMTP();
         $mail->Host       = 'smtp.gmail.com';
         $mail->SMTPAuth   = true;
@@ -73,24 +121,64 @@ function sendEventEmails(PDO $pdo, array $event, int $barangayId, string $type):
         $mail->Password   = 'nxxn vxyb kxum cuvd';
         $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port       = 587;
-        $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
+        $mail->CharSet    = 'UTF-8';
+        $mail->setFrom('ibarangay.system@gmail.com', 'iBarangay System');
         $mail->isHTML(true);
 
+        $emailsSent = 0;
+        $failedEmails = [];
+        
         foreach ($users as $user) {
             if (empty($user['email'])) continue;
             
-            $mail->clearAddresses();
-            $mail->addAddress($user['email']);
-            $mail->Subject = $notification_title;
-            $mail->Body = getEventNotificationTemplate(
-                $event['title'],
-                $notification_message,
-                $type === 'postponed'
-            );
-            $mail->send();
+            try {
+                $mail->clearAllRecipients();
+                $mail->addAddress($user['email']);
+                
+                // Use proper template function
+                $isPostponed = ($type === 'postponed');
+                $mail->Subject = $isPostponed ? "Event Postponed: {$event['title']}" : "New Event: {$event['title']}";
+                $mail->Body = getEventNotificationTemplate($event['title'], $eventDetails, $isPostponed);
+                
+                // Create plain text version
+                $plainText = ($isPostponed ? "Event Postponed: " : "New Event: ") . $event['title'] . "\n\n";
+                $plainText .= ($isPostponed ? "The following event has been postponed:\n\n" : "A new event has been scheduled:\n\n");
+                $plainText .= "Title: " . $event['title'] . "\n";
+                $plainText .= "Description: " . $event['description'] . "\n";
+                $plainText .= "Start: " . date('M d, Y h:i A', strtotime($event['start_datetime'])) . "\n";
+                $plainText .= "End: " . date('M d, Y h:i A', strtotime($event['end_datetime'])) . "\n";
+                $plainText .= "Location: " . $event['location'] . "\n";
+                if (!empty($event['organizer'])) {
+                    $plainText .= "Organizer: " . $event['organizer'] . "\n";
+                }
+                
+                $mail->AltBody = $plainText;
+                
+                if ($mail->send()) {
+                    $emailsSent++;
+                    error_log("Email sent successfully to: {$user['email']} (Role: {$user['role']})");
+                } else {
+                    $failedEmails[] = $user['email'];
+                    error_log("Failed to send email to: {$user['email']} (Role: {$user['role']})");
+                }
+                
+            } catch (Exception $e) {
+                $failedEmails[] = $user['email'];
+                error_log('Failed to send email to ' . $user['email'] . ': ' . $e->getMessage());
+            }
         }
+        
+        error_log("Email summary: Sent $emailsSent emails out of " . count($users) . " users");
+        if (!empty($failedEmails)) {
+            error_log("Failed emails: " . implode(', ', $failedEmails));
+        }
+        
+        return $emailsSent > 0; // Return true if at least one email was sent
+        
     } catch (Exception $e) {
-        error_log('Mail error: ' . $mail->ErrorInfo);
+        error_log('Email sending error: ' . $e->getMessage());
+        error_log('Stack trace: ' . $e->getTraceAsString());
+        return false;
     }
 }
 
@@ -136,12 +224,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $endRaw      =       $_POST['end_datetime']   ?? '';
     $location    = trim($_POST['location']     ?? '');
     $organizer   = trim($_POST['organizer']    ?? '');
+    $targetRoles = $_POST['target_roles'] ?? [];
 
     $errors = [];
     if ($title === '')    $errors[] = 'Title is required';
     if ($startRaw === '') $errors[] = 'Start date/time is required';
     if ($endRaw === '')   $errors[] = 'End date/time is required';
     if ($location === '') $errors[] = 'Location is required';
+    if (empty($targetRoles)) $errors[] = 'At least one target role must be selected';
     if (strlen($title) > 100)                 $errors[] = 'Title max 100 chars';
     if (strlen($location) > 150)              $errors[] = 'Location max 150 chars';
     if ($organizer !== '' && strlen($organizer) > 100)
@@ -169,57 +259,102 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
     $start_datetime = $startDT->format('Y-m-d H:i:s');
     $end_datetime   = $endDT->format('Y-m-d H:i:s');
+    $targetRolesStr = implode(',', $targetRoles);
 
     try {
+        // Check if target_roles column exists, add it if it doesn't
+        $columnCheck = $pdo->query("SHOW COLUMNS FROM events LIKE 'target_roles'");
+        if ($columnCheck->rowCount() == 0) {
+            $pdo->exec("ALTER TABLE events ADD COLUMN target_roles TEXT");
+        }
+
+        // Begin transaction for database operations
+        $pdo->beginTransaction();
+
         if ($event_id) { /* update */
             $pdo->prepare(
                 "UPDATE events
                     SET title = ?, description = ?, start_datetime = ?, end_datetime = ?,
-                        location = ?, organizer = ?
+                        location = ?, organizer = ?, target_roles = ?
                   WHERE id = ? AND barangay_id = ?"
             )->execute([
                 $title, $description, $start_datetime, $end_datetime,
-                $location, $organizer, $event_id, $bid
+                $location, $organizer, $targetRolesStr, $event_id, $bid
             ]);
+            
+            // Commit database transaction first
+            $pdo->commit();
+            
             logAuditTrail($pdo, $user_id, 'UPDATE', 'events', $event_id, 'Event updated');
+            
             $_SESSION['alert'] = [
                 'type' => 'success',
                 'title' => 'Success',
                 'message' => 'Event has been updated successfully.'
             ];
         } else {                  /* insert */
-
             $pdo->prepare(
                 "INSERT INTO events
                         (title, description, start_datetime, end_datetime,
-                        location, organizer, barangay_id, created_by_user_id)
-                 VALUES (?,?,?,?,?,?,?,?)"
+                        location, organizer, target_roles, barangay_id, created_by_user_id)
+                 VALUES (?,?,?,?,?,?,?,?,?)"
             )->execute([
                 $title, $description, $start_datetime, $end_datetime,
-                $location, $organizer, $bid, $user_id
+                $location, $organizer, $targetRolesStr, $bid, $user_id
             ]);
 
             $newId = (int)$pdo->lastInsertId();
-            $evt   = $pdo->prepare("SELECT * FROM events WHERE id = ?");
-            $evt->execute([$newId]);
-            $evt = $evt->fetch(PDO::FETCH_ASSOC);
-
-            sendEventEmails($pdo, $evt, $bid, 'new');
-
+            
+            // Commit database transaction first
+            $pdo->commit();
+            
             logAuditTrail($pdo, $user_id, 'INSERT', 'events', $newId, 'Event created');
-            $_SESSION['alert'] = [
-                'type' => 'success',
-                'title' => 'Success',
-                'message' => 'Event has been created and residents have been notified.'
-            ];
+            
+            // Get the event data for email sending
+            $evt = $pdo->prepare("SELECT * FROM events WHERE id = ?");
+            $evt->execute([$newId]);
+            $eventData = $evt->fetch(PDO::FETCH_ASSOC);
 
+            // Send emails after database operations are complete
+            $emailResult = sendEventEmails($pdo, $eventData, $bid, 'new');
+            
+            if ($emailResult) {
+                $_SESSION['alert'] = [
+                    'type' => 'success',
+                    'title' => 'Success',
+                    'message' => 'Event has been created and residents have been notified.'
+                ];
+            } else {
+                $_SESSION['alert'] = [
+                    'type' => 'warning',
+                    'title' => 'Event Created',
+                    'message' => 'Event has been created but some email notifications may have failed.'
+                ];
+            }
         }
     } catch (PDOException $e) {
+        // Rollback transaction on database error
+        if ($pdo->inTransaction()) {
+            $pdo->rollback();
+        }
+        
         error_log('DB error: ' . $e->getMessage());
         $_SESSION['alert'] = [
             'type' => 'error',
             'title' => 'Database Error',
-            'message' => 'An error occurred while saving the event.'
+            'message' => 'Failed to save event: ' . $e->getMessage()
+        ];
+    } catch (Exception $e) {
+        // Rollback transaction on any other error
+        if ($pdo->inTransaction()) {
+            $pdo->rollback();
+        }
+        
+        error_log('General error: ' . $e->getMessage());
+        $_SESSION['alert'] = [
+            'type' => 'error',
+            'title' => 'Error',
+            'message' => 'An unexpected error occurred: ' . $e->getMessage()
         ];
     }
 
@@ -228,19 +363,42 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 }
 
 /* fetch events */
-$stmt = $pdo->prepare("
-    SELECT 
-        e.*, 
-        p.first_name AS creator_first_name, 
-        p.last_name AS creator_last_name
-    FROM events e
-    LEFT JOIN users u ON e.created_by_user_id = u.id
-    LEFT JOIN persons p ON u.id = p.user_id
-    WHERE e.barangay_id = :bid 
-    ORDER BY e.start_datetime DESC
-");
-$stmt->execute([':bid' => $bid]);
-$events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+try {
+    // Check if target_roles column exists, add it if it doesn't
+    $columnCheck = $pdo->query("SHOW COLUMNS FROM events LIKE 'target_roles'");
+    if ($columnCheck->rowCount() == 0) {
+        $pdo->exec("ALTER TABLE events ADD COLUMN target_roles TEXT");
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT 
+            e.*, 
+            p.first_name AS creator_first_name, 
+            p.last_name AS creator_last_name
+        FROM events e
+        LEFT JOIN users u ON e.created_by_user_id = u.id
+        LEFT JOIN persons p ON u.id = p.user_id
+        WHERE e.barangay_id = :bid 
+        AND e.status != 'deleted'
+        ORDER BY e.start_datetime DESC
+    ");
+    $stmt->execute([':bid' => $bid]);
+    $events = $stmt->fetchAll(PDO::FETCH_ASSOC);
+} catch (PDOException $e) {
+    error_log('DB error fetching events: ' . $e->getMessage());
+    $events = [];
+}
+
+// Define available roles
+$availableRoles = [
+    'barangay_captain' => 'Barangay Captain',
+    'barangay_secretary' => 'Barangay Secretary', 
+    'barangay_treasurer' => 'Barangay Treasurer',
+    'barangay_councilor' => 'Barangay Councilor',
+    'barangay_chairperson' => 'Barangay Chairperson',
+    'resident' => 'Resident',
+    'health_worker' => 'Health Worker'
+];
 
 require __DIR__ . '/../components/header.php';
 ?>
@@ -272,7 +430,9 @@ require __DIR__ . '/../components/header.php';
     <main class="ml-0 lg:ml-64 p-4 md:p-8 space-y-6">
         <div class="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
             <h1 class="text-3xl font-bold text-blue-800">Event Management</h1>
+            <?php if ($canManageEvents): ?>
             <button onclick="toggleModal()" class="w-full md:w-auto text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5">+ Add New Event</button>
+            <?php endif; ?>
         </div>
 
         <?php if (isset($_SESSION['alert'])): ?>
@@ -297,6 +457,7 @@ require __DIR__ . '/../components/header.php';
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Location</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Organizer</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Created By</th>
+                            <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target Roles</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Description</th>
                             <th class="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
                         </tr>
@@ -323,22 +484,33 @@ require __DIR__ . '/../components/header.php';
                                     <td class="px-4 py-3 text-sm text-gray-600">
                                         <?= htmlspecialchars(trim(($event['creator_first_name'] ?? '') . ' ' . ($event['creator_last_name'] ?? ''))) ?>
                                     </td>
+                                    <td class="px-4 py-3 text-sm text-gray-600">
+                                        <?php 
+                                        $eventRoles = !empty($event['target_roles']) ? explode(',', $event['target_roles']) : [];
+                                        $roleNames = array_map(function($role) use ($availableRoles) {
+                                            return $availableRoles[$role] ?? $role;
+                                        }, $eventRoles);
+                                        echo htmlspecialchars(implode(', ', $roleNames));
+                                        ?>
+                                    </td>
                                     <td class="px-4 py-3 text-sm text-gray-600"><?= nl2br(htmlspecialchars($event['description'] ?? '')) ?></td>
                                     <td class="px-4 py-3 text-sm text-gray-600">
                                         <div class="flex items-center space-x-3">
+                                            <?php if ($canManageEvents): ?>
                                             <button onclick="editEvent(<?= $event['id'] ?>)" class="p-2 text-blue-600 hover:text-blue-900 rounded-lg hover:bg-blue-50">Edit</button>
                                             <form method="POST" class="inline">
                                                 <input type="hidden" name="event_id" value="<?= $event['id'] ?>">
                                                 <input type="hidden" name="delete" value="1">
                                                 <button type="button" onclick="confirmDelete(this.form)" class="p-2 text-red-600 hover:text-red-900 rounded-lg hover:bg-red-50">Delete</button>
                                             </form>
+                                            <?php endif; ?>
                                         </div>
                                     </td>
                                 </tr>
                             <?php endforeach; ?>
                         <?php else: ?>
                             <tr>
-                                <td colspan="8" class="px-4 py-4 text-center text-gray-500">No events found</td>
+                                <td colspan="9" class="px-4 py-4 text-center text-gray-500">No events found</td>
                             </tr>
                         <?php endif; ?>
                     </tbody>
@@ -376,6 +548,18 @@ require __DIR__ . '/../components/header.php';
                                 <label class="block text-sm font-medium text-gray-700">Organizer</label>
                                 <input type="text" name="organizer" class="w-full rounded border-gray-300" placeholder="Optional">
                             </div>
+                        </div>
+                        <div class="space-y-2">
+                            <label class="block text-sm font-medium text-gray-700">Target Recipients <span class="text-red-500">*</span></label>
+                            <div class="grid grid-cols-2 gap-2 p-4 border border-gray-300 rounded-lg bg-gray-50">
+                                <?php foreach ($availableRoles as $role => $label): ?>
+                                    <label class="flex items-center space-x-2 text-sm">
+                                        <input type="checkbox" name="target_roles[]" value="<?= $role ?>" class="rounded border-gray-300 text-blue-600 focus:ring-blue-500">
+                                        <span><?= $label ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                            <p class="text-sm text-gray-500">Select one or more roles to notify</p>
                         </div>
                         <div class="space-y-2">
                             <label class="block text-sm font-medium text-gray-700">Description</label>
@@ -416,6 +600,14 @@ require __DIR__ . '/../components/header.php';
                         document.querySelector('[name="location"]').value = '<?= addslashes($e['location']) ?>';
                         document.querySelector('[name="organizer"]').value = '<?= addslashes($e['organizer']) ?>';
                         document.querySelector('[name="description"]').value = '<?= addslashes($e['description']) ?>';
+                        
+                        // Set selected roles for checkboxes
+                        const targetRoles = '<?= $e['target_roles'] ?? '' ?>'.split(',').filter(role => role.trim());
+                        const roleCheckboxes = document.querySelectorAll('[name="target_roles[]"]');
+                        roleCheckboxes.forEach(checkbox => {
+                            checkbox.checked = targetRoles.includes(checkbox.value);
+                        });
+                        
                         document.getElementById('modalTitle').textContent = 'Edit Event';
                     }
                 <?php endforeach; ?>
@@ -452,3 +644,4 @@ require __DIR__ . '/../components/header.php';
 </body>
 
 </html>
+

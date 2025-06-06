@@ -2,6 +2,7 @@
 session_start();
 require "../vendor/autoload.php";
 require "../config/dbconn.php";
+require_once "../functions/notification_helper.php";
 
 use Dompdf\Dompdf;
 use PHPMailer\PHPMailer\PHPMailer;

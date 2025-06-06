@@ -40,21 +40,21 @@ function getEmailTemplate($title, $content, $buttonText = null, $buttonLink = nu
                 overflow: hidden;
             }
             .header {
-                background: $headerBg;
-                color: $headerText;
+                background: {$headerBg};
+                color: {$headerText};
                 padding: 20px 0 10px 0;
                 text-align: center;
                 border-radius: 10px 10px 0 0;
             }
             .content {
-                background: $bodyBg;
+                background: {$bodyBg};
                 padding: 32px 32px 16px 32px;
-                border: 1px solid $borderColor;
+                border: 1px solid {$borderColor};
                 border-top: none;
                 border-radius: 0 0 10px 10px;
             }
             .title {
-                color: $titleColor;
+                color: {$titleColor};
                 font-size: 24px;
                 font-weight: 700;
                 margin-top: 0;
@@ -62,7 +62,7 @@ function getEmailTemplate($title, $content, $buttonText = null, $buttonLink = nu
                 text-align: center;
             }
             .message {
-                color: $messageColor;
+                color: {$messageColor};
                 font-size: 16px;
                 margin-bottom: 32px;
                 white-space: pre-line;
@@ -70,7 +70,7 @@ function getEmailTemplate($title, $content, $buttonText = null, $buttonLink = nu
             .button {
                 display: inline-block;
                 padding: 14px 32px;
-                background: $buttonBg;
+                background: {$buttonBg};
                 color: #fff !important;
                 text-decoration: none;
                 border-radius: 6px;
@@ -82,16 +82,16 @@ function getEmailTemplate($title, $content, $buttonText = null, $buttonLink = nu
                 text-align: center;
             }
             .button:hover {
-                background: $buttonHover;
+                background: {$buttonHover};
             }
             .footer {
                 margin-top: 20px;
                 padding-top: 20px;
-                border-top: 1px solid $borderColor;
-                color: $footerColor;
+                border-top: 1px solid {$borderColor};
+                color: {$footerColor};
                 font-size: 0.95em;
                 text-align: center;
-                background: $bodyBg;
+                background: {$bodyBg};
                 border-radius: 0 0 10px 10px;
             }
             @media (max-width: 600px) {
@@ -104,10 +104,10 @@ function getEmailTemplate($title, $content, $buttonText = null, $buttonLink = nu
     <body>
         <div class='email-container'>
             <div class='header'>
-                <h2 style='margin: 0;'>$title</h2>
+                <h2 style='margin: 0;'>{$title}</h2>
             </div>
             <div class='content'>
-                <div class='message'>$content</div>";
+                <div class='message'>{$content}</div>";
     if ($buttonText && $buttonLink) {
         $template .= "<div style='text-align: center;'><a href='" . htmlspecialchars($buttonLink) . "' class='button'>" . htmlspecialchars($buttonText) . "</a></div>";
     }

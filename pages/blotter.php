@@ -1,8 +1,9 @@
 <?php
-
 session_start();
 require "../config/dbconn.php";
 require "../vendor/autoload.php";
+require_once "../functions/notification_helper.php";
+
 use Dompdf\Dompdf;
 use PHPMailer\PHPMailer\PHPMailer;
 use PHPMailer\PHPMailer\Exception;  
@@ -107,6 +108,33 @@ function updateCaseStatus($pdo, $caseId, $newStatus, $userId) {
     
     // Log the status change
     logAuditTrail($pdo, $userId, 'UPDATE', 'blotter_cases', $caseId, "Case status updated to: $newStatus");
+    
+    // Get case and participant details for notifications
+    $stmt = $pdo->prepare("
+        SELECT bc.case_number, bc.barangay_id,
+               bp.id as participant_id, p.user_id, 
+               CONCAT(p.first_name, ' ', p.last_name) as participant_name,
+               bp.role
+        FROM blotter_cases bc
+        LEFT JOIN blotter_participants bp ON bc.id = bp.blotter_case_id
+        LEFT JOIN persons p ON bp.person_id = p.id
+        WHERE bc.id = ?
+    ");
+    $stmt->execute([$caseId]);
+    $caseData = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    
+    if (!empty($caseData)) {
+        $caseNumber = $caseData[0]['case_number'];
+        $barangayId = $caseData[0]['barangay_id'];
+        
+        // Filter participants with user_id
+        $participants = array_filter($caseData, function($p) {
+            return !empty($p['user_id']);
+        });
+        
+        // Send notifications
+        notifyBlotterStatusUpdate($barangayId, $caseId, $caseNumber, $newStatus, $participants);
+    }
     
     return $stmt->rowCount() > 0;
 }
@@ -817,6 +845,33 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['blotter_submit'])) {
 
         $pdo->commit();
         logAuditTrail($pdo, $current_admin_id, 'INSERT', 'blotter_cases', $caseId, "New case filed ($location)");
+        
+        // Get complainant name for notifications
+        $complainantName = 'Unknown';
+        if (!empty($participants)) {
+            $firstComplainant = array_values(array_filter($participants, function($p) {
+                return ($p['role'] ?? '') === 'complainant';
+            }))[0] ?? null;
+            
+            if ($firstComplainant) {
+                if (!empty($firstComplainant['user_id'])) {
+                    // Get name from users/persons table
+                    $stmt = $pdo->prepare("
+                        SELECT CONCAT(p.first_name, ' ', p.last_name) as name 
+                        FROM persons p 
+                        WHERE p.user_id = ?
+                    ");
+                    $stmt->execute([$firstComplainant['user_id']]);
+                    $complainantName = $stmt->fetchColumn() ?: 'Unknown User';
+                } else {
+                    $complainantName = trim(($firstComplainant['first_name'] ?? '') . ' ' . ($firstComplainant['last_name'] ?? ''));
+                }
+            }
+        }
+
+        // Notify admins of new case
+        notifyBlotterCaseCreated($bid, $caseId, $caseNumber, $complainantName);
+
         $_SESSION['success_message'] = 'New blotter case recorded with case number: ' . $caseNumber;
     } catch (Exception $e) {
         $pdo->rollBack();
@@ -3370,123 +3425,6 @@ async function handleRecordHearingOutcome(caseId, caseNumber, hearingId) {
             }
 
             const response = await fetch(`?action=submit_hearing_outcome`, {
-                method: 'POST',
-                body: formData
-            });
-            const result = await response.json();
-            Swal.close();
-
-            if (result.success) {
-                Swal.fire('Success!', result.message || 'Hearing outcome recorded.', 'success').then(() => location.reload());
-            } else {
-                Swal.fire('Error!', result.message || 'Failed to record hearing outcome.', 'error');
-            }
-        } catch (error) {
-            Swal.close();
-            console.error('Error submitting hearing outcome:', error);
-            Swal.fire('Error!', 'An unexpected error occurred.', 'error');
-        }
-    }
-}
-
-
-async function handleRecordHearingReport(caseId, caseNumber) {
-    const { value: formValues, isConfirmed } = await Swal.fire({
-        title: 'Record Hearing Report',
-        html: `
-            <input type="hidden" id="report-case-id" value="${caseId}">
-            <input type="hidden" id="report-hearing-id" value="">
-            
-            <label for="report-officer-name" class="swal2-label">Presiding Officer Name:</label>
-            <input id="report-officer-name" class="swal2-input" placeholder="Enter name">
-            
-            <label for="report-officer-position" class="swal2-label">Position:</label>
-            <select id="report-officer-position" class="swal2-input">
-                <option value="barangay_captain">Barangay Captain</option>
-                <option value="chief_officer">Chief Officer</option>
-                <option value="lupon_member">Lupon Member</option>
-                <option value="secretary">Secretary</option>
-            </select>
-
-            <label for="report-hearing-outcome" class="swal2-label">Hearing Outcome:</label>
-            <select id="report-hearing-outcome" class="swal2-input">
-                <option value="resolved">Resolved</option>
-                <option value="failed">Failed</option>
-                <option value="postponed">Postponed</option>
-            </select>
-            
-            <div id="report-next-hearing-details" style="display:none;">
-                <label for="report-next-hearing-date" class="swal2-label">Next Hearing Date:</label>
-                <input id="report-next-hearing-date" type="date" class="swal2-input">
-                <label for="report-next-hearing-time" class="swal2-label">Next Hearing Time:</label>
-                <input id="report-next-hearing-time" type="time" class="swal2-input">
-            </div>
-
-            <label for="report-resolution-details" class="swal2-label">Resolution Details:</label>
-            <textarea id="report-resolution-details" class="swal2-textarea" placeholder="Enter details..."></textarea>
-        `,
-        focusConfirm: false,
-        showCancelButton: true,
-        confirmButtonText: 'Submit Report',
-        cancelButtonText: 'Cancel',
-        didOpen: () => {
-            const outcomeSelect = Swal.getPopup().querySelector('#report-hearing-outcome');
-            const nextHearingDiv = Swal.getPopup().querySelector('#report-next-hearing-details');
-            outcomeSelect.addEventListener('change', (e) => {
-                if (e.target.value === 'postponed') {
-                    nextHearingDiv.style.display = 'block';
-                } else {
-                    nextHearingDiv.style.display = 'none';
-                }
-            });
-        },
-        preConfirm: () => {
-            const officerName = Swal.getPopup().querySelector('#report-officer-name').value;
-            const officerPosition = Swal.getPopup().querySelector('#report-officer-position').value;
-            const outcome = Swal.getPopup().querySelector('#report-hearing-outcome').value;
-            const details = Swal.getPopup().querySelector('#report-resolution-details').value;
-            const nextDate = Swal.getPopup().querySelector('#report-next-hearing-date').value;
-            const nextTime = Swal.getPopup().querySelector('#report-next-hearing-time').value;
-
-            if (!officerName || !outcome) {
-                Swal.showValidationMessage(`Presiding officer name and outcome are required.`);
-                return false;
-            }
-            if (outcome === 'postponed' && (!nextDate || !nextTime)) {
-                Swal.showValidationMessage(`Next hearing date and time are required if outcome is Postponed.`);
-                return false;
-            }
-            return {
-                hearing_id: '', // To be set on hearing row click
-                case_id: caseId,
-                presiding_officer_name: officerName,
-                presiding_officer_position: officerPosition,
-                hearing_outcome: outcome,
-                resolution_details: details,
-                next_hearing_date: outcome === 'postponed' ? nextDate : null,
-                next_hearing_time: outcome === 'postponed' ? nextTime : null,
-            };
-        }
-    });
-
-    if (isConfirmed && formValues) {
-        const hearingId = document.getElementById('report-hearing-id').value;
-        if (!hearingId) {
-            Swal.fire('Error', 'Hearing ID is missing. Cannot submit report.', 'error');
-            return;
-        }
-
-        Swal.fire({ title: 'Submitting Report...', didOpen: () => Swal.showLoading(), allowOutsideClick: false });
-        try {
-            const formData = new FormData();
-            for (const key in formValues) {
-                if (formValues[key] !== null) { // FormData should not have null values, it converts them to "null" string
-                    formData.append(key, formValues[key]);
-                }
-            }
-            formData.append('hearing_id', hearingId); // Append the hearing ID
-
-            const response = await fetch(`?action=record_hearing_report`, {
                 method: 'POST',
                 body: formData
             });

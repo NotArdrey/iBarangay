@@ -274,3 +274,417 @@ function notifySummonsIssued($user_id, $case_id, $case_number, $respondent_name,
         $action_url
     );
 }
+
+/**
+ * Document Request Notifications
+ */
+function notifyDocumentRequestSubmitted($requester_id, $request_id, $document_type) {
+    return createNotification(
+        $requester_id,
+        'Document Request Submitted',
+        "Your request for {$document_type} has been submitted and is pending review.",
+        'medium',
+        $request_id,
+        'document_request'
+    );
+}
+
+function notifyDocumentRequestStatusChange($requester_id, $request_id, $document_type, $new_status, $admin_name = '') {
+    $status_messages = [
+        'approved' => "Your request for {$document_type} has been approved" . ($admin_name ? " by {$admin_name}" : '') . ".",
+        'rejected' => "Your request for {$document_type} has been rejected" . ($admin_name ? " by {$admin_name}" : '') . ". Please contact the office for details.",
+        'ready' => "Your {$document_type} is ready for pickup.",
+        'completed' => "Your {$document_type} request has been completed."
+    ];
+    
+    $message = $status_messages[$new_status] ?? "Your request for {$document_type} status has been updated to {$new_status}.";
+    $type = ($new_status === 'approved' || $new_status === 'ready') ? 'high' : 'medium';
+    
+    return createNotification(
+        $requester_id,
+        'Document Request Update',
+        $message,
+        $type,
+        $request_id,
+        'document_request'
+    );
+}
+
+function notifyAdminsNewDocumentRequest($barangay_id, $request_id, $document_type, $requester_name) {
+    global $pdo;
+    
+    try {
+        // Get all admins (role_id 2-7) in the barangay
+        $stmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE barangay_id = ? AND role_id BETWEEN 2 AND 7 AND is_active = 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $admins = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $success = true;
+        foreach ($admins as $admin_id) {
+            $result = createNotification(
+                $admin_id,
+                'New Document Request',
+                "New {$document_type} request from {$requester_name} requires review.",
+                'high',
+                $request_id,
+                'document_request'
+            );
+            if (!$result) $success = false;
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying admins of new document request: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Event Notifications
+ */
+function notifyEventCreated($barangay_id, $event_id, $event_title, $event_date) {
+    global $pdo;
+    
+    try {
+        // Get all active users in the barangay
+        $stmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE barangay_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $users = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $success = true;
+        foreach ($users as $user_id) {
+            $result = createNotification(
+                $user_id,
+                'New Event Scheduled',
+                "A new event '{$event_title}' has been scheduled for {$event_date}.",
+                'medium',
+                $event_id,
+                'event'
+            );
+            if (!$result) $success = false;
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying users of new event: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyEventUpdated($barangay_id, $event_id, $event_title, $changes_description) {
+    global $pdo;
+    
+    try {
+        // Get all active users in the barangay
+        $stmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE barangay_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $users = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $success = true;
+        foreach ($users as $user_id) {
+            $result = createNotification(
+                $user_id,
+                'Event Updated',
+                "The event '{$event_title}' has been updated. {$changes_description}",
+                'medium',
+                $event_id,
+                'event'
+            );
+            if (!$result) $success = false;
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying users of event update: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyEventReminder($barangay_id, $event_id, $event_title, $event_date) {
+    global $pdo;
+    
+    try {
+        // Get all active users in the barangay
+        $stmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE barangay_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $users = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $success = true;
+        foreach ($users as $user_id) {
+            $result = createNotification(
+                $user_id,
+                'Event Reminder',
+                "Reminder: '{$event_title}' is scheduled for {$event_date}.",
+                'high',
+                $event_id,
+                'event'
+            );
+            if (!$result) $success = false;
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error sending event reminders: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyEventCancelled($barangay_id, $event_id, $event_title, $reason = '') {
+    global $pdo;
+    
+    try {
+        // Get all active users in the barangay
+        $stmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE barangay_id = ? AND is_active = 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $users = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $message = "The event '{$event_title}' has been cancelled.";
+        if ($reason) {
+            $message .= " Reason: {$reason}";
+        }
+        
+        $success = true;
+        foreach ($users as $user_id) {
+            $result = createNotification(
+                $user_id,
+                'Event Cancelled',
+                $message,
+                'urgent',
+                $event_id,
+                'event'
+            );
+            if (!$result) $success = false;
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying users of event cancellation: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Blotter Case Notifications
+ */
+function notifyBlotterCaseCreated($barangay_id, $case_id, $case_number, $complainant_name) {
+    global $pdo;
+    
+    try {
+        // Get all admins (role_id 2-7) in the barangay
+        $stmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE barangay_id = ? AND role_id BETWEEN 2 AND 7 AND is_active = 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $admins = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        $success = true;
+        foreach ($admins as $admin_id) {
+            $result = createNotification(
+                $admin_id,
+                'New Blotter Case Filed',
+                "New case {$case_number} filed by {$complainant_name} requires attention.",
+                'high',
+                $case_id,
+                'blotter_case'
+            );
+            if (!$result) $success = false;
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying admins of new blotter case: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyBlotterStatusUpdate($barangay_id, $case_id, $case_number, $new_status, $participants = []) {
+    global $pdo;
+    
+    try {
+        $status_messages = [
+            'open' => "Case {$case_number} has been opened for investigation.",
+            'closed' => "Case {$case_number} has been resolved and closed.",
+            'dismissed' => "Case {$case_number} has been dismissed.",
+            'solved' => "Case {$case_number} has been marked as solved.",
+            'endorsed_to_court' => "Case {$case_number} has been endorsed to court.",
+            'cfa_eligible' => "Case {$case_number} is now eligible for Certificate to File Action."
+        ];
+        
+        $message = $status_messages[$new_status] ?? "Case {$case_number} status has been updated to {$new_status}.";
+        $type = ($new_status === 'dismissed' || $new_status === 'endorsed_to_court') ? 'urgent' : 'medium';
+        
+        $success = true;
+        
+        // Notify participants
+        foreach ($participants as $participant) {
+            if (!empty($participant['user_id'])) {
+                $result = createNotification(
+                    $participant['user_id'],
+                    'Case Status Update',
+                    $message,
+                    $type,
+                    $case_id,
+                    'blotter_case'
+                );
+                if (!$result) $success = false;
+            }
+        }
+        
+        // Also notify admins
+        $stmt = $pdo->prepare("
+            SELECT id FROM users 
+            WHERE barangay_id = ? AND role_id BETWEEN 2 AND 7 AND is_active = 1
+        ");
+        $stmt->execute([$barangay_id]);
+        $admins = $stmt->fetchAll(PDO::FETCH_COLUMN);
+        
+        foreach ($admins as $admin_id) {
+            $result = createNotification(
+                $admin_id,
+                'Case Status Update',
+                $message,
+                'medium',
+                $case_id,
+                'blotter_case'
+            );
+            if (!$result) $success = false;
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying of blotter status update: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyHearingReminder($case_id, $case_number, $hearing_date, $hearing_time, $participants = []) {
+    global $pdo;
+    
+    try {
+        $formatted_date = date('F j, Y', strtotime($hearing_date));
+        $formatted_time = date('g:i A', strtotime($hearing_time));
+        
+        $message = "Reminder: Your hearing for case {$case_number} is scheduled for today ({$formatted_date}) at {$formatted_time}.";
+        
+        $success = true;
+        foreach ($participants as $participant) {
+            if (!empty($participant['user_id'])) {
+                $result = createNotification(
+                    $participant['user_id'],
+                    'Hearing Reminder',
+                    $message,
+                    'urgent',
+                    $case_id,
+                    'blotter_case'
+                );
+                if (!$result) $success = false;
+            }
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error sending hearing reminder: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyHearingOutcome($case_id, $case_number, $outcome, $participants = [], $next_hearing_date = null) {
+    global $pdo;
+    
+    try {
+        $outcome_messages = [
+            'resolved' => "Case {$case_number} has been resolved during the hearing.",
+            'failed' => "Mediation for case {$case_number} was unsuccessful.",
+            'postponed' => "The hearing for case {$case_number} has been postponed."
+        ];
+        
+        $message = $outcome_messages[$outcome] ?? "Hearing outcome for case {$case_number}: {$outcome}";
+        
+        if ($outcome === 'postponed' && $next_hearing_date) {
+            $formatted_date = date('F j, Y', strtotime($next_hearing_date));
+            $message .= " Next hearing scheduled for {$formatted_date}.";
+        }
+        
+        $type = ($outcome === 'resolved') ? 'high' : 'medium';
+        
+        $success = true;
+        foreach ($participants as $participant) {
+            if (!empty($participant['user_id'])) {
+                $result = createNotification(
+                    $participant['user_id'],
+                    'Hearing Outcome',
+                    $message,
+                    $type,
+                    $case_id,
+                    'blotter_case'
+                );
+                if (!$result) $success = false;
+            }
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying of hearing outcome: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyCFAIssued($case_id, $case_number, $complainant_user_id, $certificate_number) {
+    try {
+        return createNotification(
+            $complainant_user_id,
+            'Certificate to File Action Issued',
+            "A Certificate to File Action (#{$certificate_number}) has been issued for case {$case_number}. You may now proceed to file your case in court.",
+            'urgent',
+            $case_id,
+            'blotter_case'
+        );
+    } catch (Exception $e) {
+        error_log("Error notifying of CFA issuance: " . $e->getMessage());
+        return false;
+    }
+}
+
+function notifyInterventionAdded($case_id, $case_number, $intervention_name, $participants = []) {
+    global $pdo;
+    
+    try {
+        $message = "An intervention ({$intervention_name}) has been added to case {$case_number}.";
+        
+        $success = true;
+        foreach ($participants as $participant) {
+            if (!empty($participant['user_id'])) {
+                $result = createNotification(
+                    $participant['user_id'],
+                    'Case Intervention Added',
+                    $message,
+                    'medium',
+                    $case_id,
+                    'blotter_case'
+                );
+                if (!$result) $success = false;
+            }
+        }
+        
+        return $success;
+    } catch (PDOException $e) {
+        error_log("Error notifying of intervention: " . $e->getMessage());
+        return false;
+    }
+}
