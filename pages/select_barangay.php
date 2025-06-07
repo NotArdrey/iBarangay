@@ -115,6 +115,282 @@ foreach ($_SESSION['accessible_barangays'] as $barangay) {
     <title>Select Barangay - iBarangay</title>
     <link rel="stylesheet" href="../styles/login.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .barangay-selection-container {
+            background: white;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.08);
+            margin: 1rem 0;
+        }
+
+        .selection-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 2px solid #f0f0f0;
+        }
+
+        .selection-header h3 {
+            color: #0a2240;
+            margin: 0;
+            font-size: 1.3rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .barangay-count {
+            background: #0a2240;
+            color: white;
+            padding: 0.4rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .barangay-list-scroll {
+            max-height: 400px;
+            overflow-y: auto;
+            padding-right: 0.5rem;
+        }
+
+        .barangay-card {
+            background: #fafafa;
+            border: 2px solid #e0e0e0;
+            border-radius: 12px;
+            margin-bottom: 1rem;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .barangay-card:hover:not(.archived) {
+            border-color: #0a2240;
+            box-shadow: 0 8px 25px rgba(10, 34, 64, 0.15);
+            transform: translateY(-2px);
+        }
+
+        .barangay-card.selected {
+            border-color: #0a2240;
+            background: linear-gradient(135deg, #0a2240 0%, #1a3350 100%);
+            color: white;
+        }
+
+        .barangay-card.archived {
+            background: #f5f5f5;
+            border-color: #ccc;
+            cursor: not-allowed;
+            opacity: 0.6;
+        }
+
+        .barangay-card-content {
+            display: flex;
+            align-items: center;
+            padding: 1.25rem;
+            gap: 1rem;
+        }
+
+        .barangay-icon {
+            width: 50px;
+            height: 50px;
+            background: linear-gradient(135deg, #0a2240 0%, #1a3350 100%);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-size: 1.2rem;
+            flex-shrink: 0;
+        }
+
+        .barangay-card.selected .barangay-icon {
+            background: rgba(255,255,255,0.2);
+        }
+
+        .barangay-card.archived .barangay-icon {
+            background: #999;
+        }
+
+        .barangay-info {
+            flex: 1;
+        }
+
+        .barangay-info h4 {
+            margin: 0 0 0.5rem 0;
+            font-size: 1.1rem;
+            font-weight: 600;
+            color: inherit;
+        }
+
+        .barangay-status {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.3rem 0.8rem;
+            border-radius: 20px;
+            font-size: 0.75rem;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .barangay-status.active {
+            background: #d4edda;
+            color: #155724;
+        }
+
+        .barangay-status.archived {
+            background: #f8d7da;
+            color: #721c24;
+        }
+
+        .barangay-card.selected .barangay-status {
+            background: rgba(255,255,255,0.2);
+            color: white;
+        }
+
+        .barangay-action {
+            font-size: 1.2rem;
+            color: #0a2240;
+            flex-shrink: 0;
+        }
+
+        .barangay-card.selected .barangay-action {
+            color: white;
+        }
+
+        .barangay-card.archived .barangay-action {
+            color: #999;
+        }
+
+        .archived-badge {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 30px;
+            height: 30px;
+            background: #dc3545;
+            color: white;
+            border-radius: 50%;
+            font-size: 0.9rem;
+        }
+
+        .hover-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 34, 64, 0.9);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            gap: 0.5rem;
+        }
+
+        .barangay-card:hover:not(.archived):not(.selected) .hover-overlay {
+            opacity: 1;
+        }
+
+        .hover-overlay i {
+            font-size: 1.5rem;
+            margin-bottom: 0.25rem;
+        }
+
+        .empty-state {
+            text-align: center;
+            padding: 3rem 2rem;
+            color: #666;
+        }
+
+        .empty-state i {
+            font-size: 3rem;
+            color: #ccc;
+            margin-bottom: 1rem;
+        }
+
+        .empty-state h3 {
+            color: #0a2240;
+            margin-bottom: 1rem;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.75rem 1.5rem;
+            border: none;
+            border-radius: 8px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+            transform: translateY(-1px);
+        }
+
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            color: #0a2240;
+            text-decoration: none;
+            padding: 0.5rem 1rem;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            font-weight: 500;
+        }
+
+        .back-link:hover {
+            background: #f8f9fa;
+            transform: translateX(-2px);
+        }
+
+        .form-footer {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #e0e0e0;
+            text-align: center;
+        }
+
+        @media (max-width: 768px) {
+            .barangay-card-content {
+                padding: 1rem;
+                gap: 0.75rem;
+            }
+
+            .barangay-icon {
+                width: 40px;
+                height: 40px;
+                font-size: 1rem;
+            }
+
+            .selection-header {
+                flex-direction: column;
+                gap: 1rem;
+                text-align: center;
+            }
+
+            .barangay-count {
+                align-self: center;
+            }
+        }
+    </style>
 </head>
 
 <body>

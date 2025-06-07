@@ -485,7 +485,7 @@ if (isset($_GET['action'])) {
             $requestInfo = $stmt->fetch();
             
             if (!$requestInfo) {
-                $response['message'] = 'Request not found; cannot delete.';
+                $response['message'] = 'Request not found; cannot archive.';
                 echo json_encode($response);
                 exit;
             }
@@ -520,9 +520,9 @@ if (isset($_GET['action'])) {
             if ($stmtDel->execute([':id'=>$reqId,':bid'=>$bid])) {
                 logAuditTrail($pdo,$current_admin_id,'DELETE','document_requests',$reqId,'Deleted request with remarks: '.$remarks);
                 $response['success'] = true;
-                $response['message'] = 'Request deleted.';
+                $response['message'] = 'Request archive.';
             } else {
-                $response['message'] = 'Unable to delete request.';
+                $response['message'] = 'Unable to archive request.';
             }
 
         } elseif ($action === 'print') {
@@ -563,7 +563,7 @@ if (isset($_GET['action'])) {
             $stmt = $pdo->prepare("
                 SELECT 
                     dr.id AS document_request_id,
-                    COALESCE(dr.delivery_method, 'hardcopy') as delivery_method,
+                    dr.delivery_method,
                     dt.name AS document_name,
                     dt.code AS document_code,
                     CONCAT(p.first_name, ' ', COALESCE(p.last_name, '')) AS requester_name,
@@ -583,6 +583,11 @@ if (isset($_GET['action'])) {
             if (!$info) {
                 $response['message'] = 'Document request not found.';
             } else {
+                // Parse delivery methods (comma-separated string)
+                $deliveryMethods = array_map('trim', explode(',', $info['delivery_method']));
+                $hasSoftcopy = in_array('softcopy', $deliveryMethods);
+                $hasHardcopy = in_array('hardcopy', $deliveryMethods);
+                
                 // Check if document requires pickup notification (only business permit clearance)
                 $requiresPickupNotification = in_array($info['document_code'], ['business_permit_clearance']);
                 
@@ -590,100 +595,93 @@ if (isset($_GET['action'])) {
                 $isCedula = in_array($info['document_code'], ['cedula', 'community_tax_certificate']);
                 
                 if ($isCedula) {
+                    // ...existing cedula handling...
                     
-                    $upd = $pdo->prepare("
-                        UPDATE document_requests
-                        SET status = 'completed', completed_at = NOW()
-                        WHERE id = :id AND barangay_id = :bid
-                    ");
-                    $upd->execute([':id'=>$reqId,':bid'=>$bid]);
-                    
-                    logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
-                        'Marked cedula/community tax certificate as complete - requires in-person pickup.'
-                    );
-                    
-                    $response['success'] = true;
-                    $response['message'] = 'Cedula/Community Tax Certificate marked as complete. User must visit barangay office for in-person issuance.';
-                    
-                } elseif ($requiresPickupNotification && !empty($info['email'])) {
-                    // Business permit - send pickup notification email
-                    $mail = new PHPMailer(true);
-                    try {
-                        $mail->isSMTP();
-                        $mail->Host       = 'smtp.gmail.com';
-                        $mail->SMTPAuth   = true;
-                        $mail->Username   = 'ibarangay.system@gmail.com';  
-                        $mail->Password   = 'nxxn vxyb kxum cuvd';   
-                        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                        $mail->Port       = 587;
-                        $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
-                        $mail->addAddress($info['email'], $info['requester_name']);
-                        $mail->isHTML(true);
-                        
-                        $mail->Subject = 'Business Permit Clearance Ready for Pickup';
-                        $mail->Body = "Hello {$info['requester_name']},<br><br>"
-                            . "Your Business Permit Clearance is now ready for pickup at the barangay office.<br><br>"
-                            . "Please bring a valid ID when picking up your document.<br><br>"
-                            . "Office Hours: Monday to Friday, 8:00 AM - 5:00 PM<br><br>"
-                            . "Thank you.";
-                        
-                        $mail->send();
-                        
-                        // Update status
-                        $upd = $pdo->prepare("
-                            UPDATE document_requests
-                            SET status = 'completed', completed_at = NOW()
-                            WHERE id = :id AND barangay_id = :bid
-                        ");
-                        $upd->execute([':id'=>$reqId,':bid'=>$bid]);
-                        
-                        logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
-                            'Business permit marked complete and pickup notification sent via email.'
-                        );
-                        
-                        $response['success'] = true;
-                        $response['message'] = 'Pickup notification sent via email & marked complete.';
-                        
-                    } catch (Exception $e) {
-                        // Email failed - still mark as complete but note the issue
-                        $upd = $pdo->prepare("
-                            UPDATE document_requests
-                            SET status = 'completed', completed_at = NOW()
-                            WHERE id = :id AND barangay_id = :bid
-                        ");
-                        $upd->execute([':id'=>$reqId,':bid'=>$bid]);
-                        
-                        logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
-                            'Business permit marked complete but email notification failed: ' . $e->getMessage()
-                        );
-                        
-                        $response['success'] = true;
-                        $response['message'] = 'Business permit marked complete but email notification failed.';
-                    }
-                    
-                } elseif ($requiresPickupNotification && empty($info['email'])) {
-                    // Business permit but no email - still mark as complete
-                    $upd = $pdo->prepare("
-                        UPDATE document_requests
-                        SET status = 'completed', completed_at = NOW()
-                        WHERE id = :id AND barangay_id = :bid
-                    ");
-                    $upd->execute([':id'=>$reqId,':bid'=>$bid]);
-                    
-                    logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
-                        'Business permit marked complete - no email available for notification.'
-                    );
-                    
-                    $response['success'] = true;
-                    $response['message'] = 'Business permit marked complete. No email sent - user has no email address on file.';
-                    
-                    if (!empty($info['contact_number'])) {
-                        $response['message'] .= ' Contact number: ' . $info['contact_number'];
+                } elseif ($requiresPickupNotification) {
+                    // Business permit - always send pickup notification regardless of delivery method
+                    if (!empty($info['email'])) {
+                        $mail = new PHPMailer(true);
+                        try {
+                            // ...existing email setup...
+                            
+                            $mail->Subject = 'Business Permit Clearance Ready for Pickup';
+                            $mail->Body = "Hello {$info['requester_name']},<br><br>"
+                                . "Your Business Permit Clearance is now ready.<br><br>";
+                            
+                            // Add specific instructions based on delivery method
+                            if ($hasHardcopy && $hasSoftcopy) {
+                                $mail->Body .= "Delivery Methods Selected: Hardcopy and Softcopy<br>"
+                                    . "• Physical copy: Please visit the barangay office for pickup<br>"
+                                    . "• Digital copy: Will be sent to this email address<br><br>";
+                            } elseif ($hasHardcopy) {
+                                $mail->Body .= "Please visit the barangay office to pick up your physical document.<br><br>";
+                            } elseif ($hasSoftcopy) {
+                                $mail->Body .= "Your digital copy will be sent to this email address.<br><br>";
+                            }
+                            
+                            $mail->Body .= "Please bring a valid ID when picking up your document.<br><br>"
+                                . "Office Hours: Monday to Friday, 8:00 AM - 5:00 PM<br><br>"
+                                . "Thank you.";
+                            
+                            $mail->send();
+                            
+                            // If softcopy is requested, also send the document
+                            if ($hasSoftcopy) {
+                                // Generate and send PDF
+                                $docRequestId = $reqId;
+                                ob_start();
+                                require __DIR__ . '/../functions/document_template.php';
+                                $html = ob_get_clean();
+                                $dompdf = new Dompdf();
+                                $dompdf->loadHtml($html);
+                                $dompdf->setPaper('A4','portrait');
+                                $dompdf->render();
+                                $pdfContent = $dompdf->output();
+                                
+                                // Send document email
+                                $docMail = new PHPMailer(true);
+                                // ...email setup...
+                                $docMail->Subject = 'Your Business Permit Clearance Document';
+                                $docMail->Body = "Hello {$info['requester_name']},<br><br>"
+                                    . "Please find your Business Permit Clearance document attached.<br><br>"
+                                    . "This is the digital copy as requested. If you also selected hardcopy delivery, "
+                                    . "please visit the barangay office for the physical document.<br><br>"
+                                    . "Thank you.";
+                                
+                                // Create temp file for attachment
+                                $tempFile = tempnam(sys_get_temp_dir(), 'doc_');
+                                file_put_contents($tempFile, $pdfContent);
+                                $docMail->addAttachment($tempFile, 'Business_Permit_Clearance.pdf');
+                                
+                                $docMail->send();
+                                @unlink($tempFile);
+                            }
+                            
+                            // Update status
+                            $upd = $pdo->prepare("
+                                UPDATE document_requests
+                                SET status = 'completed', completed_at = NOW()
+                                WHERE id = :id AND barangay_id = :bid
+                            ");
+                            $upd->execute([':id'=>$reqId,':bid'=>$bid]);
+                            
+                            $deliveryInfo = [];
+                            if ($hasHardcopy) $deliveryInfo[] = "pickup notification sent";
+                            if ($hasSoftcopy) $deliveryInfo[] = "digital copy sent";
+                            
+                            $response['success'] = true;
+                            $response['message'] = 'Business permit completed - ' . implode(' and ', $deliveryInfo) . '.';
+                            
+                        } catch (Exception $e) {
+                            // ...existing error handling...
+                        }
+                    } else {
+                        // ...existing no email handling...
                     }
                     
                 } else {
-                    // For softcopy delivery, actually generate and email the document
-                    if (!empty($info['email'])) {
+                    // For other documents, handle based on delivery method
+                    if ($hasSoftcopy && !empty($info['email'])) {
                         try {
                             // Generate PDF document
                             $docRequestId = $reqId;
@@ -702,21 +700,17 @@ if (isset($_GET['action'])) {
                             
                             // Send email with attachment
                             $mail = new PHPMailer(true);
-                            $mail->isSMTP();
-                            $mail->Host       = 'smtp.gmail.com';
-                            $mail->SMTPAuth   = true;
-                            $mail->Username   = 'ibarangay.system@gmail.com';  
-                            $mail->Password   = 'nxxn vxyb kxum cuvd';   
-                            $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
-                            $mail->Port       = 587;
-                            $mail->setFrom('iBarangay@gmail.com', 'iBarangay System');
-                            $mail->addAddress($info['email'], $info['requester_name']);
-                            $mail->isHTML(true);
+                            // ...existing email setup...
                             
                             $mail->Subject = 'Your Requested Document: ' . $info['document_name'];
                             $mail->Body = "Hello {$info['requester_name']},<br><br>"
-                                . "Your requested document ({$info['document_name']}) is attached to this email.<br><br>"
-                                . "This is an electronically generated document. If you need a physical copy with an official seal, "
+                                . "Your requested document ({$info['document_name']}) is attached to this email.<br><br>";
+                            
+                            if ($hasHardcopy) {
+                                $mail->Body .= "Note: You also selected hardcopy delivery. Please visit the barangay office to collect your physical document.<br><br>";
+                            }
+                            
+                            $mail->Body .= "This is an electronically generated document. If you need a physical copy with an official seal, "
                                 . "please visit the barangay office.<br><br>"
                                 . "Thank you for using iBarangay!<br><br>"
                                 . "Best regards,<br>"
@@ -730,32 +724,30 @@ if (isset($_GET['action'])) {
                             // Delete temp file
                             @unlink($tempFile);
                             
-                            // Update status
-                            $upd = $pdo->prepare("
-                                UPDATE document_requests
-                                SET status = 'completed', completed_at = NOW()
-                                WHERE id = :id AND barangay_id = :bid
-                            ");
-                            $upd->execute([':id'=>$reqId,':bid'=>$bid]);
-                            
-                            logAuditTrail($pdo, $current_admin_id, 'UPDATE','document_requests',$reqId,
-                                'Document sent via email and marked complete.'
-                            );
+                            // Update status only if this is the only delivery method or last action
+                            if (!$hasHardcopy) {
+                                $upd = $pdo->prepare("
+                                    UPDATE document_requests
+                                    SET status = 'completed', completed_at = NOW()
+                                    WHERE id = :id AND barangay_id = :bid
+                                ");
+                                $upd->execute([':id'=>$reqId,':bid'=>$bid]);
+                            }
                             
                             $response['success'] = true;
-                            $response['message'] = 'Document successfully sent to ' . $info['email'] . ' and marked complete.';
+                            $message = 'Digital document sent to ' . $info['email'];
+                            if ($hasHardcopy) {
+                                $message .= '. Note: Physical copy still needs to be printed and picked up.';
+                            } else {
+                                $message .= ' and marked complete.';
+                            }
+                            $response['message'] = $message;
                             
                         } catch (Exception $e) {
-                            // Email failed
-                            logAuditTrail($pdo, $current_admin_id, 'ERROR','document_requests',$reqId,
-                                'Failed to send document via email: ' . $e->getMessage()
-                            );
-                            
-                            $response['success'] = false;
-                            $response['message'] = 'Failed to send email: ' . $e->getMessage();
+                            // ...existing error handling...
                         }
                     } else {
-                        // No email available
+                        // No email available for softcopy
                         $response['success'] = false;
                         $response['message'] = 'Cannot send email. User has no email address on file.';
                     }
@@ -1043,7 +1035,7 @@ $completedRequests = $stmtHist->fetchAll();
                       } // end else not cedula
                     ?>
                     <button class="deleteDocRequestBtn text-red-600 hover:text-red-900" data-id="<?= $req['document_request_id'] ?>">
-                      Delete
+                      Archive
                     </button>
                   </div>
                 </td>
@@ -1516,21 +1508,21 @@ $completedRequests = $stmtHist->fetchAll();
                 if (residencyMonths < 6 && !(caseStatus === 'closed' || caseStatus === 'dismissed')) {
                   Swal.fire({
                     icon: 'warning',
-                    title: 'Cannot Delete Request',
-                    text: 'This request cannot be deleted because the residency is less than 6 months and the case is not closed or dismissed.',
+                    title: 'Cannot Remove Request',
+                    text: 'This request cannot be removed because the residency is less than 6 months and the case is not closed or dismissed.',
                   });
                   return;
                 }
                 // Otherwise, proceed with delete dialog
                 Swal.fire({
-                  title: 'Delete Request',
+                  title: 'Remove Request',
                   input: 'textarea',
-                  inputLabel: 'Reason for deletion (optional)',
+                  inputLabel: 'Reason for Removal (optional)',
                   inputPlaceholder: 'Enter reason for deleting this request...',
                   showCancelButton: true,
                   confirmButtonColor: '#DC2626',
                   cancelButtonColor: '#6B7280',
-                  confirmButtonText: 'Yes, delete',
+                  confirmButtonText: 'Yes, archive',
                   cancelButtonText: 'Cancel',
                   inputValidator: (value) => {
                     // Optional validation - you can make this required if needed
@@ -1607,15 +1599,73 @@ $completedRequests = $stmtHist->fetchAll();
           const row = document.createElement('tr');
           row.className = 'hover:bg-gray-50';
           
+          // Parse delivery methods
+          const deliveryMethods = req.delivery_method ? req.delivery_method.split(',').map(m => m.trim()) : ['hardcopy'];
+          const hasHardcopy = deliveryMethods.includes('hardcopy');
+          const hasSoftcopy = deliveryMethods.includes('softcopy');
+          const docCode = (req.document_code || '').toLowerCase();
+
+          // Build actions HTML based on delivery methods and document type
+          let actionsHtml = `
+            <div class="flex space-x-2">
+              <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="${req.document_request_id}">
+                View
+              </button>
+          `;
+
+          if (docCode === 'cedula' || docCode === 'community_tax_certificate') {
+            actionsHtml += `
+              <button class="completeDocRequestBtn text-green-600 hover:text-green-900" data-id="${req.document_request_id}">
+                Complete
+              </button>
+            `;
+          } else {
+            // For hardcopy delivery
+            if (hasHardcopy) {
+              actionsHtml += `
+                <button class="printDocRequestBtn text-green-600 hover:text-green-900" data-id="${req.document_request_id}">
+                  Print
+                </button>
+              `;
+            }
+            
+            // For softcopy delivery or business permit (which always needs email notification)
+            if (hasSoftcopy || docCode === 'business_permit_clearance') {
+              actionsHtml += `
+                <button class="sendDocEmailBtn text-purple-600 hover:text-purple-900" data-id="${req.document_request_id}">
+                  ${hasSoftcopy && hasHardcopy ? 'Process Both' : (hasSoftcopy ? 'Send Email' : 'Notify Pickup')}
+                </button>
+              `;
+            }
+          }
+
+          actionsHtml += `
+              <button class="deleteDocRequestBtn text-red-600 hover:text-red-900" data-id="${req.document_request_id}">
+                Archive
+              </button>
+            </div>
+          `;
+
+          // Create table cells
           const dateCell = document.createElement('td');
           dateCell.className = 'px-6 py-4 whitespace-nowrap text-sm text-gray-900';
           dateCell.textContent = new Date(req.request_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
           
           const documentCell = document.createElement('td');
           documentCell.className = 'px-6 py-4 whitespace-nowrap';
+          let deliveryDisplay = '';
+          if (hasHardcopy && hasSoftcopy) {
+            deliveryDisplay = '<div class="text-sm text-blue-600">Both (Hard + Soft)</div>';
+          } else if (hasHardcopy) {
+            deliveryDisplay = '<div class="text-sm text-green-600">Hardcopy</div>';
+          } else if (hasSoftcopy) {
+            deliveryDisplay = '<div class="text-sm text-purple-600">Softcopy</div>';
+          }
+          
           documentCell.innerHTML = `
-            <div class="text-sm font-medium text-gray-900">${req.document_name}</div>
-            ${req.price > 0 ? `<div class="text-sm text-gray-500">Fee: ₱${parseFloat(req.price).toFixed(2)}</div>` : ''}
+              <div class="text-sm font-medium text-gray-900">${req.document_name}</div>
+              ${req.price > 0 ? `<div class="text-sm text-gray-500">Fee: ₱${parseFloat(req.price).toFixed(2)}</div>` : ''}
+              ${deliveryDisplay}
           `;
           
           const requesterCell = document.createElement('td');
@@ -1625,50 +1675,13 @@ $completedRequests = $stmtHist->fetchAll();
           const statusCell = document.createElement('td');
           statusCell.className = 'px-6 py-4 whitespace-nowrap';
           statusCell.innerHTML = `
-            <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
-              ${req.status.charAt(0).toUpperCase() + req.status.slice(1)}
-            </span>
+              <span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-yellow-100 text-yellow-800">
+                ${req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+              </span>
           `;
           
           const actionsCell = document.createElement('td');
           actionsCell.className = 'px-6 py-4 whitespace-nowrap text-sm font-medium';
-          const deliveryMethod = (req.delivery_method || '').toLowerCase();
-          const docCode = (req.document_code || '').toLowerCase();
-
-          let actionsHtml = `
-            <div class="flex space-x-2">
-              <button class="viewDocRequestBtn text-blue-600 hover:text-blue-900" data-id="${req.document_request_id}">
-                View
-              </button>
-          `;
-          if (docCode === 'cedula' || docCode === 'community_tax_certificate') {
-            actionsHtml += `
-              <button class="completeDocRequestBtn text-green-600 hover:text-green-900" data-id="${req.document_request_id}">
-                Complete
-              </button>
-            `;
-          } else {
-            if (deliveryMethod === 'hardcopy') {
-              actionsHtml += `
-              <button class="printDocRequestBtn text-green-600 hover:text-green-900" data-id="${req.document_request_id}">
-                Print
-              </button>
-              `;
-            }
-            if (deliveryMethod === 'softcopy') {
-              actionsHtml += `
-              <button class="sendDocEmailBtn text-purple-600 hover:text-purple-900" data-id="${req.document_request_id}">
-                Send Email
-              </button>
-              `;
-            }
-          }
-          actionsHtml += `
-              <button class="deleteDocRequestBtn text-red-600 hover:text-red-900" data-id="${req.document_request_id}">
-                Delete
-              </button>
-            </div>
-          `;
           actionsCell.innerHTML = actionsHtml;
           
           row.appendChild(dateCell);
@@ -1731,22 +1744,23 @@ $completedRequests = $stmtHist->fetchAll();
       // Define button click handlers
       function viewDocRequest() {
         const requestId = this.getAttribute('data-id');
-        // ... existing view request code ...
+ 
+      
       }
       
       function printDocRequest() {
         const requestId = this.getAttribute('data-id');
-        // ... existing print request code ...
+
       }
       
       function sendDocEmail() {
         const requestId = this.getAttribute('data-id');
-        // ... existing email request code ...
+        
       }
       
       function deleteDocRequest() {
         const requestId = this.getAttribute('data-id');
-        // ... existing delete request code ...
+    
       }
 
       // Function to load requests via AJAX

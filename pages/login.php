@@ -45,7 +45,8 @@ if (isset($_SESSION['user_id'])) {
         <p>Your one-stop portal for barangay services. Access announcements, documents, and more with ease.</p>
       </div>
     </div>
-
+$password = "mySecret123"; // plain text password from a form
+$hashedPassword = password_hash($password, PASSWORD_DEFAULT);
     <div class="form-side">
       <div class="login-container">
         <div class="header">

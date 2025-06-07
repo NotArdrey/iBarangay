@@ -391,6 +391,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 }
             }
 
+            // Handle delivery method as array and validate
+            $deliveryMethods = $_POST['delivery_method'] ?? [];
+            if (empty($deliveryMethods)) {
+                throw new Exception("Please select at least one delivery method.");
+            }
+            
+            // Validate delivery methods
+            $validMethods = ['hardcopy', 'softcopy'];
+            $deliveryMethods = array_filter($deliveryMethods, function($method) use ($validMethods) {
+                return in_array($method, $validMethods);
+            });
+            
+            if (empty($deliveryMethods)) {
+                throw new Exception("Please select a valid delivery method.");
+            }
+            
+            $deliveryMethodString = implode(',', $deliveryMethods);
+
             // Prepare the main insert statement - UPDATED VERSION
             $stmt = $pdo->prepare("
                 INSERT INTO document_requests (
@@ -464,7 +482,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     break;
             }
 
-            // Execute the insert
+            // Execute the insert with proper delivery method handling
             $stmt->execute([
                 $person_id,
                 $user_id,
@@ -478,7 +496,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $businessLocation,
                 $businessNature,
                 $businessType,
-                implode(',', $_POST['delivery_method'] ?? []),
+                $deliveryMethodString, // Now properly handles comma-separated values
                 isset($_POST['proceed_to_payment']) ? 'online' : ($_POST['payment_method'] ?? 'cash'),
                 $previousPermitDocAiUsed,
                 $isRenewal
@@ -1247,9 +1265,9 @@ require_once '../components/navbar.php';
                     <!-- Delivery Method Selection -->
                     <div class="form-row" id="deliveryMethodRow">
                         <label for="deliveryMethod">Delivery Method <span style="color: red">*</span></label>
-                        <div>
-                            <label><input type="checkbox" name="delivery_method[]" value="hardcopy" id="deliveryHardcopy"> Hardcopy</label>
-                            <label style="margin-left:1rem;"><input type="checkbox" name="delivery_method[]" value="softcopy" id="deliverySoftcopy"> Softcopy</label>
+                        <div style="display: flex; gap: 1rem; align-items: center;">
+                            <label style="display: flex; align-items: center; margin-bottom: 0;"><input type="checkbox" name="delivery_method[]" value="hardcopy" id="deliveryHardcopy" style="margin-right: 0.5rem;"> Hardcopy</label>
+                            <label style="display: flex; align-items: center; margin-bottom: 0;"><input type="checkbox" name="delivery_method[]" value="softcopy" id="deliverySoftcopy" style="margin-right: 0.5rem;"> Softcopy</label>
                         </div>
                         <span class="input-help">You may select one or both delivery options.</span>
                     </div>
@@ -1387,7 +1405,7 @@ require_once '../components/navbar.php';
                         <hr class="my-4">
                         <div class="form-row">
                             <label for="businessName">Business Name <span style="color: red;">*</span></label>
-                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name" <?= ($hasPendingBlotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
+                            <input type="text" id="businessName" name="businessName" placeholder="Enter business name" <?= ($hasPendingBllotter || !$isWithinTimeGate) ? 'disabled' : '' ?>>
                         </div>
                         <div class="form-row">
                             <label for="businessType">Type of Business <span style="color: red;">*</span></label>
@@ -1964,6 +1982,7 @@ require_once '../components/navbar.php';
                     return;
                 }
 
+                // Updated delivery method validation to handle checkboxes
                 const selectedDelivery = getSelectedDeliveryMethods();
                 if (selectedDelivery.length === 0) {
                     e.preventDefault();

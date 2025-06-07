@@ -139,14 +139,14 @@ if (isset($_GET['action'], $_GET['id'])) {
         ");
         $success = $stmt->execute([':id' => $resId, ':bid' => $bid]);
         if ($success) {
-            // Send ban email with reason
+            
             if (!empty($userInfo['email'])) {
                 try {
                     $mail = new PHPMailer(true);
                     $mail->isSMTP();
                     $mail->Host       = 'smtp.gmail.com';
                     $mail->SMTPAuth   = true;
-                    $mail->Username   = 'barangayhub2@gmail.com';
+                    $mail->Username   = 'iBarangay@gmail.com';
                     $mail->Password   = 'eisy hpjz rdnt bwrp';
                     $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
                     $mail->Port       = 587;

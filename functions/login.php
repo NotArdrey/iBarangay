@@ -518,6 +518,3 @@ if (stripos($contentType, "application/json") !== false) {
         exit;
     }
 }
-
-// Remove the default error response
-// The file will now return normally for GET requests

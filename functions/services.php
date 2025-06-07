@@ -376,13 +376,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ?, ?, ?, ?, 'pending', NOW(), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
                 )
             ");
+
             // Handle delivery_method as comma-separated string if array
-            $delivery_method = $_POST['delivery_method'] ?? 'hardcopy';
-            if (is_array($delivery_method)) {
-                $delivery_method = implode(',', array_filter($delivery_method, function($v) {
-                    return in_array($v, ['hardcopy', 'softcopy']);
-                }));
+            $deliveryMethods = $_POST['delivery_method'] ?? [];
+            
+            // Ensure it's an array
+            if (!is_array($deliveryMethods)) {
+                $deliveryMethods = [$deliveryMethods];
             }
+            
+            // Validate delivery methods
+            $validMethods = ['hardcopy', 'softcopy'];
+            $deliveryMethods = array_filter($deliveryMethods, function($method) use ($validMethods) {
+                return in_array(trim($method), $validMethods);
+            });
+            
+            if (empty($deliveryMethods)) {
+                throw new Exception("Please select at least one delivery method.");
+            }
+            
+            // Convert to comma-separated string for database storage
+            $deliveryMethodString = implode(',', array_map('trim', $deliveryMethods));
+
             $stmtInsert->execute([
                 $person_id,
                 $user_id,
@@ -395,7 +410,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $businessLocation,
                 $businessNature,
                 $businessType,
-                $delivery_method,
+                $deliveryMethodString, // Now properly handles multiple delivery methods
                 ($currentPrice > 0 ? ($_POST['payment_method'] ?? 'cash') : 'cash'),
                 $user_id
             ]);
