@@ -1,0 +1,217 @@
+name: Remove hardcoded SMTP credentials
+
+on:
+  push:
+    branches:
+      - agent/remove-hardcoded-smtp
+
+permissions:
+  contents: write
+
+jobs:
+  remediate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: agent/remove-hardcoded-smtp
+
+      - name: Replace hardcoded SMTP configuration
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          targets = [
+              Path('functions/resend_code.php'),
+              Path('functions/verify_password.php'),
+              Path('functions/forget_pass.php'),
+              Path('functions/resend_verification.php'),
+              Path('functions/delete_resident.php'),
+              Path('functions/register.php'),
+              Path('pages/events.php'),
+              Path('pages/doc_request.php'),
+              Path('pages/blotter_request.php'),
+          ]
+
+          assignment = r"\s*=\s*"
+          line_end = r";[^\n]*(?:\n|$)"
+          block = re.compile(
+              r"(?P<indent>^[ \t]*)(?P<mailer>\$[A-Za-z_][A-Za-z0-9_]*)->isSMTP\(\);[^\n]*(?:\n|$)"
+              r"^[ \t]*(?P=mailer)->Host" + assignment + r"['\"]smtp\.gmail\.com['\"]" + line_end +
+              r"^[ \t]*(?P=mailer)->SMTPAuth" + assignment + r"true" + line_end +
+              r"^[ \t]*(?P=mailer)->Username" + assignment + r"['\"][^'\"]+['\"]" + line_end +
+              r"^[ \t]*(?P=mailer)->Password" + assignment + r"['\"][^'\"]+['\"]" + line_end +
+              r"^[ \t]*(?P=mailer)->SMTPSecure" + assignment + r"PHPMailer::ENCRYPTION_STARTTLS" + line_end +
+              r"^[ \t]*(?P=mailer)->Port" + assignment + r"587" + r";[^\n]*(?:\n|$)?",
+              re.MULTILINE,
+          )
+
+          hardcoded_sender = re.compile(
+              r"^[ \t]*\$[A-Za-z_][A-Za-z0-9_]*->setFrom\(\s*['\"]iBarangay@gmail\.com['\"]\s*,\s*['\"]iBarangay System['\"]\s*\);[^\n]*(?:\n|$)?",
+              re.MULTILINE | re.IGNORECASE,
+          )
+
+          require_line = "require_once __DIR__ . '/../config/smtp.php';"
+          total_blocks = 0
+
+          for path in targets:
+              if not path.exists():
+                  raise SystemExit(f'Missing expected file: {path}')
+
+              text = path.read_text(encoding='utf-8')
+              updated, count = block.subn(
+                  lambda match: f"{match.group('indent')}configureMailer({match.group('mailer')});\n",
+                  text,
+              )
+              total_blocks += count
+              updated = hardcoded_sender.sub('', updated)
+
+              if require_line not in updated:
+                  if not updated.startswith('<?php'):
+                      raise SystemExit(f'Unexpected PHP header in {path}')
+                  updated = updated.replace('<?php', '<?php\n' + require_line, 1)
+
+              path.write_text(updated, encoding='utf-8', newline='')
+
+          if total_blocks < len(targets):
+              raise SystemExit(f'Expected at least {len(targets)} SMTP blocks, replaced {total_blocks}')
+
+          config = Path('config/smtp.php')
+          config.write_text(r'''<?php
+/**
+ * Central PHPMailer configuration.
+ *
+ * Secrets are loaded from the ignored project-root .env file or process
+ * environment. Never place real credentials in source control.
+ */
+
+function smtpLoadEnvironment(): void
+{
+    static $loaded = false;
+    if ($loaded) {
+        return;
+    }
+
+    $loaded = true;
+    $root = dirname(__DIR__);
+
+    if (class_exists('Dotenv\\Dotenv') && is_file($root . '/.env')) {
+        Dotenv\Dotenv::createImmutable($root)->safeLoad();
+    }
+}
+
+function smtpEnvironmentValue(string $name, ?string $default = null): ?string
+{
+    smtpLoadEnvironment();
+
+    $value = $_ENV[$name] ?? $_SERVER[$name] ?? getenv($name);
+    if ($value === false || $value === null || trim((string) $value) === '') {
+        return $default;
+    }
+
+    return trim((string) $value);
+}
+
+function configureMailer($mail): void
+{
+    $username = smtpEnvironmentValue('SMTP_USERNAME');
+    $password = smtpEnvironmentValue('SMTP_PASSWORD');
+
+    if (!$username || !$password) {
+        throw new RuntimeException(
+            'SMTP is not configured. Set SMTP_USERNAME and SMTP_PASSWORD in the ignored .env file.'
+        );
+    }
+
+    $encryption = strtolower(smtpEnvironmentValue('SMTP_ENCRYPTION', 'tls'));
+
+    $mail->isSMTP();
+    $mail->Host = smtpEnvironmentValue('SMTP_HOST', 'smtp.gmail.com');
+    $mail->SMTPAuth = true;
+    $mail->Username = $username;
+    $mail->Password = $password;
+
+    if (in_array($encryption, ['ssl', 'smtps'], true)) {
+        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_SMTPS;
+        $defaultPort = '465';
+    } elseif ($encryption === 'none') {
+        $mail->SMTPSecure = false;
+        $mail->SMTPAutoTLS = false;
+        $defaultPort = '25';
+    } else {
+        $mail->SMTPSecure = PHPMailer\PHPMailer\PHPMailer::ENCRYPTION_STARTTLS;
+        $defaultPort = '587';
+    }
+
+    $mail->Port = (int) smtpEnvironmentValue('SMTP_PORT', $defaultPort);
+    $mail->setFrom(
+        smtpEnvironmentValue('SMTP_FROM_EMAIL', $username),
+        smtpEnvironmentValue('SMTP_FROM_NAME', 'iBarangay System')
+    );
+}
+''', encoding='utf-8', newline='')
+
+          env_example = Path('.env.example')
+          existing = env_example.read_text(encoding='utf-8') if env_example.exists() else ''
+          if 'SMTP_USERNAME=' not in existing:
+              if existing and not existing.endswith('\n'):
+                  existing += '\n'
+              existing += '''
+# SMTP email delivery
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_ENCRYPTION=tls
+SMTP_USERNAME=your-sender@gmail.com
+SMTP_PASSWORD=your-google-app-password
+SMTP_FROM_EMAIL=your-sender@gmail.com
+SMTP_FROM_NAME="iBarangay System"
+'''
+              env_example.write_text(existing.lstrip('\n'), encoding='utf-8', newline='')
+
+          docs = Path('docs/SMTP_SETUP.md')
+          docs.parent.mkdir(parents=True, exist_ok=True)
+          docs.write_text('''# SMTP configuration
+
+Email credentials must never be committed to GitHub.
+
+1. Copy `.env.example` to `.env` in the project root.
+2. Set `SMTP_USERNAME` to the sender mailbox.
+3. Set `SMTP_PASSWORD` to a newly generated Google app password, not the normal mailbox password.
+4. Keep `.env` untracked; it is already covered by `.gitignore`.
+5. Revoke any password that was previously committed because Git history must be treated as public.
+
+The shared `config/smtp.php` file configures every PHPMailer instance from these environment values.
+''', encoding='utf-8', newline='')
+
+          Path('.github/workflows/remove-hardcoded-smtp.yml').unlink()
+
+          remaining = []
+          for path in Path('.').rglob('*.php'):
+              if '.git' in path.parts:
+                  continue
+              text = path.read_text(encoding='utf-8', errors='ignore')
+              if re.search(r"->Password\s*=\s*['\"][^'\"]+['\"]", text):
+                  remaining.append(str(path))
+
+          if remaining:
+              raise SystemExit('Hardcoded PHPMailer passwords remain in: ' + ', '.join(remaining))
+          PY
+
+      - name: Validate PHP syntax
+        shell: bash
+        run: |
+          find functions pages config -name '*.php' -print0 | xargs -0 -n1 php -l
+
+      - name: Commit remediation
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "security: remove hardcoded SMTP credentials"
+          git push origin HEAD:agent/remove-hardcoded-smtp
